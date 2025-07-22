@@ -1,0 +1,48 @@
+--2025-07-11 15:58:59--  https://github.com/k2-fsa/sherpa-onnx/releases/download/asr-models/silero_vad.onnx
+正在解析主机 github.com (github.com)... 140.82.116.3
+正在连接 github.com (github.com)|140.82.116.3|:443... 已连接。
+已发出 HTTP 请求，正在等待回应... 读取文件头错误 (Operation timed out)。
+重试中。
+
+--2025-07-14 10:59:26--  (尝试次数： 2)  https://github.com/k2-fsa/sherpa-onnx/releases/download/asr-models/silero_vad.onnx
+正在连接 github.com (github.com)|140.82.116.3|:443... 已连接。
+已发出 HTTP 请求，正在等待回应... 没有接收到数据。
+重试中。
+
+--2025-07-14 11:00:58--  (尝试次数： 3)  https://github.com/k2-fsa/sherpa-onnx/releases/download/asr-models/silero_vad.onnx
+正在连接 github.com (github.com)|140.82.116.3|:443... 失败：Operation timed out。
+正在解析主机 github.com (github.com)... 140.82.116.3
+正在连接 github.com (github.com)|140.82.116.3|:443... 失败：Operation timed out。
+重试中。
+
+--2025-07-14 11:03:27--  (尝试次数： 4)  https://github.com/k2-fsa/sherpa-onnx/releases/download/asr-models/silero_vad.onnx
+正在连接 github.com (github.com)|140.82.116.3|:443... 失败：Operation timed out。
+重试中。
+
+--2025-07-14 11:04:46--  (尝试次数： 5)  https://github.com/k2-fsa/sherpa-onnx/releases/download/asr-models/silero_vad.onnx
+正在连接 github.com (github.com)|140.82.116.3|:443... 已连接。
+已发出 HTTP 请求，正在等待回应... 302 Found
+位置：https://release-assets.githubusercontent.com/github-production-release-asset/531380835/22cdfd63-e487-4d8d-b836-b3644c7c9451?sp=r&sv=2018-11-09&sr=b&spr=https&se=2025-07-14T03%3A59%3A31Z&rscd=attachment%3B+filename%3Dsilero_vad.onnx&rsct=application%2Foctet-stream&skoid=96c2d410-5711-43a1-aedd-ab1947aa7ab0&sktid=398a6654-997b-47e9-b12b-9515b896b4de&skt=2025-07-14T02%3A58%3A35Z&ske=2025-07-14T03%3A59%3A31Z&sks=b&skv=2018-11-09&sig=6Y81k%2FPaXVQ160rT6HTsFVo1vO6UhgJspGn4APLWCMY%3D&jwt=eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJnaXRodWIuY29tIiwiYXVkIjoicmVsZWFzZS1hc3NldHMuZ2l0aHVidXNlcmNvbnRlbnQuY29tIiwia2V5Ijoia2V5MSIsImV4cCI6MTc1MjQ2MjYyMywibmJmIjoxNzUyNDYyMzIzLCJwYXRoIjoicmVsZWFzZWFzc2V0cHJvZHVjdGlvbi5ibG9iLmNvcmUud2luZG93cy5uZXQifQ.HTZRzKB62PX5LUpCHzfr_6hD1ZOA46uN-uLACFqTKKU&response-content-disposition=attachment%3B%20filename%3Dsilero_vad.onnx&response-content-type=application%2Foctet-stream [跟随至新的 URL]
+--2025-07-14 11:05:22--  https://release-assets.githubusercontent.com/github-production-release-asset/531380835/22cdfd63-e487-4d8d-b836-b3644c7c9451?sp=r&sv=2018-11-09&sr=b&spr=https&se=2025-07-14T03%3A59%3A31Z&rscd=attachment%3B+filename%3Dsilero_vad.onnx&rsct=application%2Foctet-stream&skoid=96c2d410-5711-43a1-aedd-ab1947aa7ab0&sktid=398a6654-997b-47e9-b12b-9515b896b4de&skt=2025-07-14T02%3A58%3A35Z&ske=2025-07-14T03%3A59%3A31Z&sks=b&skv=2018-11-09&sig=6Y81k%2FPaXVQ160rT6HTsFVo1vO6UhgJspGn4APLWCMY%3D&jwt=eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJnaXRodWIuY29tIiwiYXVkIjoicmVsZWFzZS1hc3NldHMuZ2l0aHVidXNlcmNvbnRlbnQuY29tIiwia2V5Ijoia2V5MSIsImV4cCI6MTc1MjQ2MjYyMywibmJmIjoxNzUyNDYyMzIzLCJwYXRoIjoicmVsZWFzZWFzc2V0cHJvZHVjdGlvbi5ibG9iLmNvcmUud2luZG93cy5uZXQifQ.HTZRzKB62PX5LUpCHzfr_6hD1ZOA46uN-uLACFqTKKU&response-content-disposition=attachment%3B%20filename%3Dsilero_vad.onnx&response-content-type=application%2Foctet-stream
+正在解析主机 release-assets.githubusercontent.com (release-assets.githubusercontent.com)... 185.199.109.133, 185.199.108.133, 185.199.111.133, ...
+正在连接 release-assets.githubusercontent.com (release-assets.githubusercontent.com)|185.199.109.133|:443... 已连接。
+已发出 HTTP 请求，正在等待回应... 200 OK
+长度：643854 (629K) [application/octet-stream]
+正在保存至: “silero_vad.onnx”
+
+     0K .......... .......... .......... .......... ..........  7%  209K 3s
+    50K .......... .......... .......... .......... .......... 15%  192K 3s
+   100K .......... .......... .......... .......... .......... 23%  263K 2s
+   150K .......... .......... .......... .......... .......... 31% 46.9M 1s
+   200K .......... .......... .......... .......... .......... 39%  632K 1s
+   250K .......... .......... .......... .......... .......... 47%  265K 1s
+   300K .......... .......... .......... .......... .......... 55%  332K 1s
+   350K .......... .......... .......... .......... .......... 63%  131K 1s
+   400K .......... .......... .......... .......... .......... 71%  987K 1s
+   450K .......... .......... .......... .......... .......... 79%  627K 0s
+   500K .......... .......... .......... .......... .......... 87%  240K 0s
+   550K .......... .......... .......... .......... .......... 95%  262K 0s
+   600K .......... .......... ........                        100%  416K=2.1s
+
+2025-07-14 11:05:26 (301 KB/s) - 已保存 “silero_vad.onnx” [643854/643854])
+

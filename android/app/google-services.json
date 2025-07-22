@@ -1,0 +1,46 @@
+{
+  "project_info": {
+    "project_number": "220207582137",
+    "project_id": "buddie-app",
+    "storage_bucket": "buddie-app.firebasestorage.app"
+  },
+  "client": [
+    {
+      "client_info": {
+        "mobilesdk_app_id": "1:220207582137:android:f370120d79b3364f6d4468",
+        "android_client_info": {
+          "package_name": "inc.bud.app"
+        }
+      },
+      "oauth_client": [
+        {
+          "client_id": "220207582137-7l6c5djsocifp6k1m2dumvt1je153dr5.apps.googleusercontent.com",
+          "client_type": 3
+        }
+      ],
+      "api_key": [
+        {
+          "current_key": "AIzaSyBWf4bODfWnSAbac2tSVB-cY4xOiecZU8c"
+        }
+      ],
+      "services": {
+        "appinvite_service": {
+          "other_platform_oauth_client": [
+            {
+              "client_id": "220207582137-7l6c5djsocifp6k1m2dumvt1je153dr5.apps.googleusercontent.com",
+              "client_type": 3
+            },
+            {
+              "client_id": "220207582137-hqpon30jlsj1nuq2idekc55ca8ij3qv1.apps.googleusercontent.com",
+              "client_type": 2,
+              "ios_info": {
+                "bundle_id": "inc.bud.app"
+              }
+            }
+          ]
+        }
+      }
+    }
+  ],
+  "configuration_version": "1"
+}
