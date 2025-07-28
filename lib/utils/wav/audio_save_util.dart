@@ -35,9 +35,7 @@ class FileService {
         if (path != null) {
           debugPrint('DialogueSummary.start audioPath:$path');
           DialogueSummary.start(
-            isMeeting: true,
-            startMeetingTime: startMeetingTime,
-            audioPath: path,
+            startTime: startMeetingTime,
           );
         } else {
           _currentWavFileModel?.clearPCMData();

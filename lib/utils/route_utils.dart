@@ -11,6 +11,8 @@ import 'package:app/views/todo/todo_list_screen.dart';
 import 'package:app/views/user_screen.dart';
 import 'package:app/views/entry/welcome_screen.dart';
 import 'package:app/views/knowledge_graph_page.dart';
+import 'package:app/views/kg_test_page.dart';
+import 'package:app/views/cache_debug_page.dart';
 import 'package:go_router/go_router.dart';
 import '../views/entry/loading_screen.dart';
 import 'package:app/views/help_feedback/help_feedback_screen.dart';
@@ -113,6 +115,16 @@ class RouteUtils {
       path: RouteName.knowledge_graph,
       name: RouteName.knowledge_graph,
       builder: (_, state) => KnowledgeGraphPage(),
+    ),
+    GoRoute(
+      path: RouteName.kg_test,
+      name: RouteName.kg_test,
+      builder: (_, state) => KGTestPage(),
+    ),
+    GoRoute(
+      path: RouteName.cache_debug,
+      name: RouteName.cache_debug,
+      builder: (_, state) => const CacheDebugPage(),
     )
   ];
 }
@@ -141,4 +153,8 @@ class RouteName {
 
   /// knowledge graph
   static const String knowledge_graph = '/knowledge_graph';
+  static const String kg_test = '/kg_test';
+
+  /// cache debug
+  static const String cache_debug = '/cache_debug';
 }

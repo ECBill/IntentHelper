@@ -12,118 +12,79 @@ import 'notification.dart';
 
 class DialogueSummary {
   // MainProcess, start the summarization process
-  static Future<void> start({
-    bool isMeeting = false,
-    int? startMeetingTime,
-    String? audioPath,
-  }) async {
+  static Future<void> start({int? startTime}) async {
     try {
-      int? startSummaryTime = 0;
-      if (isMeeting) {
-        if (startMeetingTime == null ||
-            (DateTime.now().millisecondsSinceEpoch - startMeetingTime <
-                1 * 60 * 1000)) {
-          return;
-        }
-        startSummaryTime = startMeetingTime;
-      } else {
-        int? endTime = ObjectBoxService().getLastRecord()?.createdAt;
-        if (endTime == null ||
-            (!isMeeting && DateTime.now().millisecondsSinceEpoch - endTime <
-                3 * 60 * 1000)) {
-          return;
-        }
-
+      int? startSummaryTime = startTime;
+      int? endTime = ObjectBoxService().getLastRecord()?.createdAt;
+      print('[DialogueSummary] start called, startSummaryTime=$startSummaryTime, endTime=$endTime');
+      if (endTime == null ||
+          (DateTime.now().millisecondsSinceEpoch - endTime < 1 * 60 * 1000)) {
+        print('[DialogueSummary] return: 没有新对话或对话过短');
+        return;
+      }
+      if (startSummaryTime == null) {
+        print('[DialogueSummary] startSummaryTime为null，尝试从summaryBox获取');
         if (!ObjectBoxService.summaryBox.isEmpty()) {
-          startSummaryTime =
-              ObjectBoxService().getLastSummary(isMeeting: isMeeting)?.endTime;
+          startSummaryTime = ObjectBoxService().getLastSummary()?.endTime;
+          print('[DialogueSummary] 从summaryBox获取到startSummaryTime: $startSummaryTime');
+        } else {
+          startSummaryTime = 0;
+          print('[DialogueSummary] summaryBox为空，startSummaryTime设为0');
         }
       }
-
-      // Embeddings embeddings = await Embeddings.create();
-
+      print('[DialogueSummary] 调用_summarize, startSummaryTime=$startSummaryTime');
       // Generate summary
-      var summary = await _summarize(startSummaryTime!, isMeeting: isMeeting);
+      var summary = await _summarize(startSummaryTime!);
+      print('[DialogueSummary] _summarize返回: ${summary != null ? '有内容' : 'null'}');
       if (summary != null) {
-        // 获取对话历史用于知识图谱处理
-        List<RecordEntity>? listRecords = isMeeting
-            ? ObjectBoxService().getMeetingRecordsByTimeRange(startSummaryTime!, DateTime.now().millisecondsSinceEpoch)
-            : ObjectBoxService().getRecordsByTimeRange(startSummaryTime!, DateTime.now().millisecondsSinceEpoch);
-
-        String chatHistory = '';
-        if (listRecords != null) {
-          StringBuffer chatHistoryBuffer = StringBuffer();
-          for (RecordEntity record in listRecords) {
-            String formattedTime = DateFormat("yyyy-MM-dd HH:mm")
-                .format(DateTime.fromMillisecondsSinceEpoch(record.createdAt!));
-            chatHistoryBuffer
-                .write("($formattedTime) ${record.role}: ${record.content}\n");
-          }
-          chatHistory = chatHistoryBuffer.toString();
-        }
-
+        print('[DialogueSummary] 进入summary!=null分支');
+        print('[DialogueSummary] 开始解析summary json');
         List<dynamic> summaryArray = jsonDecode(summary)["output"];
+        print('[DialogueSummary] summaryArray 解析完成，长度: ${summaryArray.length}');
+        print("[DialogueSummary] summaryArray 内容为: $summaryArray");
         List<SummaryEntity> summaryEntities = [];
-
         // Process each item in the summary array
         for (var item in summaryArray) {
+          print('[DialogueSummary] 处理summary item: $item');
           String subject = item['subject'];
           String abstract = item['abstract'].toString();
-          int startTime = DateFormat("yyyy-MM-dd HH:mm:ss")
-              .parse(item['start_time'])
-              .millisecondsSinceEpoch;
-          int endTime = DateFormat("yyyy-MM-dd HH:mm:ss")
-              .parse(item['end_time'])
-              .millisecondsSinceEpoch;
-          // List<double>? vector = await embeddings.getEmbeddings(subject);
-
+          int startTime;
+          int endTime;
+          try {
+            startTime = DateFormat("yyyy-MM-dd HH:mm:ss").parse(item['start_time']).millisecondsSinceEpoch;
+            endTime = DateFormat("yyyy-MM-dd HH:mm:ss").parse(item['end_time']).millisecondsSinceEpoch;
+          } catch (e) {
+            // 如果没有秒，尝试用不带秒的格式解析
+            startTime = DateFormat("yyyy-MM-dd HH:mm").parse(item['start_time']).millisecondsSinceEpoch;
+            endTime = DateFormat("yyyy-MM-dd HH:mm").parse(item['end_time']).millisecondsSinceEpoch;
+          }
           SummaryEntity summaryEntity = SummaryEntity(
             subject: subject,
             content: abstract,
-            // vector: vector,
             startTime: startTime,
             endTime: endTime,
             createdAt: DateTime.now().millisecondsSinceEpoch,
-            isMeeting: isMeeting,
-            audioPath: audioPath,
+            isMeeting: false,
+            audioPath: null,
           );
           summaryEntities.add(summaryEntity);
         }
-
+        print('[DialogueSummary] summaryEntities 构建完成，数量: ${summaryEntities.length}');
         // Insert the summary entities into the ObjectBox database
         await ObjectBoxService().insertSummaries(summaryEntities);
-
-        // ========== 知识图谱处理 ==========
-        // 在生成摘���后，从对话中提取事件并存储到知识图谱
-        print("[DialogueSummary] 🔗 开始处理知识图谱事件提取...");
-        try {
-          // 以当前时间戳字符串作为 contextId，实际可根据业务自定义
-          await KnowledgeGraphService.processEventsFromConversation(chatHistory, contextId: DateTime.now().millisecondsSinceEpoch.toString());
-          print("[DialogueSummary] ✅ 知识图谱事件提取完成");
-        } catch (e) {
-          print("[DialogueSummary] ❌ 知识图谱处理失败: $e");
-          // 知识图谱处理失败不影响摘要生成的主流程
-        }
-
-        if (isMeeting) {
-          showNotificationOfSummaryFinished();
-        }
+        print('[DialogueSummary] 摘要已写入数据库，数量: ${summaryEntities.length}');
+      } else {
+        print('[DialogueSummary] summary为null，未生成摘要');
       }
     } catch (e) {
       print("An error occurred while processing the summary: $e");
-      if (isMeeting) {
-        showNotificationOfSummaryFailed();
-      }
       throw Exception("An error occurred while processing the summary");
     }
   }
 
   // Method to generate a summary using the LLM
-  static Future<String?> _summarize(int startTime,
-      {bool isMeeting = false}) async {
-    List<RecordEntity>? listRecords = isMeeting
-        ? ObjectBoxService().getMeetingRecordsByTimeRange(startTime, DateTime.now().millisecondsSinceEpoch)
-        : ObjectBoxService().getRecordsByTimeRange(startTime, DateTime.now().millisecondsSinceEpoch);
+  static Future<String?> _summarize(int startTime) async {
+    List<RecordEntity>? listRecords = ObjectBoxService().getRecordsByTimeRange(startTime, DateTime.now().millisecondsSinceEpoch);
 
     if (listRecords == null) {
       return null;
@@ -135,66 +96,43 @@ class DialogueSummary {
       contentLength += record.content!.length;
       String formattedTime = DateFormat("yyyy-MM-dd HH:mm")
           .format(DateTime.fromMillisecondsSinceEpoch(record.createdAt!));
-      chatHistoryBuffer
-          .write("($formattedTime) ${record.role}: ${record.content}\n");
+      chatHistoryBuffer.write("($formattedTime) ${record.role}: ${record.content}\n");
     }
 
-    if (contentLength < 1000 && (!isMeeting || contentLength < 10)) {
+    if (contentLength < 20) {
       return null;
     }
 
     final chatHistory = chatHistoryBuffer.toString();
 
-    if (!isMeeting) {
+    try {
+      LLM summaryLlm = await LLM.create('gpt-4o-mini', systemPrompt: systemPromptOfSummary);
+      String summary = await summaryLlm.createRequest(content: getUserPromptOfSummaryGeneration(chatHistory));
+      print("Initial summary: $summary");
+
+      summaryLlm.setSystemPrompt(systemPrompt: systemPromptOfSummaryReflection);
+      String comments = await summaryLlm.createRequest(content: getUserPromptOfSummaryReflectionGeneration(chatHistory, summary));
+      print("Feedback: $comments");
+
+      summaryLlm.setSystemPrompt(systemPrompt: systemPromptOfNewSummary);
+      summary = await summaryLlm.createRequest(content: getUserPromptOfNewSummaryGeneration(chatHistory, summary, comments));
+      print("Revised summary: $summary");
+
+      // ========== 知识图谱处理 ==========
+      // 在生成摘要后，利用已有的对话历史数据进行知识图谱事件提取
+      print("[DialogueSummary] 🔗 开始执行自动知识图谱事件提取...");
       try {
-        LLM summaryLlm = await LLM.create('gpt-4o-mini', systemPrompt: systemPromptOfSummary);
-        String summary = await summaryLlm.createRequest(content: getUserPromptOfSummaryGeneration(chatHistory));
-        print("Initial summary: $summary");
-
-        summaryLlm.setSystemPrompt(systemPrompt: systemPromptOfSummaryReflection);
-        String comments =
-        await summaryLlm.createRequest(content: getUserPromptOfSummaryReflectionGeneration(chatHistory, summary));
-        print("Feedback: $comments");
-
-        summaryLlm.setSystemPrompt(systemPrompt: systemPromptOfNewSummary);
-        summary = await summaryLlm.createRequest(
-            content: getUserPromptOfNewSummaryGeneration(chatHistory, summary, comments));
-        print("Revised summary: $summary");
-
-        return summary;
+        print('[DialogueSummary] 调用 KnowledgeGraphService.processEventsFromConversation, chatHistory 长度: ${chatHistory.length}, contextId: ${DateTime.now().millisecondsSinceEpoch.toString()}');
+        await KnowledgeGraphService.processEventsFromConversation(chatHistory, contextId: DateTime.now().millisecondsSinceEpoch.toString());
+        print("[DialogueSummary] ✅ 知识图谱事件提取完成");
       } catch (e) {
-        print("An error occurred while generating the summary: $e");
-        throw Exception("An error occurred while generating the summary");
+        print("[DialogueSummary] ❌ 知识图谱处理失败: $e");
       }
-    } else {
-      try {
-        List<String> chunks = [];
-        await _splitChatHistory(chatHistory, 5000, 1000).forEach((chunk) {
-          chunks.add(chunk);
-        });
 
-        LLM summaryLlm = await LLM.create('gpt-4o', systemPrompt: systemPromptOfMeetingSummary);
-
-        List<String> summaries = await _getSummariesForChunks(summaryLlm, chunks);
-        summaryLlm.setSystemPrompt(systemPrompt: systemPromptOfMeetingMerge);
-        String summary = await _mergeSummaries(summaryLlm, summaries);
-        summary = """{
-  "output": [
-    {
-      "subject": "Meeting",
-      "start_time": "${DateFormat("yyyy-MM-dd HH:mm:ss").format(DateTime.fromMillisecondsSinceEpoch(startTime))}",
-      "end_time": "${DateFormat("yyyy-MM-dd HH:mm:ss").format(DateTime.fromMillisecondsSinceEpoch(listRecords.last.createdAt!))}",
-      "abstract": ${jsonEncode(_extractJsonContent(summary))}
-    }
-  ]
-}""";
-
-        return summary;
-      } catch (e) {
-        print("An error occurred while generating the meeting summary: $e");
-        showNotificationOfSummaryFailed();
-        throw Exception("An error occurred while generating the meeting summary");
-      }
+      return summary;
+    } catch (e) {
+      print("An error occurred while generating the summary: $e");
+      throw Exception("An error occurred while generating the summary");
     }
   }
 

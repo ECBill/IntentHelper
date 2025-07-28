@@ -432,50 +432,106 @@ class ObjectBoxService {
   // ========== 知识图谱相关操作 ==========
 
   // Node
+  Node? findNodeById(String id) {
+    try {
+      return nodeBox.query(Node_.id.equals(id)).build().findFirst();
+    } catch (e) {
+      print('Error finding node by id: $e');
+      return null;
+    }
+  }
+
   Node? findNodeByNameType(String name, String type) {
-    final query = nodeBox.query(Node_.name.equals(name).and(Node_.type.equals(type))).build();
-    return query.findFirst();
+    try {
+      return nodeBox.query(Node_.name.equals(name).and(Node_.type.equals(type))).build().findFirst();
+    } catch (e) {
+      print('Error finding node by name and type: $e');
+      return null;
+    }
   }
-  void insertNode(Node node) {
-    nodeBox.put(node);
-  }
+
   List<Node> queryNodes() {
-    return nodeBox.getAll();
+    try {
+      return nodeBox.getAll();
+    } catch (e) {
+      print('Error querying all nodes: $e');
+      return [];
+    }
   }
 
-  // Edge
-  void insertEdge(Edge edge) {
-    edgeBox.put(edge);
-  }
   List<Edge> queryEdges({String? source, String? target}) {
-    var qb = edgeBox.query();
-    if (source != null) {
-      qb = edgeBox.query(Edge_.source.equals(source));
+    try {
+      if (source != null && target != null) {
+        return edgeBox.query(Edge_.source.equals(source).and(Edge_.target.equals(target))).build().find();
+      } else if (source != null) {
+        return edgeBox.query(Edge_.source.equals(source)).build().find();
+      } else if (target != null) {
+        return edgeBox.query(Edge_.target.equals(target)).build().find();
+      } else {
+        return edgeBox.getAll();
+      }
+    } catch (e) {
+      print('Error querying edges: $e');
+      return [];
     }
-    if (target != null) {
-      qb = edgeBox.query(Edge_.target.equals(target));
-    }
-    return qb.build().find();
   }
 
-  // Attribute
-  void insertAttribute(Attribute attr) {
-    attributeBox.put(attr);
-  }
-  List<Attribute> queryAttributes({String? nodeId}) {
-    var qb = attributeBox.query();
-    if (nodeId != null) {
-      qb = attributeBox.query(Attribute_.nodeId.equals(nodeId));
+  void insertNode(Node node) {
+    try {
+      nodeBox.put(node);
+    } catch (e) {
+      print('Error inserting node: $e');
     }
-    return qb.build().find();
   }
 
-  // 清空所有节点
+  void insertEdge(Edge edge) {
+    try {
+      edgeBox.put(edge);
+    } catch (e) {
+      print('Error inserting edge: $e');
+    }
+  }
+
+  void insertAttribute(Attribute attribute) {
+    try {
+      attributeBox.put(attribute);
+    } catch (e) {
+      print('Error inserting attribute: $e');
+    }
+  }
+
+  List<Node> queryNodesByType(String type) {
+    try {
+      return nodeBox.query(Node_.type.equals(type)).build().find();
+    } catch (e) {
+      print('Error querying nodes by type: $e');
+      return [];
+    }
+  }
+
+  List<Node> searchNodesByName(String namePattern) {
+    try {
+      return nodeBox.query(Node_.name.contains(namePattern, caseSensitive: false)).build().find();
+    } catch (e) {
+      print('Error searching nodes by name: $e');
+      return [];
+    }
+  }
+
+  // 清空事件相关数据的方法
   Future<void> clearEvents() async {
-    nodeBox.removeAll();
+    try {
+      eventBox.removeAll();
+    } catch (e) {
+      print('Error clearing events: $e');
+    }
   }
-  // 清空所有边
+
   Future<void> clearEventRelations() async {
-    edgeBox.removeAll();
+    try {
+      eventRelationBox.removeAll();
+    } catch (e) {
+      print('Error clearing event relations: $e');
+    }
   }
 }

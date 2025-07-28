@@ -29,6 +29,7 @@ import '../utils/text_utils.dart';
 import 'streaming_asr_service.dart'; // 新的流式ASR服务
 import '../utils/wav/audio_save_util.dart';
 import 'dart:math' as math;
+import 'package:app/services/summary.dart';
 
 const int nDct = 257; // DCT矩阵维度
 const int nPca = 47;  // PCA矩阵维度
@@ -65,10 +66,10 @@ class RecordServiceHandler extends TaskHandler {
   RecordState _recordState = RecordState.stop; // 当前录音状态
   int _lastDataReceivedTimestamp = 0; // 上次BLE数据接收时间
   int _boneDataReceivedTimestamp = 0; // 骨传导数据接收时间
-  bool _isMeeting = false; // 是否处于会议模式
+  bool _isMeeting = false; // 是否处于会议模式（已废弃）
   bool _isBoneConductionActive = true; // 骨传导是否激活
   bool _onRecording = true; // 是否正在录音
-  int? _startMeetingTime; // 会议开始时间
+  int? _startMeetingTime; // 会议开始时间（已废弃）
 
   late FlutterTts _flutterTts; // 本地TTS实例
   final CloudTts _cloudTts = CloudTts(); // 云TTS实例
@@ -111,6 +112,15 @@ class RecordServiceHandler extends TaskHandler {
 
   // 跟踪VAD上一次状态，避免重复日志
   bool _lastVadState = false;
+
+  Timer? _summaryTimer;
+  int _lastSpeechTimestamp = 0;
+  int _currentDialogueCharCount = 0;
+  int? _currentDialogueStartTime;
+  int? _currentDialogueStartTimeForSummary; // 新增：记录对话段开始时间
+
+  static const int minCharLimit = 20; // 最小触发总结字数
+  static const int maxCharLimit = 2000; // 最大分段字数，超过则强制分段
 
   @override
   Future<void> onStart(DateTime timestamp, TaskStarter starter) async {
@@ -157,6 +167,8 @@ class RecordServiceHandler extends TaskHandler {
       _isUsingCloudServices = _cloudAsr.isAvailable && _cloudTts.isAvailable;
       print('[onStart] 🌐 Using cloud services: $_isUsingCloudServices');
 
+      _summaryTimer = Timer.periodic(Duration(seconds: 30), (_) => _checkAndSummarizeDialogue());
+
       print('[onStart] 🎉 === FOREGROUND SERVICE STARTED SUCCESSFULLY ===');
     } catch (e) {
       print('[onStart] ❌ Error during startup: $e');
@@ -181,7 +193,7 @@ class RecordServiceHandler extends TaskHandler {
       print('[onReceiveData] 🏁 Voiceprint done signal received');
       _isNeedVoiceprintInit = false;
     } else if (data == voice_constants.voiceprintStart) {
-      print('[onReceiveData] 🗣�� Voiceprint start signal received!');
+      print('[onReceiveData] 🗣️ Voiceprint start signal received!');
       _startVoiceprint();
     } else if (data == 'startRecording') {
       print('[onReceiveData] 🎤 Start recording signal received');
@@ -198,9 +210,8 @@ class RecordServiceHandler extends TaskHandler {
       }
     } else if (data == Constants.actionStartMicrophone) {
       print('[onReceiveData] 🎙️ Start microphone signal received');
-      _isMeeting = false;
       FlutterForegroundTask.sendDataToMain({
-        'isMeeting': false,
+        // 'isMeeting': false, // 移除会议模式
       });
       await _startMicrophone();
     } else if (data == Constants.actionStopMicrophone) {
@@ -217,6 +228,7 @@ class RecordServiceHandler extends TaskHandler {
     _bleDataSubscription?.cancel();
     _bleAudioStreamSubscription?.cancel();
     _bleTimer?.cancel();
+    _summaryTimer?.cancel();
     BleService().dispose();
   }
 
@@ -240,6 +252,7 @@ class RecordServiceHandler extends TaskHandler {
 
       if (value.length == nPackageByte) {
         if (value[0] == 0xff || value[0] == 0xfe) {
+          // 会议模式相关逻辑移除
           _decodeAndProcessBlePackage(value, currentTime);
         } else if (value[0] == 0x01) {
           if (!_isBoneConductionActive) {
@@ -255,7 +268,7 @@ class RecordServiceHandler extends TaskHandler {
         }
       } else {
         if (kDebugMode) {
-          print("Unexpected BLE data length: ${value.length}");
+          print("Unexpected BLE data length: {value.length}");
         }
       }
     });
@@ -268,20 +281,7 @@ class RecordServiceHandler extends TaskHandler {
 
   // 解码并处理BLE音频包
   void _decodeAndProcessBlePackage(Uint8List value, int currentTime) async {
-    if (!_isMeeting && value[0] == 0xFE) {
-      _isMeeting = true;
-      _startMeetingTime = DateTime.now().millisecondsSinceEpoch;
-      _inDialogMode = false;
-      FlutterForegroundTask.sendDataToMain({
-        'isMeeting': true,
-      });
-    } else if (_isMeeting && value[0] == 0xFF) {
-      _isMeeting = false;
-      FlutterForegroundTask.sendDataToMain({
-        'isMeeting': false,
-      });
-    }
-
+    // 会议模式相关逻辑移除
     _lastDataReceivedTimestamp = currentTime;
     for (var i = 0; i < 3; i++) {
       var audioSlice = AudioProcessingUtil.processSinglePackage(
@@ -493,8 +493,8 @@ class RecordServiceHandler extends TaskHandler {
     }
 
     FileService.highSaveWav(
-      startMeetingTime: _startMeetingTime,
-      onRecording: _isMeeting,
+      startMeetingTime: null, // 会议相关参数移除
+      onRecording: false, // 会议相关参数移除
       data: data,
       numChannels: 1,
       sampleRate: 16000,
@@ -560,7 +560,7 @@ class RecordServiceHandler extends TaskHandler {
       // print('[_processAudioData] ✅ Padded samples: ${paddedSamples.length}');
 
       var segment = '';
-      if ((_inDialogMode || _isMeeting) && _isUsingCloudServices) {
+      if (_inDialogMode && _isUsingCloudServices) {
         print('[_processAudioData] ☁️ Using cloud ASR for recognition...');
         segment = await _cloudAsr.recognize(paddedSamples);
       } else {
@@ -594,7 +594,6 @@ class RecordServiceHandler extends TaskHandler {
         }
       } else {
         print('[_processAudioData] 👤 Normal mode: identifying speaker...');
-
         // 检查声纹质量
         if (!_isEmbeddingQualityGood(embedding)) {
           print('[_processAudioData] ⚠️ 声纹质量不佳，跳过识别');
@@ -624,11 +623,13 @@ class RecordServiceHandler extends TaskHandler {
   // 处理ASR中间结果，实时返回文本
   void _processIntermediateResult(String text) {
     if (text.isEmpty) return;
-    FlutterForegroundTask.sendDataToMain({
-      'text': text,
-      'isEndpoint': false,
-      'inDialogMode': _inDialogMode,
-    });
+    if (text.trim().isNotEmpty) {
+      FlutterForegroundTask.sendDataToMain({
+        'text': text,
+        'isEndpoint': false,
+        'inDialogMode': _inDialogMode,
+      });
+    }
   }
 
   // 处理ASR最终结果，存储文本、管理对话状态
@@ -636,9 +637,7 @@ class RecordServiceHandler extends TaskHandler {
     if (text.isEmpty) return;
 
     if (!_inDialogMode && speaker == 'user' && wakeword_constants.wakeWordStartDialog.any((keyword) => text.toLowerCase().contains(keyword))) {
-      if (!_isMeeting) {
-        _inDialogMode = true;
-      }
+      _inDialogMode = true;
     }
 
     text = text.trim();
@@ -650,39 +649,54 @@ class RecordServiceHandler extends TaskHandler {
       return;
     }
 
-    FlutterForegroundTask.sendDataToMain({
-      'text': text,
-      'isEndpoint': true,
-      'inDialogMode': _inDialogMode,
-      'isMeeting': _isMeeting,
-      'speaker': speaker,
-    });
+    // === 新增：对话统计逻辑 ===
+    final now = DateTime.now().millisecondsSinceEpoch;
+    _lastSpeechTimestamp = now;
+    _currentDialogueCharCount += text.length;
+    // 只有在分段后才重置_startTime，正常语音进来时才赋值
+    if (_currentDialogueStartTime == null) {
+      _currentDialogueStartTime = now;
+    }
+    // ======================
 
-    if (_isMeeting) {
-      _objectBoxService.insertMeetingRecord(RecordEntity(role: 'user', content: text));
-      _chatManager.addChatSession('user', text);
+    if (text.trim().isNotEmpty) {
+      FlutterForegroundTask.sendDataToMain({
+        'text': text,
+        'isEndpoint': true,
+        'inDialogMode': _inDialogMode,
+        'speaker': speaker,
+      });
+    }
+
+    // 会议相关插入逻辑移除，统一插入默认/对话记录
+    if (speaker != 'user') {
+      _objectBoxService.insertDefaultRecord(RecordEntity(role: 'others', content: text));
+      _chatManager.addChatSession('others', text);
+      // if (text.trim().isNotEmpty) {
+      //   FlutterForegroundTask.sendDataToMain({
+      //     'text': text,
+      //     'isEndpoint': true,
+      //     'inDialogMode': _inDialogMode,
+      //     'speaker': speaker,
+      //   });
+      // }
     } else {
-      if (speaker != 'user') {
-        _objectBoxService.insertDefaultRecord(RecordEntity(role: 'others', content: text));
-        _chatManager.addChatSession('others', text);
-      } else {
-        if (_inDialogMode) {
-          _objectBoxService.insertDialogueRecord(RecordEntity(role: 'user', content: text));
-          _chatManager.addChatSession('user', text);
-          if (wakeword_constants.wakeWordEndDialog.any((keyword) => text.toLowerCase().contains(keyword))) {
-            _inDialogMode = false;
-            _vad!.clear();
-            if (_isUsingCloudServices) {
-              _cloudTts.stop();
-            } else {
-              _flutterTts.stop();
-            }
-            AudioPlayer().play(AssetSource('audios/beep.wav'));
+      if (_inDialogMode) {
+        _objectBoxService.insertDialogueRecord(RecordEntity(role: 'user', content: text));
+        _chatManager.addChatSession('user', text);
+        if (wakeword_constants.wakeWordEndDialog.any((keyword) => text.toLowerCase().contains(keyword))) {
+          _inDialogMode = false;
+          _vad!.clear();
+          if (_isUsingCloudServices) {
+            _cloudTts.stop();
+          } else {
+            _flutterTts.stop();
           }
-        } else {
-          _objectBoxService.insertDefaultRecord(RecordEntity(role: 'user', content: text));
-          _chatManager.addChatSession('user', text);
+          AudioPlayer().play(AssetSource('audios/beep.wav'));
         }
+      } else {
+        _objectBoxService.insertDefaultRecord(RecordEntity(role: 'user', content: text));
+        _chatManager.addChatSession('user', text);
       }
     }
 
@@ -697,11 +711,13 @@ class RecordServiceHandler extends TaskHandler {
           LatencyLogger.recordEnd(operationId, phase: 'llm');
         }
 
-        FlutterForegroundTask.sendDataToMain({
-          'currentText': text,
-          'isFinished': false,
-          'content': res['delta'],
-        });
+        if (text.trim().isNotEmpty) {
+          FlutterForegroundTask.sendDataToMain({
+            'currentText': text,
+            'isFinished': false,
+            'content': res['delta'],
+          });
+        }
         if (!_isUsingCloudServices) {
           _flutterTts.speak(res['delta']);
         }
@@ -973,6 +989,36 @@ class RecordServiceHandler extends TaskHandler {
     }
 
     return true;
+  }
+
+  void _checkAndSummarizeDialogue() {
+    final now = DateTime.now().millisecondsSinceEpoch;
+    print('[自动总结] 检查条件：当前累计字数=$_currentDialogueCharCount，最后说话时间=$_lastSpeechTimestamp，当前时间=$now');
+    // 1. 超过最大字数强制分段
+    if (_currentDialogueCharCount >= maxCharLimit) {
+      print('[自动总结] 超过最大字数，强制分段总结...');
+      DialogueSummary.start(
+        startTime: _currentDialogueStartTime,
+      );
+      _currentDialogueCharCount = 0;
+      _lastSpeechTimestamp = 0;
+      _currentDialogueStartTime = null;
+      return;
+    }
+    // 2. 正常对话分段逻辑
+    if (_currentDialogueCharCount >= minCharLimit &&
+        _lastSpeechTimestamp > 0 &&
+        now - _lastSpeechTimestamp > 1 * 60 * 1000) {
+      print('[自动总结] 满足条件，开始自动整理对话内容...');
+      DialogueSummary.start(
+        startTime: _currentDialogueStartTime,
+      );
+      _currentDialogueCharCount = 0;
+      _lastSpeechTimestamp = 0;
+      _currentDialogueStartTime = null;
+    } else {
+      print('[自动总结] 未满足自动总结条件');
+    }
   }
 }
 

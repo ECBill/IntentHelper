@@ -17,13 +17,13 @@ class KnowledgeGraphService {
     final now = conversationTime ?? DateTime.now();
     final timeContext = "${now.year}年${now.month.toString().padLeft(2, '0')}月${now.day.toString().padLeft(2, '0')}日";
     final eventExtractionPrompt = """
-你是一个知识图谱构建助手。请从我提供的对话中提取出结构化的知识图谱信息，输出格式为 JSON，包含以下部分：
+你是一个知识图谱构建助手。请从我提供的对话中提取出结构化的知识图谱信息，由于我给你的对话内容是由语音转文字生成的，所以可能会不太准确或者有些发音的转换错误，请你试着先猜测还原一下。输出格式为 JSON，包含以下部分：
 
 1. nodes：实体节点数组，每个节点结构如下：
 {
   "id": "唯一标识（可用name type组合）",
   "name": "实体名称",
-  "type": "实体类型（如 手机、人、事件、政策）",
+  "type": "实体类型（如 手机、人、事件、政策、地点）",
   "attributes": {
     "属性名1": "属性值1",
     "属性名2": "属性值2"
@@ -187,6 +187,10 @@ class KnowledgeGraphService {
           ));
         }
       }
+      print('[KnowledgeGraphService] 成功写入节点数据: $nodes');
+      print('[DialogueSummary] 成功写入节点数据: $nodes');
+      print('[KnowledgeGraphService] 成功写入边数据: $edges');
+      print('[DialogueSummary] 成功写入边数据: $edges');
     } catch (e) {
       print('[KnowledgeGraphService] Error processing conversation: $e');
     }
@@ -250,5 +254,33 @@ class KnowledgeGraphService {
     }
   }
 
+  // 根据关键词查找相关节点
+  static Future<List<Node>> getRelatedNodesByKeywords(List<String> keywords) async {
+    try {
+      final objectBox = ObjectBoxService();
+      final allNodes = objectBox.queryNodes();
+      final Set<Node> result = {};
+      for (final keyword in keywords) {
+        for (final node in allNodes) {
+          if (node.name.contains(keyword)) {
+            result.add(node);
+            // 也可以查找与该节点直接关联的节点
+            final edges = objectBox.queryEdges(source: node.id);
+            for (final edge in edges) {
+              final related = allNodes.firstWhere(
+                (n) => n.id == edge.target,
+                orElse: () => Node(id: '', name: '', type: ''),
+              );
+              if (related.id.isNotEmpty) result.add(related);
+            }
+          }
+        }
+      }
+      return result.toList();
+    } catch (e) {
+      print('[KnowledgeGraphService] Error in getRelatedNodesByKeywords: $e');
+      return [];
+    }
+  }
 
 }

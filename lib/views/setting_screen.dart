@@ -150,6 +150,14 @@ class _SettingScreenState extends State<SettingScreen> {
     context.pushNamed(RouteName.knowledge_graph);
   }
 
+  void _onClickKGTest() {
+    context.pushNamed(RouteName.kg_test);
+  }
+
+  void _onClickCacheDebug() {
+    context.pushNamed(RouteName.cache_debug);
+  }
+
   @override
   Widget build(BuildContext context) {
     final themeNotifier = Provider.of<ThemeNotifier>(context);
@@ -210,6 +218,12 @@ class _SettingScreenState extends State<SettingScreen> {
                 onTap: _onClickKnowledgeGraph,
               ),
               SettingListTile(
+                leading: AssetsUtil.icon_feedback, // 临时使用现有图标
+                title: 'KG Test',
+                subtitle: 'Test buildInputWithKG function',
+                onTap: _onClickKGTest,
+              ),
+              SettingListTile(
                 leading: AssetsUtil.icon_connection,
                 title: 'Connect',
                 subtitle: 'Scan and connect to Buddie',
@@ -220,6 +234,12 @@ class _SettingScreenState extends State<SettingScreen> {
                 title: 'Headphone upgrade',
                 subtitle: 'Update your headphone version',
                 onTap: _onClickHeadphoneUpgrade,
+              ),
+              SettingListTile(
+                leading: AssetsUtil.icon_feedback, // 临时使用现有图标
+                title: 'Cache Debug',
+                subtitle: 'Debugging tools for cache',
+                onTap: _onClickCacheDebug,
               ),
             ],
           ),
