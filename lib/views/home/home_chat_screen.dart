@@ -135,9 +135,49 @@ class _HomeChatScreenState extends State<HomeChatScreen> {
   }
 
   Widget _buildMsg(Map<String, dynamic> message) {
-    final role = message['isUser'];
-    final text = message['text'];
-    final id = message['id'];
+    final dynamic rawText = message['text'];
+
+    // ✅ 确保 text 是 String 类型且不为空
+    if (rawText == null || rawText is! String || rawText.trim().isEmpty) {
+      return const SizedBox.shrink();
+    }
+
+    final String text = rawText;
+    final dynamic rawRole = message['isUser'];
+    final dynamic rawId = message['id'];
+
+    // ✅ 修复角色处理逻辑 - 正确处理 null 值
+    String role;
+    if (rawRole is String) {
+      // 如果是字符串，直接使用
+      role = rawRole;
+    } else if (rawRole is bool) {
+      // 如果是布尔值（向后兼容），转换为字符串
+      role = rawRole ? 'user' : 'assistant';
+    } else {
+      // ✅ 当 rawRole 为 null 时，默认设为 'others' 而不是 'assistant'
+      role = 'others';
+    }
+
+    final String id = rawId?.toString() ?? '';
+
+    // 添加调试信息来查看重复显示问题
+    print('DEBUG: _buildMsg called with id: $id, text: ${text.substring(0, text.length > 20 ? 20 : text.length)}..., role: $role');
+
+    // ✅ 如果 id 为空，直接返回基本的消息组件，不使用 VisibilityDetector
+    if (id.isEmpty) {
+      return Padding(
+        padding: EdgeInsets.only(bottom: lineSpace),
+        child: ChatListTile(
+          onLongPress: () => _chatController.copyToClipboard(context, text),
+          role: role,
+          text: text,
+          style: textTextStyle,
+          padding: chatPadding,
+        ),
+      );
+    }
+
     Widget body = Padding(
       padding: EdgeInsets.only(bottom: lineSpace),
       child: ChatListTile(
@@ -164,6 +204,7 @@ class _HomeChatScreenState extends State<HomeChatScreen> {
 
     return body;
   }
+
 
   void _onClickKeyboard() {
     if (_focusNode.hasFocus) {
@@ -204,35 +245,53 @@ class _HomeChatScreenState extends State<HomeChatScreen> {
   @override
   Widget build(BuildContext context) {
     final slivers = <Widget>[];
-    final history = _chatController.historyMessages.reversed.toList();
-    slivers.add(SliverList(
-      delegate: SliverChildBuilderDelegate(
-            (BuildContext context, int i) {
-          if (i > history.length) {
-            return SizedBox();
-          }
-          return _buildMsg(history[i]);
-        },
-        childCount: history.length,
-      ),
-    ));
 
+    // 显示历史消息
+    final history = _chatController.historyMessages.reversed.toList();
+    print('DEBUG: history messages count: ${history.length}');
+    if (history.isNotEmpty) {
+      slivers.add(SliverList(
+        delegate: SliverChildBuilderDelegate(
+              (BuildContext context, int i) {
+            if (i >= history.length) {
+              return const SizedBox();
+            }
+            return _buildMsg(history[i]);
+          },
+          childCount: history.length,
+        ),
+      ));
+    }
+
+    // 添加中心分隔符
     slivers.add(SliverPadding(
       padding: EdgeInsets.zero,
       key: centerKey,
     ));
+
+    // 显示新消息
     final newMessage = _chatController.newMessages.reversed.toList();
-    slivers.add(SliverList(
-      delegate: SliverChildBuilderDelegate(
-            (BuildContext context, int i) {
-          if (i > newMessage.length) {
-            return SizedBox();
-          }
-          return _buildMsg(newMessage[i]);
-        },
-        childCount: newMessage.length,
-      ),
-    ));
+    print('DEBUG: newMessages count: ${newMessage.length}');
+    print('DEBUG: newMessages content: ${newMessage.map((msg) {
+      final text = msg['text']?.toString() ?? '';
+      final shortText = text.length > 20 ? text.substring(0, 20) : text;
+      return '${msg['id']}: $shortText...';
+    }).toList()}');
+
+    if (newMessage.isNotEmpty) {
+      slivers.add(SliverList(
+        delegate: SliverChildBuilderDelegate(
+              (BuildContext context, int i) {
+            if (i >= newMessage.length) {
+              return const SizedBox();
+            }
+            return _buildMsg(newMessage[i]);
+          },
+          childCount: newMessage.length,
+        ),
+      ));
+    }
+
     return KeyboardDismisser(
       child: Scaffold(
         resizeToAvoidBottomInset: true,
