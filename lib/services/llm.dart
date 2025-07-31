@@ -1,12 +1,7 @@
 import 'dart:async';
 import 'dart:convert';
-import 'dart:developer';
-import 'package:flutter_foreground_task/flutter_foreground_task.dart';
 import 'package:http/http.dart' as http;
 import '../constants/prompt_constants.dart';
-import '../models/llm_config.dart';
-import 'objectbox_service.dart';
-
 
 class LLM {
   String modelName;
@@ -15,12 +10,12 @@ class LLM {
   late String systemPrompt;
 
   static final String defaultBaseUrl = 'https://one-api.bud.inc/v1/chat/completions';
-  static const String localApiKey = 'ZVgp7BFIA3FlNs6jF97e933289B440979945DdE4938e492e'; // TODO: 替换为你的真实key
+  static const String localApiKey = 'ZVgp7BFIA3FlNs6jF97e933289B440979945DdE4938e492e';
+
   LLM._(this.modelName, this.apiKey, this.baseUrl, this.systemPrompt);
 
   static Future<LLM> create(String modelName, {String? systemPrompt}) async {
     final prompt = systemPrompt ?? systemPromptOfChat;
-    // 直接使用本地写死的apikey
     return LLM._(modelName, localApiKey, defaultBaseUrl, prompt);
   }
 
@@ -32,7 +27,6 @@ class LLM {
       'Authorization': 'Bearer $apiKey',
     };
 
-    // Prepare the request body
     final body = jsonEncode({
       'model': modelName,
       'messages': [{"role": "system", "content": systemPrompt}, {"role": "user", "content": content}],
@@ -42,7 +36,6 @@ class LLM {
     return _handleResponse(response);
   }
 
-  // Handles non-streamed responses
   String _handleResponse(http.Response response) {
     if (response.statusCode == 200) {
       final data = jsonDecode(utf8.decode(response.bodyBytes))['choices'][0]['message'];
@@ -76,7 +69,6 @@ class LLM {
       responseFormat['json_schema'] = jsonSchema;
     }
 
-    // Prepare the request body
     final body = jsonEncode({
       'model': modelName,
       'messages': messages,
@@ -87,7 +79,6 @@ class LLM {
     return _handleStreamingResponse(url, headers, body);
   }
 
-  // Handles streamed responses
   Stream<String> _handleStreamingResponse(Uri url, Map<String, String> headers, String body) async* {
     final request = http.Request('POST', url);
     request.headers.addAll(headers);
@@ -99,18 +90,15 @@ class LLM {
       throw Exception('Failed to fetch streaming response from LLM');
     }
 
-    // Logic for processing streamed response content
     final responseStream = response.stream.transform(utf8.decoder);
     StringBuffer buffer = StringBuffer();
 
-    // Process incoming chunks of data
     await for (var chunk in responseStream) {
       try {
         List<String> jsonParts = chunk.toString().split('\n');
 
         for (String part in jsonParts) {
           if (part.length > 6 && part != "data:[DONE]") {
-            // Attempt to parse each JSON string
             try {
               var content = jsonDecode(part.substring(5))["choices"][0]["delta"]["content"];
               if (content != null) {
@@ -118,7 +106,6 @@ class LLM {
                 yield buffer.toString();
               }
             } catch (e) {
-              // JSON string is incomplete, continue accumulating
               continue;
             }
           }
@@ -131,21 +118,5 @@ class LLM {
 
   void setSystemPrompt({required String systemPrompt}) {
     this.systemPrompt = systemPrompt;
-  }
-
-  /// 临时方法：从 one-api.bud.inc/v1/chat/completions 获取 apikey 并打印
-  static Future<void> fetchAndPrintApiKey() async {
-    final url = Uri.parse('https://one-api.bud.inc/v1/chat/completions');
-    try {
-      final response = await http.get(url);
-      if (response.statusCode == 200) {
-        print('API返回内容: ' + response.body);
-        // 你可以在这里解析 response.body 拿到 key
-      } else {
-        print('请求失败，状态码: \\${response.statusCode}');
-      }
-    } catch (e) {
-      print('请求异常: $e');
-    }
   }
 }

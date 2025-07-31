@@ -3,10 +3,10 @@ import 'dart:typed_data';
 import 'dart:math' as math;
 import 'package:sherpa_onnx/sherpa_onnx.dart' as sherpa_onnx;
 import '../utils/asr_utils.dart';
-import 'smart_text_correction_service.dart';
+import 'text_correction_service.dart';
 
 /// 流式ASR服务 - 使用Sherpa-ONNX paraformer-zh-online模型
-/// 支持低延迟的流式中文识别，优化版本 + 智能AI纠错
+/// 支持低延迟的流式中文识别，优化版本 + 智能纠错
 class StreamingAsrService {
   sherpa_onnx.OnlineRecognizer? _recognizer;
   sherpa_onnx.OnlineStream? _stream;
@@ -16,9 +16,9 @@ class StreamingAsrService {
   StreamController<String> _resultController = StreamController<String>.broadcast();
   Stream<String> get resultStream => _resultController.stream;
 
-  // 智能文本纠错服务
-  final SmartTextCorrectionService _smartCorrectionService = SmartTextCorrectionService();
-  bool _enableSmartCorrection = true; // 是否启用智能纠错
+  // 文本纠错服务
+  final TextCorrectionService _correctionService = TextCorrectionService();
+  bool _enableCorrection = true; // 是否启用纠错
 
   // 优化音频缓冲区管理
   List<double> _audioBuffer = [];
@@ -43,7 +43,7 @@ class StreamingAsrService {
 
   bool get isInitialized => _isInitialized;
   double get currentAudioLevel => _audioLevel;
-  bool get isCorrectionEnabled => _enableSmartCorrection;
+  bool get isCorrectionEnabled => _enableCorrection;
   double get correctionRate => _totalRecognitions > 0 ? _totalCorrections / _totalRecognitions : 0.0;
 
   /// 初始化流式ASR服务
@@ -160,60 +160,23 @@ class StreamingAsrService {
   }
 
   /// 对识别结果进行智能纠错
-  Future<String> _correctRecognitionResult(String originalText) async {
-    if (!_enableSmartCorrection || originalText.isEmpty) {
+  String _correctRecognitionResult(String originalText) {
+    if (!_enableCorrection || originalText.isEmpty) {
       return originalText;
     }
 
     _totalRecognitions++;
 
-    try {
-      // 应用智能文本纠错
-      String correctedText = await _smartCorrectionService.correctText(originalText);
+    // 应用文本纠错
+    String correctedText = _correctionService.correctText(originalText);
 
-      // 如果发生了纠错，记录统计信息
-      if (correctedText != originalText) {
-        _totalCorrections++;
-        print('[StreamingAsrService] 🔧 AI纠错: "$originalText" → "$correctedText"');
-      }
-
-      return correctedText;
-    } catch (e) {
-      print('[StreamingAsrService] ⚠️ 智能纠错失败，使用原文: $e');
-      return originalText;
+    // 如果发生了纠错，记录统计信息
+    if (correctedText != originalText) {
+      _totalCorrections++;
+      print('[StreamingAsrService] 🔧 纠错应用: "$originalText" → "$correctedText"');
     }
-  }
 
-  /// 配置智能纠错服务
-  void configureSmartCorrection({
-    String? apiKey,
-    String? apiEndpoint,
-    bool? useOnlineModel,
-    bool? useFallbackRules,
-  }) {
-    _smartCorrectionService.configure(
-      apiKey: apiKey,
-      apiEndpoint: apiEndpoint,
-      useOnlineModel: useOnlineModel,
-      useFallbackRules: useFallbackRules,
-    );
-    print('[StreamingAsrService] 🔧 智能纠错配置已更新');
-  }
-
-  /// 预热智能纠错缓存
-  void warmupCorrection() {
-    _smartCorrectionService.warmupCache();
-    print('[StreamingAsrService] 🔥 智能纠错缓存预热完成');
-  }
-
-  /// 获取智能纠错统计
-  Map<String, dynamic> getSmartCorrectionStats() {
-    return _smartCorrectionService.getStats();
-  }
-
-  /// 清空纠错缓存
-  void clearCorrectionCache() {
-    _smartCorrectionService.clearCache();
+    return correctedText;
   }
 
   /// 优化的音频处理方法（带纠错）
@@ -255,7 +218,7 @@ class StreamingAsrService {
         final currentResult = _recognizer!.getResult(_stream!);
         if (currentResult.text.isNotEmpty && currentResult.text != _lastPartialResult) {
           // 对部分结果应用轻量级纠错（只纠正明显错误）
-          String correctedResult = await _correctRecognitionResult(currentResult.text);
+          String correctedResult = _correctRecognitionResult(currentResult.text);
           result = correctedResult;
           _lastPartialResult = currentResult.text; // 记录原始结果
           _lastCorrectedResult = correctedResult;  // 记录纠错结果
@@ -269,7 +232,7 @@ class StreamingAsrService {
           final finalResult = _recognizer!.getResult(_stream!);
           if (finalResult.text.isNotEmpty && finalResult.text != _lastFinalResult) {
             // 对最终结果应用完整纠错
-            String correctedFinalResult = await _correctRecognitionResult(finalResult.text);
+            String correctedFinalResult = _correctRecognitionResult(finalResult.text);
             result = correctedFinalResult;
             _lastFinalResult = finalResult.text;     // 记录原始结果
             _lastCorrectedResult = correctedFinalResult; // 记录纠错结果
@@ -332,7 +295,7 @@ class StreamingAsrService {
         final result = _recognizer!.getResult(_stream!);
         if (result.text.isNotEmpty && result.text != _lastPartialResult) {
           // 应用纠错
-          String correctedResult = await _correctRecognitionResult(result.text);
+          String correctedResult = _correctRecognitionResult(result.text);
           _lastPartialResult = result.text;
           _lastCorrectedResult = correctedResult;
           _resultController.add(correctedResult);
@@ -344,12 +307,12 @@ class StreamingAsrService {
   }
 
   /// 获取当前识别结果（纠错后）
-  Future<String> getCurrentResult() async {
+  String getCurrentResult() {
     if (!_isInitialized || _stream == null) return '';
 
     try {
       final result = _recognizer!.getResult(_stream!);
-      return await _correctRecognitionResult(result.text);
+      return _correctRecognitionResult(result.text);
     } catch (e) {
       print('[StreamingAsrService] ❌ Error getting result: $e');
       return '';
@@ -357,7 +320,7 @@ class StreamingAsrService {
   }
 
   /// 智能刷新 - 根据音频状态决定是否强制结束（带纠错）
-  Future<String> flushAndGetResult() async {
+  String flushAndGetResult() {
     if (!_isInitialized || _stream == null) return '';
 
     try {
@@ -382,7 +345,7 @@ class StreamingAsrService {
       final result = _recognizer!.getResult(_stream!);
       if (result.text.isNotEmpty) {
         // 应用纠错
-        String correctedResult = await _correctRecognitionResult(result.text);
+        String correctedResult = _correctRecognitionResult(result.text);
         _resultController.add(correctedResult);
         _recognizer!.reset(_stream!);
         _lastPartialResult = '';
@@ -402,7 +365,7 @@ class StreamingAsrService {
 
   /// 启用/禁用文本纠错
   void setTextCorrectionEnabled(bool enabled) {
-    _enableSmartCorrection = enabled;
+    _enableCorrection = enabled;
     print('[StreamingAsrService] ${enabled ? '✅' : '❌'} 文本纠错${enabled ? '已启用' : '已禁用'}');
   }
 
@@ -412,10 +375,10 @@ class StreamingAsrService {
       'totalRecognitions': _totalRecognitions,
       'totalCorrections': _totalCorrections,
       'correctionRate': correctionRate,
-      'isEnabled': _enableSmartCorrection,
+      'isEnabled': _enableCorrection,
       'lastOriginal': _lastFinalResult,
       'lastCorrected': _lastCorrectedResult,
-      ..._smartCorrectionService.getCorrectionStats(),
+      ..._correctionService.getCorrectionStats(),
     };
   }
 
@@ -430,7 +393,7 @@ class StreamingAsrService {
       'lastPartial': _lastPartialResult,
       'lastFinal': _lastFinalResult,
       'lastCorrected': _lastCorrectedResult,
-      'correctionEnabled': _enableSmartCorrection,
+      'correctionEnabled': _enableCorrection,
       'correctionRate': correctionRate,
     };
   }

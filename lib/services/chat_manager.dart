@@ -2,8 +2,6 @@ import 'dart:async';
 import 'dart:convert';
 
 import 'package:app/services/smart_kg_service.dart';
-import 'package:app/services/advanced_kg_retrieval_service.dart';
-import 'package:app/services/advanced_kg_retrieval.dart';
 import 'package:app/services/enhanced_kg_service.dart';
 import 'package:app/services/conversation_cache.dart';
 import 'package:app/models/graph_models.dart';
@@ -15,24 +13,15 @@ import '../services/llm.dart';
 import '../services/objectbox_service.dart';
 import '../services/knowledge_graph_service.dart';
 
-
 class ChatManager {
   final ChatSession chatSession = ChatSession();
-
   late LLM _llm;
-  // late LLM _llm4SecondRound;
-
-  // 添加增强知识图谱服务实例
   late EnhancedKGService _enhancedKGService;
 
-  // Receive ChatSession from external sources
   ChatManager();
 
   Future<void> init({required String selectedModel, String? systemPrompt}) async {
     _llm = await LLM.create(selectedModel, systemPrompt: systemPrompt);
-    // _llm4SecondRound = await LLM.create(selectedModel, systemPrompt: systemPromptOfChat2);
-
-    // 初始化增强知识图谱服务
     _enhancedKGService = EnhancedKGService();
 
     List<RecordEntity>? recentRecords = ObjectBoxService().getTermRecords();
@@ -49,7 +38,6 @@ class ChatManager {
     var content = "";
     var jsonObj = {};
 
-    // 修改：使用 buildInputWithKG 注入知识图谱信息
     var userInputWithKG = await buildInputWithKG(text);
     var messages = [{"role": "user", "content": userInputWithKG}];
 
@@ -65,12 +53,7 @@ class ChatManager {
 
           Iterable<RegExpMatch> matches = pattern.allMatches(content);
           if (matches.isNotEmpty && matches.last.start + 1 > lastIndex) {
-
-            final match = matches.last;
-            final matchedText = match.group(0);
-
             final delta = content.substring(lastIndex, matches.last.start + 1);
-
             lastIndex = matches.last.start + 1;
             yield jsonEncode({
               "content": content,
@@ -101,49 +84,34 @@ class ChatManager {
 
   Future<String> createRequest({required String text}) async {
     final content = await buildInputWithKG(text);
-
     return _llm.createRequest(content: content);
   }
 
-  String buildInput(String userInput) {
-    final session = loadChatSession();
-    DateTime now = DateTime.now();
-    var input = """
-Timestamp: ${now.toIso8601String().split('.').first}\n
-Chat Session: \n$session
----\n
-User Input: $userInput""";
-    return input;
-  }
-  // 智能版本：构建个性化输入，注入知识图谱信息（集成对话缓存）
+  // 智能版本：构建个性化输入，注入知识图谱信息
   Future<String> buildInputWithKG(String userInput) async {
     final session = loadChatSession();
     DateTime now = DateTime.now();
 
     try {
-      // 1. 首先尝试从缓存获取快速响应
+      // 尝试从缓存获取快速响应
       final quickResponse = await _enhancedKGService.getQuickResponse(userInput);
 
       String kgInfo = '';
       String performanceInfo = '';
 
       if (quickResponse['source'] == 'cache') {
-        // 缓存命中，使用预计算的信息
+        // 缓存命中
         final cachedData = quickResponse['data'];
         kgInfo = await _buildKGContextFromCache(cachedData);
         performanceInfo = '⚡ 缓存命中 - 快速响应模式\n';
-
       } else {
         // 缓存未命中，执行完整分析
         final smartKGService = SmartKGService();
         final analysis = await smartKGService.analyzeUserInput(userInput);
         final relevantNodes = await smartKGService.getRelevantNodes(analysis);
 
-        final advancedKGService = AdvancedKGRetrievalService();
-        final expandedNodes = await advancedKGService.expandAndRankNodes(relevantNodes, analysis);
-
-        if (expandedNodes.isNotEmpty) {
-          kgInfo = await _buildKGContextString(analysis, expandedNodes);
+        if (relevantNodes.isNotEmpty) {
+          kgInfo = await _buildKGContextString(analysis, relevantNodes);
         }
         performanceInfo = '🔍 完整分析模式 - 结果已缓存\n';
       }
@@ -278,78 +246,39 @@ User Input: $userInput""";
       buffer.writeln('关键词: ${analysis.keywords.join(', ')}');
     }
 
-    // 2. 获取详细的相关性信息
-    try {
-      final advancedKGService = AdvancedKGRetrievalService();
-      final detailedRelevances = await advancedKGService.getDetailedRelevance(relevantNodes, analysis);
+    // 2. 简化的相关性信息显示（移除了错误的AdvancedKGRetrievalService调用）
+    buffer.writeln('\n🧠 知识图谱检索结果:');
+    buffer.writeln('检索到 ${relevantNodes.length} 个相关节点');
 
-      buffer.writeln('\n🧠 智能知识图谱检索结果:');
-      buffer.writeln('检索到 ${detailedRelevances.length} 个相关节点');
+    // 按类型分组显示
+    final nodesByType = <String, List<Node>>{};
+    for (final node in relevantNodes) {
+      nodesByType.putIfAbsent(node.type, () => []).add(node);
+    }
 
-      // 按深度分层显示
-      final nodesByDepth = <int, List<NodeRelevance>>{};
-      for (final relevance in detailedRelevances) {
-        nodesByDepth.putIfAbsent(relevance.depth, () => []).add(relevance);
-      }
+    for (final type in nodesByType.keys) {
+      final nodes = nodesByType[type]!;
+      buffer.writeln('\n【${type}类】(${nodes.length}个节点)');
 
-      for (final depth in nodesByDepth.keys.toList()..sort()) {
-        final nodes = nodesByDepth[depth]!;
-        buffer.writeln('\n【第${depth}层关联】(${nodes.length}个节点)');
+      for (final node in nodes.take(5)) { // 限制每类显示数量
+        buffer.writeln('  ├─ ${node.name}');
 
-        for (final relevance in nodes.take(5)) { // 限制每层显示数量
-          buffer.writeln('  ├─ ${relevance.node.name} (${relevance.node.type})');
-          buffer.writeln('     相关度: ${(relevance.score * 100).toStringAsFixed(0)}% | ${relevance.reason}');
-
-          if (relevance.node.attributes.isNotEmpty) {
-            final key_attrs = relevance.node.attributes.entries.take(2);
-            final attrs = key_attrs.map((e) => '${e.key}: ${e.value}').join(', ');
-            buffer.writeln('     属性: $attrs');
-          }
-
-          if (relevance.path.length > 1) {
-            buffer.writeln('     路径: ${relevance.path.join(' → ')}');
-          }
-        }
-
-        if (nodes.length > 5) {
-          buffer.writeln('     └─ 还有 ${nodes.length - 5} 个相关节点...');
+        if (node.attributes.isNotEmpty) {
+          final keyAttrs = node.attributes.entries.take(2);
+          final attrs = keyAttrs.map((e) => '${e.key}: ${e.value}').join(', ');
+          buffer.writeln('     属性: $attrs');
         }
       }
 
-      // 3. 检索统计信息
-      buffer.writeln('\n📈 检索统计:');
-      final totalScore = detailedRelevances.fold(0.0, (sum, r) => sum + r.score);
-      final avgScore = detailedRelevances.isNotEmpty ? totalScore / detailedRelevances.length : 0.0;
-      buffer.writeln('平均相关度: ${(avgScore * 100).toStringAsFixed(1)}%');
-
-      final maxDepth = detailedRelevances.isNotEmpty ?
-          detailedRelevances.map((r) => r.depth).reduce((a, b) => a > b ? a : b) : 0;
-      buffer.writeln('最大检索深度: $maxDepth 层');
-
-    } catch (e) {
-      print('Error getting detailed relevance: $e');
-      // 降级到原始显示方法
-      buffer.writeln('\n🧠 相关知识图谱信息:');
-
-      final nodesByType = <String, List<Node>>{};
-      for (final node in relevantNodes) {
-        nodesByType.putIfAbsent(node.type, () => []).add(node);
-      }
-
-      for (final type in nodesByType.keys) {
-        buffer.writeln('【${type}类】');
-        for (final node in nodesByType[type]!) {
-          buffer.write('  - ${node.name}');
-          if (node.attributes.isNotEmpty) {
-            final attrs = node.attributes.entries
-                .map((e) => '${e.key}: ${e.value}')
-                .join(', ');
-            buffer.write('（$attrs）');
-          }
-          buffer.writeln();
-        }
+      if (nodes.length > 5) {
+        buffer.writeln('     └─ 还有 ${nodes.length - 5} 个相关节点...');
       }
     }
+
+    // 3. 检索统计信息
+    buffer.writeln('\n📈 检索统计:');
+    buffer.writeln('节点总数: ${relevantNodes.length}');
+    buffer.writeln('节点类型: ${nodesByType.keys.length} 种');
 
     // 4. 根据意图提供特定上下文
     buffer.writeln('\n💡 智能检索策略:');

@@ -146,23 +146,28 @@ class _HomeChatScreenState extends State<HomeChatScreen> {
     final dynamic rawRole = message['isUser'];
     final dynamic rawId = message['id'];
 
-    // ✅ 修复角色处理逻辑 - 正确处理 null 值
+    // ✅ 统一角色处理逻辑 - 同时处理历史消息和新消息
     String role;
     if (rawRole is String) {
-      // 如果是字符串，直接使用
-      role = rawRole;
+      // 直接使用字符串角色
+      if (rawRole == 'user' || rawRole == 'assistant' || rawRole == 'others') {
+        role = rawRole;
+      } else {
+        // 对于其他字符串值（如speaker名称），统一归类为 'others'
+        role = 'others';
+      }
     } else if (rawRole is bool) {
-      // 如果是布尔值（向后兼容），转换为字符串
+      // 布尔值（向后兼容）
       role = rawRole ? 'user' : 'assistant';
     } else {
-      // ✅ 当 rawRole 为 null 时，默认设为 'others' 而不是 'assistant'
+      // null 或其他类型，默认为 'others'
       role = 'others';
     }
 
     final String id = rawId?.toString() ?? '';
 
-    // 添加调试信息来查看重复显示问题
-    print('DEBUG: _buildMsg called with id: $id, text: ${text.substring(0, text.length > 20 ? 20 : text.length)}..., role: $role');
+    // 添加调试信息来查看角色识别结果
+    print('DEBUG: _buildMsg - rawRole: $rawRole (${rawRole.runtimeType}) -> role: $role, text: ${text.substring(0, text.length > 20 ? 20 : text.length)}...');
 
     // ✅ 如果 id 为空，直接返回基本的消息组件，不使用 VisibilityDetector
     if (id.isEmpty) {
@@ -195,7 +200,7 @@ class _HomeChatScreenState extends State<HomeChatScreen> {
         onVisibilityChanged: (info) {
           if (info.visibleFraction == 1) {
             _chatController.unReadMessageId.value.remove(id);
-            _chatController.unReadMessageId.notifyListeners();
+            _chatController.unReadMessageId.value = Set.from(_chatController.unReadMessageId.value);
           }
         },
         child: body,

@@ -42,20 +42,35 @@ class ChatListTile extends StatelessWidget {
     bool isLightMode = themeNotifier.mode == Mode.light;
     bool isUser = role == 'user';
     bool isAssistant = role == 'assistant';
+    bool isOthers = role == 'others';
+
     TextStyle textStyle = style ??
         const TextStyle(
           fontWeight: FontWeight.bold,
           fontSize: 14,
         );
+
+    // 根据角色选择头像图标
+    String getAvatarIcon() {
+      if (isUser) {
+        return AssetsUtil.icon_user; // 用户头像
+      } else if (isAssistant) {
+        return AssetsUtil.icon_chat_logo; // AI助手头像
+      } else {
+        return AssetsUtil.icon_chat_meeting; // 其他人头像
+      }
+    }
+
     return Row(
       mainAxisAlignment: isUser ? MainAxisAlignment.end : MainAxisAlignment.start,
       crossAxisAlignment: CrossAxisAlignment.start,
       children: [
+        // 非用户消息显示左侧头像
         if (!isUser)
           Padding(
             padding: EdgeInsets.only(right: _iconRight),
             child: BudIcon(
-              icon: isAssistant ? AssetsUtil.icon_chat_logo : AssetsUtil.icon_chat_meeting,
+              icon: getAvatarIcon(),
               size: _iconSize,
             ),
           ),
@@ -79,6 +94,15 @@ class ChatListTile extends StatelessWidget {
             ),
           ),
         ),
+        // 用户消息显示右侧头像
+        if (isUser)
+          Padding(
+            padding: EdgeInsets.only(left: _iconRight),
+            child: BudIcon(
+              icon: getAvatarIcon(),
+              size: _iconSize,
+            ),
+          ),
       ],
     );
   }

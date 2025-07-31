@@ -2,12 +2,21 @@ import 'dart:async';
 import 'dart:convert';
 import 'dart:io';
 import 'dart:typed_data';
+import 'dart:math' as math;
+
 import 'package:app/constants/prompt_constants.dart';
 import 'package:app/constants/wakeword_constants.dart';
 import 'package:app/services/cloud_asr.dart';
 import 'package:app/services/cloud_tts.dart';
 import 'package:app/services/latency_logger.dart';
+import 'package:app/services/streaming_asr_service.dart';
+import 'package:app/services/summary.dart';
 import 'package:app/utils/text_process_utils.dart';
+import 'package:app/utils/asr_utils.dart';
+import 'package:app/utils/audio_process_util.dart';
+import 'package:app/utils/wav/audio_save_util.dart';
+import 'package:app/utils/text_utils.dart';
+
 import 'package:flutter/foundation.dart';
 import 'package:flutter/services.dart';
 import 'package:flutter_foreground_task/flutter_foreground_task.dart';
@@ -16,6 +25,7 @@ import 'package:sherpa_onnx/sherpa_onnx.dart' as sherpa_onnx;
 import 'package:flutter_tts/flutter_tts.dart';
 import 'package:audioplayers/audioplayers.dart';
 import 'package:linalg/linalg.dart';
+
 import '../constants/voice_constants.dart';
 import '../constants/record_constants.dart';
 import '../models/record_entity.dart';
@@ -23,13 +33,6 @@ import '../models/speaker_entity.dart';
 import '../services/ble_service.dart';
 import '../services/objectbox_service.dart';
 import '../services/chat_manager.dart';
-import '../utils/asr_utils.dart';
-import '../utils/audio_process_util.dart';
-import '../utils/text_utils.dart';
-import 'streaming_asr_service.dart'; // 新的流式ASR服务
-import '../utils/wav/audio_save_util.dart';
-import 'dart:math' as math;
-import 'package:app/services/summary.dart';
 
 const int nDct = 257; // DCT矩阵维度
 const int nPca = 47;  // PCA矩阵维度
@@ -38,89 +41,69 @@ final Float32List silence = Float32List((16000 * 5).toInt()); // 5秒静音缓�
 
 @pragma('vm:entry-point')
 void startRecordService() {
-  // 启动前台录音服务
   FlutterForegroundTask.setTaskHandler(RecordServiceHandler());
 }
 
-// 录音服务处理器，负���音频采集、VAD、ASR、声纹识别等
 class RecordServiceHandler extends TaskHandler {
-  AudioRecorder _record = AudioRecorder(); // 录音器实例
-
-  // 语音活动检测器（VAD）
+  // 核心组件
+  AudioRecorder _record = AudioRecorder();
   sherpa_onnx.VoiceActivityDetector? _vad;
-
-  // 声纹提取与管理
   sherpa_onnx.SpeakerEmbeddingExtractor? _extractor;
   sherpa_onnx.SpeakerEmbeddingManager? _manager;
-
-  StreamSubscription<RecordState>? _recordSub; // 录音状态订阅
-
-  final ObjectBoxService _objectBoxService = ObjectBoxService(); // 本地数据库服务
-
-  bool _inDialogMode = false; // 是否处于对话模式
-  bool _isUsingCloudServices = true; // 是否使用云服务
-
-  bool _isNeedVoiceprintInit = false; // 是否需要初始化声纹
-
-  bool _isInitialized = false; // 是否已初始化
-  RecordState _recordState = RecordState.stop; // 当前录音状态
-  int _lastDataReceivedTimestamp = 0; // 上次BLE数据接收时间
-  int _boneDataReceivedTimestamp = 0; // 骨传导数据接收时间
-  bool _isMeeting = false; // 是否处于会议模式（已废弃）
-  bool _isBoneConductionActive = true; // 骨传导是否激活
-  bool _onRecording = true; // 是否正在录音
-  int? _startMeetingTime; // 会议开始时间（已废弃）
-
-  late FlutterTts _flutterTts; // 本地TTS实例
-  final CloudTts _cloudTts = CloudTts(); // 云TTS实例
-  final CloudAsr _cloudAsr = CloudAsr(); // ��ASR实例
-
-  final ChatManager _chatManager = ChatManager(); // 聊天管理器
-  final String _selectedModel = 'gpt-4o'; // 默认LLM模型
-
-  int currentStep = 0; // 声纹注册步骤
-  String currentSpeaker = ''; // 当前说话人
-
-  List<double> samplesFloat32Buffer = []; // 音频样本缓冲区
-
-  StreamSubscription<Uint8List>? _bleDataSubscription; // BLE数据订阅
-  Timer? _bleTimer; // BLE定时器
-  StreamSubscription? _currentSubscription; // 当前流订阅
-
-  Stream<Uint8List>? _recordStream; // 录音流
-
-  // DCT和PCA矩阵
-  Matrix iDctWeightMatrix = Matrix.fill(nDct, nDct, 0.0);
-  Matrix iPcaWeightMatrix = Matrix.fill(nPca, nDct, 0.0);
-
-  List<double> previousSuffix = List.filled(9, 0.0); // 上一段音频后缀
-  double previousSample = 0.0; // 上一个音频样本
-  List<double> testAudio = []; // 测试音频
-  int testCount = 0; // 测试计数
-  List<double> combinedAudio = []; // 合并音频片段
-
-  final StreamController<Uint8List> _bleAudioStreamController = StreamController<Uint8List>(); // BLE音频流控制器
-  StreamSubscription<Uint8List>? _bleAudioStreamSubscription; // BLE音频流订阅
-
-  int lastNum = -1; // 上一个编号
-  int currentNum = 0; // 当前编号
-
-  bool _onMicrophone = false; // 麦克风是否开启
-
-  // 新的流式ASR服务
   StreamingAsrService _streamingAsr = StreamingAsrService();
 
-  // 跟踪VAD上一次状态，避免重复日志
+  // 服务实例
+  final ObjectBoxService _objectBoxService = ObjectBoxService();
+  final CloudTts _cloudTts = CloudTts();
+  final CloudAsr _cloudAsr = CloudAsr();
+  final ChatManager _chatManager = ChatManager();
+  late FlutterTts _flutterTts;
+
+  // 状态变量
+  bool _inDialogMode = false;
+  bool _isUsingCloudServices = true;
+  bool _isNeedVoiceprintInit = false;
+  bool _isInitialized = false;
+  bool _isBoneConductionActive = true;
+  bool _onRecording = true;
+  bool _onMicrophone = false;
+  RecordState? _recordState; // 添加缺失的录音状态变量
+
+  // 声纹相关
+  int currentStep = 0;
+  String currentSpeaker = '';
+
+  // 流订阅
+  StreamSubscription<RecordState>? _recordSub;
+  StreamSubscription<Uint8List>? _bleDataSubscription;
+  StreamSubscription<Uint8List>? _bleAudioStreamSubscription;
+  StreamSubscription? _currentSubscription;
+  Stream<Uint8List>? _recordStream;
+
+  // BLE相关
+  int _lastDataReceivedTimestamp = 0;
+  int _boneDataReceivedTimestamp = 0;
+  final StreamController<Uint8List> _bleAudioStreamController = StreamController<Uint8List>();
+
+  // 音频处理
+  Matrix iDctWeightMatrix = Matrix.fill(nDct, nDct, 0.0);
+  Matrix iPcaWeightMatrix = Matrix.fill(nPca, nDct, 0.0);
+  List<double> combinedAudio = [];
   bool _lastVadState = false;
 
+  // 对话总结相关
   Timer? _summaryTimer;
   int _lastSpeechTimestamp = 0;
   int _currentDialogueCharCount = 0;
   int? _currentDialogueStartTime;
-  int? _currentDialogueStartTimeForSummary; // 新增：记录对话段开始时间
 
-  static const int minCharLimit = 20; // 最小触发总结字数
-  static const int maxCharLimit = 2000; // 最大分段字数，超过则强制分段
+  static const int minCharLimit = 20;
+  static const int maxCharLimit = 2000;
+  static const String _selectedModel = 'gpt-4o';
+
+  // 说话人识别历史
+  List<double> _userSimilarityHistory = [];
+  List<double> _othersSimilarityHistory = [];
 
   @override
   Future<void> onStart(DateTime timestamp, TaskStarter starter) async {
@@ -227,7 +210,6 @@ class RecordServiceHandler extends TaskHandler {
     await _stopRecord();
     _bleDataSubscription?.cancel();
     _bleAudioStreamSubscription?.cancel();
-    _bleTimer?.cancel();
     _summaryTimer?.cancel();
     BleService().dispose();
   }
@@ -915,7 +897,6 @@ class RecordServiceHandler extends TaskHandler {
 
     print('[_startVoiceprint] 🔄 Resetting states...');
     _inDialogMode = false;
-    _isMeeting = false;
 
     print('[_startVoiceprint] 🧹 Clearing existing speakers...');
     _manager?.allSpeakerNames.forEach((name) {
@@ -1099,10 +1080,6 @@ class RecordServiceHandler extends TaskHandler {
       return 0.65;
     }
   }
-
-  // 历史数据用于阈值优化
-  List<double> _userSimilarityHistory = [];
-  List<double> _othersSimilarityHistory = [];
 
   void _updateSpeakerHistory(bool isUser, double similarity) {
     if (isUser) {
