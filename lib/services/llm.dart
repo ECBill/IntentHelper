@@ -15,8 +15,7 @@ class LLM {
   late String systemPrompt;
 
   static final String defaultBaseUrl = 'https://one-api.bud.inc/v1/chat/completions';
-  static const String localApiKey = 'M20lUdvsllJ1Yuub3dBeF709Bf024064AcAaF0A37fDf4c57'; // TODO: 替换为你的真实key
-
+  static const String localApiKey = 'ZVgp7BFIA3FlNs6jF97e933289B440979945DdE4938e492e'; // TODO: 替换为你的真实key
   LLM._(this.modelName, this.apiKey, this.baseUrl, this.systemPrompt);
 
   static Future<LLM> create(String modelName, {String? systemPrompt}) async {
