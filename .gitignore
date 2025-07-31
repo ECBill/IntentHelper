@@ -51,3 +51,4 @@ app.*.map.json
 /assets/sherpa-onnx-vits-zh-ll
 /assets/*.onnx
 /assets/sherpa-onnx-streaming-paraformer-bilingual-zh-en/
+/android/*.hprof
