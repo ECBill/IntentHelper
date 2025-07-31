@@ -20,22 +20,29 @@ class StreamingAsrService {
   final TextCorrectionService _correctionService = TextCorrectionService();
   bool _enableCorrection = true; // 是否启用纠错
 
-  // 优化音频缓冲区管理
-  List<double> _audioBuffer = [];
-  static const int _optimalChunkSize = 3200; // 200ms at 16kHz，更适合中文语音
+  // 优化音频缓冲区管理 - 使用更高效的缓冲区
+  Float32List _audioBuffer = Float32List(0);
+  int _bufferLength = 0;
+  static const int _optimalChunkSize = 1600; // 降低到100ms，减少延迟
   static const int _minChunkSize = 800;  // 50ms 最小处理单位
   static const double _sampleRate = 16000.0;
+  static const int _maxBufferSize = 16000; // 1秒最大缓冲
 
-  // 音频质量统计
+  // 音频质量统计 - 简化计算
   double _audioLevel = 0.0;
   int _silenceFrameCount = 0;
-  static const double _silenceThreshold = 0.01; // 静音阈值
+  static const double _silenceThreshold = 0.01;
+  int _frameCounter = 0; // 用于跳帧优化
 
   // 识别状态管理
   String _lastPartialResult = '';
   String _lastFinalResult = '';
-  String _lastCorrectedResult = ''; // 上次纠错后的结果
+  String _lastCorrectedResult = '';
   DateTime _lastActivityTime = DateTime.now();
+
+  // 性能优化开关
+  bool _enableAudioEnhancement = false; // 默认关闭音频增强以提升速度
+  bool _enablePartialCorrection = false; // 只对最终结果纠错
 
   // 纠错统计
   int _totalCorrections = 0;
@@ -63,6 +70,10 @@ class StreamingAsrService {
       _stream = _recognizer!.createStream();
       print('[StreamingAsrService] ✅ Audio stream created');
 
+      // 预分配缓冲区
+      _audioBuffer = Float32List(_maxBufferSize);
+      _bufferLength = 0;
+
       _isInitialized = true;
       print('[StreamingAsrService] 🎉 Optimized streaming ASR initialized successfully');
 
@@ -78,9 +89,21 @@ class StreamingAsrService {
   Future<sherpa_onnx.OnlineRecognizerConfig> _createOptimizedConfig() async {
     print('[StreamingAsrService] 📝 Creating optimized streaming config...');
 
-    // 获取模型文件路径
-    final encoderPath = await copyAssetFile('assets/sherpa-onnx-streaming-paraformer-bilingual-zh-en/encoder.onnx');
-    final decoderPath = await copyAssetFile('assets/sherpa-onnx-streaming-paraformer-bilingual-zh-en/decoder.onnx');
+    // 优先使用int8量化模型以提升速度
+    String encoderPath;
+    String decoderPath;
+
+    try {
+      encoderPath = await copyAssetFile('assets/sherpa-onnx-streaming-paraformer-bilingual-zh-en/encoder.int8.onnx');
+      decoderPath = await copyAssetFile('assets/sherpa-onnx-streaming-paraformer-bilingual-zh-en/decoder.int8.onnx');
+      print('[StreamingAsrService] ✅ Using int8 quantized models for better speed');
+    } catch (e) {
+      // 降级到fp32模型
+      encoderPath = await copyAssetFile('assets/sherpa-onnx-streaming-paraformer-bilingual-zh-en/encoder.onnx');
+      decoderPath = await copyAssetFile('assets/sherpa-onnx-streaming-paraformer-bilingual-zh-en/decoder.onnx');
+      print('[StreamingAsrService] ⚠️ Using fp32 models, int8 not available');
+    }
+
     final tokensPath = await copyAssetFile('assets/sherpa-onnx-streaming-paraformer-bilingual-zh-en/tokens.txt');
 
     print('[StreamingAsrService] 📂 Model files loaded');
@@ -91,13 +114,13 @@ class StreamingAsrService {
       decoder: decoderPath,
     );
 
-    // 优化模型配置 - 增加线程数和优化参数
+    // 平衡性能配置 - 适度增加线程但避免过度
     final modelConfig = sherpa_onnx.OnlineModelConfig(
       paraformer: paraformerConfig,
       tokens: tokensPath,
-      numThreads: 4, // 增加到4个线程提高实时性能
+      numThreads: 3, // 降低到3个线程，避免上下文切换开销
       provider: "cpu",
-      debug: false, // 关闭debug以提高性能
+      debug: false,
     );
 
     // 优化特征提取配置
@@ -106,66 +129,80 @@ class StreamingAsrService {
       featureDim: 80,
     );
 
-    // 优化端点检测参数以适应中文语音特点
+    // 优化端点检测参数以平衡速度和准确性
     final config = sherpa_onnx.OnlineRecognizerConfig(
       model: modelConfig,
       feat: featConfig,
       enableEndpoint: true,
-      // 调整端点检测参数以适应中文语音节奏
-      rule1MinTrailingSilence: 1.0,  // 减少静音检测时间
-      rule2MinTrailingSilence: 0.8,  // 更快响应短句
-      rule3MinUtteranceLength: 10.0, // 减少最小话语长度
+      // 调整端点检测参数以获得更好的速度-准确性平衡
+      rule1MinTrailingSilence: 1.2,  // 稍微增加以确保完整性
+      rule2MinTrailingSilence: 0.6,  // 降低以提升响应速度
+      rule3MinUtteranceLength: 8.0,  // 降低最小话语长度
       hotwordsFile: '',
-      hotwordsScore: 2.0, // 提高热词权重
-      maxActivePaths: 8,   // 增加搜索路径数量
+      hotwordsScore: 2.0,
+      maxActivePaths: 6,   // 减少到6个路径，平衡准确性和速度
     );
 
     print('[StreamingAsrService] ✅ Optimized config created');
     return config;
   }
 
-  /// 音频预处理 - 添加音频增强
-  Float32List _preprocessAudio(Float32List audioData) {
+  /// 轻量级音频预处理 - 只在必要时增强
+  Float32List _preprocessAudioLight(Float32List audioData) {
     if (audioData.isEmpty) return audioData;
 
-    // 计算音频能量
-    double energy = 0.0;
-    for (double sample in audioData) {
-      energy += sample * sample;
-    }
-    _audioLevel = math.sqrt(energy / audioData.length);
-
-    // 检测静音
-    if (_audioLevel < _silenceThreshold) {
-      _silenceFrameCount++;
-    } else {
-      _silenceFrameCount = 0;
-      _lastActivityTime = DateTime.now();
-    }
-
-    // 音频归一化 - 但保持动态范围
-    if (_audioLevel > 0.1) {
-      final normalizedData = Float32List(audioData.length);
-      final scaleFactor = 0.8 / _audioLevel; // 适度归一化
-      for (int i = 0; i < audioData.length; i++) {
-        normalizedData[i] = audioData[i] * scaleFactor;
-        // 软限幅
-        if (normalizedData[i] > 0.95) normalizedData[i] = 0.95;
-        if (normalizedData[i] < -0.95) normalizedData[i] = -0.95;
+    // 跳帧优化 - 每5帧才计算一次音频质量
+    _frameCounter++;
+    if (_frameCounter % 5 == 0) {
+      // 快速计算音频能量（简化版）
+      double energy = 0.0;
+      final step = math.max(1, audioData.length ~/ 100); // 采样计算
+      for (int i = 0; i < audioData.length; i += step) {
+        energy += audioData[i] * audioData[i];
       }
-      return normalizedData;
+      _audioLevel = math.sqrt(energy / (audioData.length / step));
+
+      // 检测静音
+      if (_audioLevel < _silenceThreshold) {
+        _silenceFrameCount++;
+      } else {
+        _silenceFrameCount = 0;
+        _lastActivityTime = DateTime.now();
+      }
+    }
+
+    // 只在启用音频增强且音频质量差时处理
+    if (_enableAudioEnhancement && _audioLevel > 0.15) {
+      return _enhanceAudio(audioData);
     }
 
     return audioData;
   }
 
-  /// 对识别结果进行智能纠错
-  String _correctRecognitionResult(String originalText) {
+  /// 音频增强（仅在需要时调用）
+  Float32List _enhanceAudio(Float32List audioData) {
+    final normalizedData = Float32List(audioData.length);
+    final scaleFactor = 0.7 / _audioLevel; // 保守的归一化
+
+    for (int i = 0; i < audioData.length; i++) {
+      normalizedData[i] = (audioData[i] * scaleFactor).clamp(-0.9, 0.9);
+    }
+
+    return normalizedData;
+  }
+
+  /// 智能纠错 - 只对最终结果进行完整纠错
+  String _correctRecognitionResult(String originalText, {bool isFinal = false}) {
     if (!_enableCorrection || originalText.isEmpty) {
       return originalText;
     }
 
     _totalRecognitions++;
+
+    // 对于部分结果，只做快速纠错（如果启用）
+    if (!isFinal && !_enablePartialCorrection) {
+      return originalText;
+    }
 
     // 应用文本纠错
     String correctedText = _correctionService.correctText(originalText);
@@ -173,57 +210,80 @@ class StreamingAsrService {
     // 如果发生了纠错，记录统计信息
     if (correctedText != originalText) {
       _totalCorrections++;
-      print('[StreamingAsrService] 🔧 纠错应用: "$originalText" → "$correctedText"');
+      if (isFinal) {
+        print('[StreamingAsrService] 🔧 最终纠错: "$originalText" → "$correctedText"');
+      }
     }
 
     return correctedText;
   }
 
-  /// 优化的音频处理方法（带纠错）
+  /// 高效的缓冲区管理
+  void _addToBuffer(Float32List audioData) {
+    final dataLength = audioData.length;
+
+    // 检查缓冲区空间
+    if (_bufferLength + dataLength > _audioBuffer.length) {
+      // 如果超出最大缓冲区，移除旧数据
+      if (_bufferLength > _maxBufferSize ~/ 2) {
+        final keepLength = _maxBufferSize ~/ 2;
+        _audioBuffer.setRange(0, keepLength, _audioBuffer, _bufferLength - keepLength);
+        _bufferLength = keepLength;
+      } else {
+        // 扩展缓冲区
+        final newBuffer = Float32List(_audioBuffer.length * 2);
+        newBuffer.setRange(0, _bufferLength, _audioBuffer);
+        _audioBuffer = newBuffer;
+      }
+    }
+
+    // 添加新数据
+    _audioBuffer.setRange(_bufferLength, _bufferLength + dataLength, audioData);
+    _bufferLength += dataLength;
+  }
+
+  /// 优化的音频处理方法（非阻塞版本）
   Future<String> processAudio(Float32List audioData) async {
     if (!_isInitialized || _stream == null) {
-      print('[StreamingAsrService] ⚠️ Service not initialized');
       return '';
     }
 
     try {
-      // 预处理音频
-      final processedAudio = _preprocessAudio(audioData);
+      // 轻量级预处理
+      final processedAudio = _preprocessAudioLight(audioData);
 
-      // 将音频数据添加到缓冲区
-      _audioBuffer.addAll(processedAudio);
+      // 高效添加到缓冲区
+      _addToBuffer(processedAudio);
 
       String result = '';
 
-      // 使用更智能的缓冲区处理
-      while (_audioBuffer.length >= _minChunkSize) {
-        // 确定处理块大小
-        int chunkSize = math.min(_audioBuffer.length, _optimalChunkSize);
+      // 处理完整的音频块
+      while (_bufferLength >= _optimalChunkSize) {
+        // 提取音频块（避免额外的内存分配）
+        final chunk = _audioBuffer.sublist(0, _optimalChunkSize);
 
-        // 如果接近最优大小，使用最优大小
-        if (_audioBuffer.length >= _optimalChunkSize) {
-          chunkSize = _optimalChunkSize;
+        // 移动剩余数据（高效的内存操作）
+        final remaining = _bufferLength - _optimalChunkSize;
+        if (remaining > 0) {
+          _audioBuffer.setRange(0, remaining, _audioBuffer, _optimalChunkSize);
         }
+        _bufferLength = remaining;
 
-        final chunk = Float32List.fromList(_audioBuffer.take(chunkSize).toList());
-        _audioBuffer.removeRange(0, chunkSize);
-
-        // 输入音频到流式识别器
+        // 非阻塞输入音频
         _stream!.acceptWaveform(samples: chunk, sampleRate: _sampleRate.toInt());
 
-        // 处理识别
-        await _processRecognition();
+        // 异步处理识别（不等待）
+        _processRecognitionNonBlocking();
 
-        // 获取当前结果并应用纠错
+        // 快速检查结果
         final currentResult = _recognizer!.getResult(_stream!);
         if (currentResult.text.isNotEmpty && currentResult.text != _lastPartialResult) {
-          // 对部分结果应用轻量级纠错（只纠正明显错误）
-          String correctedResult = _correctRecognitionResult(currentResult.text);
+          // 对部分结果只做轻量纠错
+          String correctedResult = _correctRecognitionResult(currentResult.text, isFinal: false);
           result = correctedResult;
-          _lastPartialResult = currentResult.text; // 记录原始结果
-          _lastCorrectedResult = correctedResult;  // 记录纠错结果
+          _lastPartialResult = currentResult.text;
+          _lastCorrectedResult = correctedResult;
 
-          print('[StreamingAsrService] 🎙️ Partial: $correctedResult (level: ${_audioLevel.toStringAsFixed(3)})');
           _resultController.add(correctedResult);
         }
 
@@ -231,11 +291,11 @@ class StreamingAsrService {
         if (_recognizer!.isEndpoint(_stream!)) {
           final finalResult = _recognizer!.getResult(_stream!);
           if (finalResult.text.isNotEmpty && finalResult.text != _lastFinalResult) {
-            // 对最终结果应用完整纠错
-            String correctedFinalResult = _correctRecognitionResult(finalResult.text);
+            // 对最终结果进行完整纠错
+            String correctedFinalResult = _correctRecognitionResult(finalResult.text, isFinal: true);
             result = correctedFinalResult;
-            _lastFinalResult = finalResult.text;     // 记录原始结果
-            _lastCorrectedResult = correctedFinalResult; // 记录纠错结果
+            _lastFinalResult = finalResult.text;
+            _lastCorrectedResult = correctedFinalResult;
 
             print('[StreamingAsrService] 🏁 Final: $correctedFinalResult');
             _resultController.add(correctedFinalResult);
@@ -249,61 +309,40 @@ class StreamingAsrService {
 
       return result;
 
-    } catch (e, stackTrace) {
+    } catch (e) {
       print('[StreamingAsrService] ❌ Error processing audio: $e');
-      print('[StreamingAsrService] Stack trace: $stackTrace');
       return '';
     }
   }
 
-  /// 异步处理识别逻辑
-  Future<void> _processRecognition() async {
+  /// 非阻塞识别处理
+  void _processRecognitionNonBlocking() {
     try {
-      // 批量处理可用的音频数据
+      // 限制处理帧数以避免阻塞
       int processedFrames = 0;
-      while (_recognizer!.isReady(_stream!) && processedFrames < 10) {
+      while (_recognizer!.isReady(_stream!) && processedFrames < 5) {
         _recognizer!.decode(_stream!);
         processedFrames++;
       }
     } catch (e) {
-      print('[StreamingAsrService] ❌ Error in recognition: $e');
+      print('[StreamingAsrService] ❌ Error in non-blocking recognition: $e');
     }
   }
 
-  /// 优化的连续音频输入方法（带纠错）
+  /// 优化的连续音频输入方法
   void feedAudio(Float32List audioData) {
     if (!_isInitialized || _stream == null) return;
 
     try {
-      final processedAudio = _preprocessAudio(audioData);
+      final processedAudio = _preprocessAudioLight(audioData);
       _stream!.acceptWaveform(samples: processedAudio, sampleRate: _sampleRate.toInt());
 
-      // 非阻塞处理
-      _processRecognitionAsync();
+      // 完全非阻塞处理
+      Future.microtask(() => _processRecognitionNonBlocking());
 
     } catch (e) {
       print('[StreamingAsrService] ❌ Error feeding audio: $e');
     }
-  }
-
-  /// 异步处理识别（非阻塞，带纠错）
-  void _processRecognitionAsync() {
-    Future.microtask(() async {
-      try {
-        await _processRecognition();
-
-        final result = _recognizer!.getResult(_stream!);
-        if (result.text.isNotEmpty && result.text != _lastPartialResult) {
-          // 应用纠错
-          String correctedResult = _correctRecognitionResult(result.text);
-          _lastPartialResult = result.text;
-          _lastCorrectedResult = correctedResult;
-          _resultController.add(correctedResult);
-        }
-      } catch (e) {
-        print('[StreamingAsrService] ❌ Async recognition error: $e');
-      }
-    });
   }
 
   /// 获取当前识别结果（纠错后）
@@ -436,5 +475,21 @@ class StreamingAsrService {
     } catch (e) {
       print('[StreamingAsrService] ❌ Error disposing: $e');
     }
+  }
+
+  /// 性能优化设置
+  void setPerformanceMode({
+    bool enableAudioEnhancement = false,
+    bool enablePartialCorrection = false,
+    bool enableTextCorrection = true,
+  }) {
+    _enableAudioEnhancement = enableAudioEnhancement;
+    _enablePartialCorrection = enablePartialCorrection;
+    _enableCorrection = enableTextCorrection;
+
+    print('[StreamingAsrService] 🎛️ 性能模式设置:');
+    print('  音频增强: ${enableAudioEnhancement ? "启用" : "禁用"}');
+    print('  部分结果纠错: ${enablePartialCorrection ? "启用" : "禁用"}');
+    print('  文本纠错: ${enableTextCorrection ? "启用" : "禁用"}');
   }
 }
