@@ -359,34 +359,121 @@ class RecordServiceHandler extends TaskHandler {
   // 初始化声纹识别模型和管理器
   Future<void> _initSpeakerRecognition() async {
     try {
-      print('[_initSpeakerRecognition] 🔄 Attempting to initialize speaker recognition...');
+      print('[_initSpeakerRecognition] 🔄 开始初始化声纹识别系统...');
 
-      // ��查文件是否存��
-      try {
-        final modelPath = await copyAssetFile('assets/3dspeaker_speech_eres2net_voxceleb_16k.onnx');
-        final config = sherpa_onnx.SpeakerEmbeddingExtractorConfig(model: modelPath);
-        _extractor = sherpa_onnx.SpeakerEmbeddingExtractor(config: config);
-        _manager = sherpa_onnx.SpeakerEmbeddingManager(_extractor!.dim);
+      // 尝试获取声纹模型文件
+      String? modelPath = await _ensureSpeakerModelExists();
 
-        final speakers = _objectBoxService.getUserSpeaker();
-        for (var speaker in speakers!) {
-          _manager!.add(name: speaker.name!, embedding: Float32List.fromList(speaker.embedding!));
-        }
-
-        print('[_initSpeakerRecognition] ✅ Speaker recognition initialized successfully');
-      } catch (assetError) {
-        print('[_initSpeakerRecognition] ❌ Speaker model file not found: $assetError');
-        print('[_initSpeakerRecognition] ��️ Continuing without speaker recognition...');
-
-        // 创建一个虚拟的manager，避免null错误
-        _manager = sherpa_onnx.SpeakerEmbeddingManager(512); // 使用默认维度
+      if (modelPath == null) {
+        print('[_initSpeakerRecognition] ❌ 无法获取声纹模型文件，声纹识别将被禁用');
+        _extractor = null;
+        _manager = null;
+        return;
       }
-    } catch (e) {
-      print('[_initSpeakerRecognition] ❌ Failed to initialize speaker recognition: $e');
-      print('[_initSpeakerRecognition] ⚠️ Continuing without speaker recognition...');
 
-      // 创建一个虚拟的manager，避免null错误
-      _manager = sherpa_onnx.SpeakerEmbeddingManager(512);
+      print('[_initSpeakerRecognition] 📁 使用模型文件: $modelPath');
+
+      // 创建声纹提取器配置
+      final config = sherpa_onnx.SpeakerEmbeddingExtractorConfig(model: modelPath);
+      _extractor = sherpa_onnx.SpeakerEmbeddingExtractor(config: config);
+
+      if (_extractor == null) {
+        print('[_initSpeakerRecognition] ❌ 声纹提取器创建失败');
+        return;
+      }
+
+      // 创建声纹管理器
+      _manager = sherpa_onnx.SpeakerEmbeddingManager(_extractor!.dim);
+      print('[_initSpeakerRecognition] ✅ 声纹管理器创建成功，维度: ${_extractor!.dim}');
+
+      // 加载已注册的用户声纹
+      await _loadRegisteredSpeakers();
+
+      print('[_initSpeakerRecognition] ✅ 声纹识别系统初始化完成');
+    } catch (e) {
+      print('[_initSpeakerRecognition] ❌ 声纹识别初始化失败: $e');
+      print('[_initSpeakerRecognition] 🔄 声纹识别将被禁用...');
+
+      // 完全禁用声纹识别，避免创建虚拟manager
+      _extractor = null;
+      _manager = null;
+    }
+  }
+
+  // 确保声纹模型文件存在
+  Future<String?> _ensureSpeakerModelExists() async {
+    try {
+      // 按优先级尝试不同的模型文件
+      final modelCandidates = [
+        'assets/3dspeaker_speech_eres2net_base_200k_sv_zh-cn_16k-common.onnx', // 用户新下载的3dspeaker模型 (第一优先级)
+        'assets/voxceleb_resnet34_LM.onnx',          // WeSpeaker ResNet34 Large-Margin 备用
+        'assets/wespeaker_resnet34.onnx',           // WeSpeaker ResNet34 备用
+        'assets/speaker_embedding.onnx',             // 通用声纹模型
+        'assets/cam++_voxceleb.onnx',               // CAM++ VoxCeleb
+      ];
+
+      for (String modelAssetPath in modelCandidates) {
+        try {
+          final modelPath = await copyAssetFile(modelAssetPath);
+          print('[_ensureSpeakerModelExists] ✅ 成功加载模型: $modelAssetPath');
+          return modelPath;
+        } catch (e) {
+          print('[_ensureSpeakerModelExists] ⚠️ 模型文件不存在: $modelAssetPath');
+          continue;
+        }
+      }
+
+      print('[_ensureSpeakerModelExists] ❌ 所有预设模型文件都不存在');
+      return null;
+    } catch (e) {
+      print('[_ensureSpeakerModelExists] ❌ 获取模型文件时发生错误: $e');
+      return null;
+    }
+  }
+
+  // 从网络下载声纹模型 (暂时保留接口)
+  Future<String?> _downloadSpeakerModel() async {
+    try {
+      print('[_downloadSpeakerModel] 🌐 开始下载声纹模型文件...');
+
+      // 这里可以添加实际的下载逻辑
+      // 推荐下载地址：
+      // ECAPA-TDNN: https://huggingface.co/speechbrain/spkrec-ecapa-voxceleb
+      // WeSpeaker: https://github.com/wenet-e2e/wespeaker
+
+      print('[_downloadSpeakerModel] ⚠️ 网络下载功能暂未实现');
+      return null;
+    } catch (e) {
+      print('[_downloadSpeakerModel] ❌ 下载模型文件失败: $e');
+      return null;
+    }
+  }
+
+  // 加载已注册的说话人
+  Future<void> _loadRegisteredSpeakers() async {
+    try {
+      final speakers = _objectBoxService.getUserSpeaker();
+      if (speakers == null || speakers.isEmpty) {
+        print('[_loadRegisteredSpeakers] ℹ️ 没有已注册的用户声纹');
+        return;
+      }
+
+      int loadedCount = 0;
+      for (var speaker in speakers) {
+        if (speaker.name != null && speaker.embedding != null && speaker.embedding!.isNotEmpty) {
+          try {
+            _manager!.add(name: speaker.name!, embedding: Float32List.fromList(speaker.embedding!));
+            loadedCount++;
+            print('[_loadRegisteredSpeakers] ✅ 加载用户声纹: ${speaker.name}');
+          } catch (addError) {
+            print('[_loadRegisteredSpeakers] ⚠️ 加载用户声纹失败 ${speaker.name}: $addError');
+          }
+        }
+      }
+
+      print('[_loadRegisteredSpeakers] 📊 总共加载了 $loadedCount 个用户声纹');
+    } catch (e) {
+      print('[_loadRegisteredSpeakers] ❌ 加载已注册说话人失败: $e');
     }
   }
 
@@ -739,23 +826,81 @@ class RecordServiceHandler extends TaskHandler {
     required String text,
     required dynamic embedding,
   }) {
+    print('[_initVoiceprint] 🗣️ 开始声纹注册流程...');
+    print('[_initVoiceprint] 📝 文本: "$text"');
+    print('[_initVoiceprint] 🎭 当前步骤: $currentStep/${wakeword_constants.welcomePhrases.length}');
+
     FlutterForegroundTask.sendDataToMain({
       'isEndpoint': true,
     });
 
-    double similarity = calculateEditDistance(text, wakeword_constants.welcomePhrases[currentStep]);
-    if (similarity >= 0.5) {
-      currentStep++;
-      // 注册前先清空 manager 和数据库中的旧 embedding，避免多条 user
-      _manager?.allSpeakerNames.forEach((name) {
-        _manager?.remove(name);
-      });
-      _manager!.add(name: 'user', embedding: embedding);
-      _objectBoxService.insertSpeaker(SpeakerEntity(name: 'user', model: 'eres2net', embedding: embedding));
+    // 确保有可用的manager和有效的embedding
+    if (_manager == null) {
+      print('[_initVoiceprint] ❌ 声纹管理器不可用');
+      FlutterForegroundTask.sendDataToMain({'status': 'error', 'message': '声纹系统未初始化'});
+      return;
+    }
 
-      FlutterForegroundTask.sendDataToMain({'status': 'success'});
+    if (embedding is! Float32List || embedding.isEmpty) {
+      print('[_initVoiceprint] ❌ 无效的声纹特征');
+      FlutterForegroundTask.sendDataToMain({'status': 'error', 'message': '声纹特征无效'});
+      return;
+    }
+
+    // 检查步骤是否越界
+    if (currentStep >= wakeword_constants.welcomePhrases.length) {
+      print('[_initVoiceprint] ✅ 声纹注册已完成');
+      FlutterForegroundTask.sendDataToMain({'status': 'completed'});
+      _isNeedVoiceprintInit = false;
+      return;
+    }
+
+    // 计算文本相似度
+    double similarity = calculateEditDistance(text, wakeword_constants.welcomePhrases[currentStep]);
+    print('[_initVoiceprint] 📊 文本相似度: $similarity (要求: >= 0.5)');
+
+    if (similarity >= 0.5) {
+      try {
+        // 成功匹配，进入下一步
+        currentStep++;
+        print('[_initVoiceprint] ✅ 步骤 ${currentStep-1} 完成，进入步骤 $currentStep');
+
+        // 清空旧的用户声纹
+        final existingNames = _manager!.allSpeakerNames.toList();
+        for (String name in existingNames) {
+          if (name == 'user' || name == 'main_user') {
+            _manager!.remove(name);
+            print('[_initVoiceprint] 🗑️ 移除旧声纹: $name');
+          }
+        }
+
+        // 添加新的用户声纹
+        _manager!.add(name: 'user', embedding: embedding);
+        print('[_initVoiceprint] ➕ 添加用户声纹到管理器');
+
+        // 保存到数据库
+        _objectBoxService.insertSpeaker(SpeakerEntity(
+          name: 'user',
+          model: '3dspeaker_eres2net_base_200k', // 更新为新的3dspeaker模型名称
+          embedding: embedding.toList()
+        ));
+        print('[_initVoiceprint] 💾 保存声纹到数据库');
+
+        // 检查是否完成所有步骤
+        if (currentStep >= wakeword_constants.welcomePhrases.length) {
+          print('[_initVoiceprint] 🎉 声纹注册全部完成！');
+          FlutterForegroundTask.sendDataToMain({'status': 'completed'});
+          _isNeedVoiceprintInit = false;
+        } else {
+          FlutterForegroundTask.sendDataToMain({'status': 'success', 'step': currentStep});
+        }
+      } catch (e) {
+        print('[_initVoiceprint] ❌ 声纹注册过程出错: $e');
+        FlutterForegroundTask.sendDataToMain({'status': 'error', 'message': '声纹注册失败: $e'});
+      }
     } else {
-      FlutterForegroundTask.sendDataToMain({'status': 'failure'});
+      print('[_initVoiceprint] ❌ 文本不匹配，需要重试');
+      FlutterForegroundTask.sendDataToMain({'status': 'failure', 'similarity': similarity});
     }
   }
 
@@ -829,12 +974,27 @@ class RecordServiceHandler extends TaskHandler {
       // 返回一个虚拟的embedding，避免null错误
       return Float32List(512); // 创建一个512维的零向量
     }
-    final speakerStream = _extractor!.createStream();
-    speakerStream.acceptWaveform(samples: Float32List.fromList(samplesBuffer), sampleRate: 16000);
-    final embedding = _extractor!.compute(speakerStream);
-    speakerStream.free();
-    print('[getSpeakerEmbedding] embedding: ${embedding.length > 10 ? embedding.sublist(0,10) : embedding}');
-    return embedding;
+
+    try {
+      final speakerStream = _extractor!.createStream();
+      speakerStream.acceptWaveform(samples: Float32List.fromList(samplesBuffer), sampleRate: 16000);
+      final embedding = _extractor!.compute(speakerStream);
+      speakerStream.free();
+
+      // 验证embedding质量
+      if (embedding.isEmpty) {
+        print('[getSpeakerEmbedding] ⚠️ Empty embedding returned');
+        return Float32List(512);
+      }
+
+      print('[getSpeakerEmbedding] ✅ 成功提取声纹特征，维度: ${embedding.length}');
+      print('[getSpeakerEmbedding] 📊 Embedding preview: ${embedding.length > 10 ? embedding.sublist(0, 10) : embedding}');
+
+      return embedding;
+    } catch (e) {
+      print('[getSpeakerEmbedding] ❌ 声纹提取失败: $e');
+      return Float32List(512);
+    }
   }
 
   // 改进的说话人识别逻辑 - 专注于区分"我"和"别人"
@@ -850,8 +1010,8 @@ class RecordServiceHandler extends TaskHandler {
 
     // 获取主用户的声纹（假设第一个是主用户）
     var mainUser = userSpeakers.firstWhere(
-      (speaker) => speaker.name == 'user' || speaker.name == 'main_user',
-      orElse: () => userSpeakers.first
+            (speaker) => speaker.name == 'user' || speaker.name == 'main_user',
+        orElse: () => userSpeakers.first
     );
 
     if (mainUser.embedding == null || mainUser.embedding!.isEmpty) {

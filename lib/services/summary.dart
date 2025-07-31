@@ -18,7 +18,7 @@ class DialogueSummary {
       int? endTime = ObjectBoxService().getLastRecord()?.createdAt;
       print('[DialogueSummary] start called, startSummaryTime=$startSummaryTime, endTime=$endTime');
       if (endTime == null ||
-          (DateTime.now().millisecondsSinceEpoch - endTime < 1 * 60 * 1000)) {
+          (DateTime.now().millisecondsSinceEpoch - endTime < 2 * 60 * 1000)) {
         print('[DialogueSummary] return: 没有新对话或对话过短');
         return;
       }
@@ -99,7 +99,7 @@ class DialogueSummary {
       chatHistoryBuffer.write("($formattedTime) ${record.role}: ${record.content}\n");
     }
 
-    if (contentLength < 20) {
+    if (contentLength < 200) {
       return null;
     }
 
