@@ -1,9 +1,6 @@
 import 'dart:convert';
-import 'dart:math' as math;
 import 'package:app/models/graph_models.dart';
-import 'package:app/models/event_relation_entity.dart';
 import 'package:app/models/record_entity.dart';
-import 'package:app/services/embeddings_service.dart';
 import 'package:app/services/llm.dart';
 import 'package:app/services/objectbox_service.dart';
 
@@ -44,12 +41,10 @@ class KnowledgeGraphService {
 对话内容如下：
 """;
     try {
-      print('[KnowledgeGraphService] 🔍 开始提取事件，对话长度: \\${conversationText.length}');
+      print('[KnowledgeGraphService] 🔍 开始提取事件，对话长度: ${conversationText.length}');
       final llm = await LLM.create('gpt-4o-mini', systemPrompt: eventExtractionPrompt);
-      print('[KnowledgeGraphService] ✅ LLM实例创建成功');
       final response = await llm.createRequest(content: conversationText);
-      print('[KnowledgeGraphService] 📝 LLM响应长度: \\${response.length}');
-      print('[KnowledgeGraphService] 📄 LLM原始响应: \\${response.substring(0, response.length > 200 ? 200 : response.length)}...');
+
       final jsonStart = response.indexOf('{');
       final jsonEnd = response.lastIndexOf('}');
       if (jsonStart == -1 || jsonEnd == -1 || jsonEnd <= jsonStart) {
@@ -71,76 +66,6 @@ class KnowledgeGraphService {
     }
   }
 
-  // 处理单个三元组事件，写入知识图谱
-  static Future<void> processEvent(Map<String, dynamic> eventData, {required String contextId}) async {
-    final objectBox = ObjectBoxService();
-    // 1. 处理主语节点
-    final subject = eventData['subject'] as Map<String, dynamic>?;
-    if (subject == null) return;
-    final subjectId = subject['id'] ?? (subject['name'] + '_' + subject['type']);
-    Node? subjectNode = objectBox.findNodeByNameType(subject['name'], subject['type']);
-    if (subjectNode == null) {
-      subjectNode = Node(
-        id: subjectId,
-        name: subject['name'],
-        type: subject['type'],
-        attributes: Map<String, String>.from(subject['attributes'] ?? {}),
-      );
-      objectBox.insertNode(subjectNode);
-    }
-    // 2. 处理宾语节点（如为实体）
-    String? objectId;
-    Node? objectNode;
-    final obj = eventData['object'];
-    if (obj is Map<String, dynamic>) {
-      objectId = obj['id'] ?? (obj['name'] + '_' + obj['type']);
-      objectNode = objectBox.findNodeByNameType(obj['name'], obj['type']);
-      if (objectNode == null) {
-        objectNode = Node(
-          id: objectId ?? '', // 修复类型不匹配
-          name: obj['name'],
-          type: obj['type'],
-          attributes: Map<String, String>.from(obj['attributes'] ?? {}),
-        );
-        objectBox.insertNode(objectNode);
-      }
-    } else if (obj is String) {
-      objectId = obj;
-    }
-    // 3. 插入关系边
-    final edge = Edge(
-      source: subjectId,
-      relation: eventData['predicate'] ?? '',
-      target: objectId ?? '',
-      context: contextId,
-      timestamp: eventData['timestamp'] != null ? DateTime.tryParse(eventData['timestamp']) : DateTime.now(),
-    );
-    objectBox.insertEdge(edge);
-    // 4. 插入属性（主语、宾语）
-    if (subject['attributes'] != null) {
-      subject['attributes'].forEach((k, v) {
-        objectBox.insertAttribute(Attribute(
-          nodeId: subjectId,
-          key: k,
-          value: v,
-          timestamp: DateTime.now(),
-          context: contextId,
-        ));
-      });
-    }
-    if (objectNode != null && obj['attributes'] != null) {
-      obj['attributes'].forEach((k, v) {
-        objectBox.insertAttribute(Attribute(
-          nodeId: objectId!,
-          key: k,
-          value: v,
-          timestamp: DateTime.now(),
-          context: contextId,
-        ));
-      });
-    }
-  }
-
   // 批量处理事件，写入知识图谱
   static Future<void> processEventsFromConversation(String conversationText, {required String contextId, DateTime? conversationTime}) async {
     try {
@@ -148,6 +73,7 @@ class KnowledgeGraphService {
       final nodes = result['nodes'] ?? [];
       final edges = result['edges'] ?? [];
       final objectBox = ObjectBoxService();
+
       // 1. 写入节点（查重）
       for (final nodeData in nodes) {
         if (nodeData is Map) {
@@ -155,10 +81,11 @@ class KnowledgeGraphService {
           final name = nodeData['name']?.toString() ?? '';
           final type = nodeData['type']?.toString() ?? '';
           final attributes = nodeData['attributes'] is Map ? Map<String, String>.from(nodeData['attributes']) : <String, String>{};
-          // 修正查重逻辑，只有查不到节点时才插入
+
           if (objectBox.findNodeByNameType(name, type) == null) {
             objectBox.insertNode(Node(id: id, name: name, type: type, attributes: attributes));
           }
+
           // 同步属性到 Attribute 表
           attributes.forEach((k, v) {
             objectBox.insertAttribute(Attribute(
@@ -171,6 +98,7 @@ class KnowledgeGraphService {
           });
         }
       }
+
       // 2. 写入边
       for (final edgeData in edges) {
         if (edgeData is Map) {
@@ -187,10 +115,9 @@ class KnowledgeGraphService {
           ));
         }
       }
+
       print('[KnowledgeGraphService] 成功写入节点数据: $nodes');
-      print('[DialogueSummary] 成功写入节点数据: $nodes');
       print('[KnowledgeGraphService] 成功写入边数据: $edges');
-      print('[DialogueSummary] 成功写入边数据: $edges');
     } catch (e) {
       print('[KnowledgeGraphService] Error processing conversation: $e');
     }
@@ -199,11 +126,13 @@ class KnowledgeGraphService {
   // 按10分钟分段处理对话，逐段调用LLM
   static Future<void> processEventsFromConversationBySegments(List<RecordEntity> records, {int segmentMinutes = 10}) async {
     if (records.isEmpty) return;
+
     // 1. 按时间排序
     records.sort((a, b) => (a.createdAt ?? 0).compareTo(b.createdAt ?? 0));
     final List<List<RecordEntity>> segments = [];
     List<RecordEntity> currentSegment = [];
     int? lastTime;
+
     for (final record in records) {
       if (lastTime != null && record.createdAt != null &&
           record.createdAt! - lastTime > segmentMinutes * 60 * 1000) {
@@ -215,7 +144,8 @@ class KnowledgeGraphService {
     }
     if (currentSegment.isNotEmpty) segments.add(currentSegment);
 
-    print('[KnowledgeGraphService] 分段数量: \\${segments.length}');
+    print('[KnowledgeGraphService] 分段数量: ${segments.length}');
+
     // 2. 逐段处理
     for (int i = 0; i < segments.length; i++) {
       final seg = segments[i];
@@ -228,7 +158,8 @@ class KnowledgeGraphService {
       }
       final chatHistory = chatHistoryBuffer.toString();
       if (chatHistory.trim().isEmpty) continue;
-      print('[KnowledgeGraphService] 处理第\\${i+1}段, 长度: \\${chatHistory.length}');
+
+      print('[KnowledgeGraphService] 处理第${i+1}段, 长度: ${chatHistory.length}');
       await processEventsFromConversation(chatHistory, contextId: '${segments[i].first.createdAt}');
     }
   }
@@ -282,5 +213,4 @@ class KnowledgeGraphService {
       return [];
     }
   }
-
 }

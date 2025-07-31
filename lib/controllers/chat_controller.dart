@@ -367,7 +367,7 @@ class ChatController extends ChangeNotifier {
 
     // ✅ 修复重复内容检测逻辑 - 只检查相同文本内容，不管角色
     bool isDuplicateContent = newMessages.any((msg) =>
-      msg['text'] == data['text'] && msg['text'] != null && msg['text'].toString().trim().isNotEmpty
+    msg['text'] == data['text'] && msg['text'] != null && msg['text'].toString().trim().isNotEmpty
     );
 
     if (isDuplicateContent) {

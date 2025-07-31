@@ -2,13 +2,10 @@ import 'dart:convert';
 import 'package:app/constants/prompt_constants.dart';
 import 'package:app/models/record_entity.dart';
 import 'package:app/models/summary_entity.dart';
-import 'package:app/models/todo_entity.dart';
 import 'package:app/services/llm.dart';
 import 'package:app/services/objectbox_service.dart';
 import 'package:intl/intl.dart';
 import 'package:app/services/knowledge_graph_service.dart';
-
-import 'notification.dart';
 
 class DialogueSummary {
   // MainProcess, start the summarization process
@@ -17,11 +14,12 @@ class DialogueSummary {
       int? startSummaryTime = startTime;
       int? endTime = ObjectBoxService().getLastRecord()?.createdAt;
       print('[DialogueSummary] start called, startSummaryTime=$startSummaryTime, endTime=$endTime');
-      if (endTime == null ||
-          (DateTime.now().millisecondsSinceEpoch - endTime < 2 * 60 * 1000)) {
+
+      if (endTime == null || (DateTime.now().millisecondsSinceEpoch - endTime < 2 * 60 * 1000)) {
         print('[DialogueSummary] return: 没有新对话或对话过短');
         return;
       }
+
       if (startSummaryTime == null) {
         print('[DialogueSummary] startSummaryTime为null，尝试从summaryBox获取');
         if (!ObjectBoxService.summaryBox.isEmpty()) {
@@ -32,17 +30,22 @@ class DialogueSummary {
           print('[DialogueSummary] summaryBox为空，startSummaryTime设为0');
         }
       }
+
       print('[DialogueSummary] 调用_summarize, startSummaryTime=$startSummaryTime');
+
       // Generate summary
       var summary = await _summarize(startSummaryTime!);
       print('[DialogueSummary] _summarize返回: ${summary != null ? '有内容' : 'null'}');
+
       if (summary != null) {
         print('[DialogueSummary] 进入summary!=null分支');
         print('[DialogueSummary] 开始解析summary json');
         List<dynamic> summaryArray = jsonDecode(summary)["output"];
         print('[DialogueSummary] summaryArray 解析完成，长度: ${summaryArray.length}');
         print("[DialogueSummary] summaryArray 内容为: $summaryArray");
+
         List<SummaryEntity> summaryEntities = [];
+
         // Process each item in the summary array
         for (var item in summaryArray) {
           print('[DialogueSummary] 处理summary item: $item');
@@ -50,6 +53,7 @@ class DialogueSummary {
           String abstract = item['abstract'].toString();
           int startTime;
           int endTime;
+
           try {
             startTime = DateFormat("yyyy-MM-dd HH:mm:ss").parse(item['start_time']).millisecondsSinceEpoch;
             endTime = DateFormat("yyyy-MM-dd HH:mm:ss").parse(item['end_time']).millisecondsSinceEpoch;
@@ -58,6 +62,7 @@ class DialogueSummary {
             startTime = DateFormat("yyyy-MM-dd HH:mm").parse(item['start_time']).millisecondsSinceEpoch;
             endTime = DateFormat("yyyy-MM-dd HH:mm").parse(item['end_time']).millisecondsSinceEpoch;
           }
+
           SummaryEntity summaryEntity = SummaryEntity(
             subject: subject,
             content: abstract,
@@ -70,6 +75,7 @@ class DialogueSummary {
           summaryEntities.add(summaryEntity);
         }
         print('[DialogueSummary] summaryEntities 构建完成，数量: ${summaryEntities.length}');
+
         // Insert the summary entities into the ObjectBox database
         await ObjectBoxService().insertSummaries(summaryEntities);
         print('[DialogueSummary] 摘要已写入数据库，数量: ${summaryEntities.length}');
@@ -133,61 +139,6 @@ class DialogueSummary {
     } catch (e) {
       print("An error occurred while generating the summary: $e");
       throw Exception("An error occurred while generating the summary");
-    }
-  }
-
-  static Stream<String> _splitChatHistory(String chatHistory, int chunkSize, int overlap) async* {
-    int length = chatHistory.length;
-    int start = 0;
-
-    while (start < length) {
-      int end = start + chunkSize;
-      if (end > length) end = length;
-      yield chatHistory.substring(start, end);
-      if (end == length) break;
-      start = end - overlap;
-    }
-  }
-
-  static Future<List<String>> _getSummariesForChunks(LLM summaryLlm, List<String> chunks) async {
-    List<Future<String>> futureSummaries = [];
-
-    for (String chunk in chunks) {
-      Future<String> summaryFuture = summaryLlm.createRequest(content: chunk);
-      futureSummaries.add(summaryFuture);
-    }
-
-    List<String> summaries = await Future.wait(futureSummaries);
-
-    return summaries;
-  }
-
-  static Future<String> _mergeSummaries(LLM summaryLlm, List<String> summaries) async {
-    String summary = await summaryLlm.createRequest(content: summaries.toString());
-    final todo_list = jsonDecode(_extractJsonContent(summary))['key_points'];
-    _saveTodos(todo_list);
-    return summary;
-  }
-
-  static Future<void> _saveTodos(List<dynamic> todoList) async {
-    List<TodoEntity> todos = [];
-    for (final todo in todoList) {
-      todos.add(TodoEntity(
-          task: todo['description'],
-          deadline: todo['deadline']?.toDateTime()!.fromMillisecondsSinceEpoch, detail: ''));
-    }
-
-    await ObjectBoxService().createTodos(todos);
-  }
-
-  static String _extractJsonContent(String input) {
-    final regex = RegExp(r'```json([\s\S]*?)```');
-    final match = regex.firstMatch(input);
-
-    if (match != null) {
-      return match.group(1)!.trim();
-    } else {
-      return input.trim();
     }
   }
 }

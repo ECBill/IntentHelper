@@ -28,21 +28,21 @@ class ChatContainer extends StatelessWidget {
     return BoxDecoration(
       gradient: isLightMode
           ? const LinearGradient(
-              begin: Alignment.topCenter,
-              end: Alignment.bottomCenter,
-              colors: [
-                Color(0xFFB1F4F9),
-                Color(0xFF61D2DB),
-              ],
-            )
+        begin: Alignment.topCenter,
+        end: Alignment.bottomCenter,
+        colors: [
+          Color(0xFFFFF0F5), // 浅粉色渐变起始
+          Color(0xFFFFB6C1), // 浅粉色渐变结束
+        ],
+      )
           : null,
       color: isLightMode ? null : const Color(0xFF29BBC6),
       boxShadow: [
         isLightMode
             ? const BoxShadow(
-                color: Color(0x3D10939D),
-                blurRadius: 8,
-              )
+          color: Color(0x3D10939D),
+          blurRadius: 8,
+        )
             : darkBoxShadow
       ],
     );
@@ -52,21 +52,21 @@ class ChatContainer extends StatelessWidget {
     return BoxDecoration(
       gradient: isLightMode
           ? const LinearGradient(
-              begin: Alignment.topCenter,
-              end: Alignment.bottomCenter,
-              colors: [
-                Color(0xFFEDFEFF),
-                Colors.white,
-              ],
-            )
+        begin: Alignment.topCenter,
+        end: Alignment.bottomCenter,
+        colors: [
+          Color(0xFFF0FFF0), // 浅绿色渐变起始
+          Color(0xFF98FB98), // 浅绿色渐变结束
+        ],
+      )
           : null,
       color: isLightMode ? null : const Color(0xFF333333),
       boxShadow: [
         isLightMode
             ? const BoxShadow(
-                color: Color(0x1A29BBC6),
-                blurRadius: 8,
-              )
+          color: Color(0x1A29BBC6),
+          blurRadius: 8,
+        )
             : darkBoxShadow
       ],
     );
@@ -76,19 +76,19 @@ class ChatContainer extends StatelessWidget {
     return BoxDecoration(
       gradient: isLightMode
           ? const LinearGradient(
-              colors: [
-                Color(0xFFEDF3FF),
-                Colors.white,
-              ],
-            )
+        colors: [
+          Color(0xFFEDF3FF),
+          Colors.white,
+        ],
+      )
           : null,
       color: isLightMode ? null : const Color(0xFF102733),
       boxShadow: [
         isLightMode
             ? const BoxShadow(
-                color: Color(0x1A29BBC6),
-                blurRadius: 8,
-              )
+          color: Color(0x1A29BBC6),
+          blurRadius: 8,
+        )
             : darkBoxShadow
       ],
     );
