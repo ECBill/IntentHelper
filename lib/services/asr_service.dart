@@ -326,7 +326,15 @@ class RecordServiceHandler extends TaskHandler {
       // 初始化流式ASR服务
       print('[_initAsr] 🎯 Initializing streaming ASR service...');
       await _streamingAsr.init();
-      print('[_initAsr] ✅ Streaming ASR service initialized');
+
+      // 应用性能优化设置 - 优先速度，保持准确性
+      _streamingAsr.setPerformanceMode(
+        enableAudioEnhancement: false,      // 关闭音频增强以提升速度
+        enablePartialCorrection: false,     // 只对最终结果纠错
+        enableTextCorrection: true,         // 保持纠错功能以维持准确性
+      );
+
+      print('[_initAsr] ✅ Streaming ASR service initialized with optimized settings');
 
       await _initSpeakerRecognition();
 
