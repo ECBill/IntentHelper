@@ -22,11 +22,15 @@ class ObjectBoxService {
   static late final Box<SpeakerEntity> speakerBox;
   static late final Box<TodoEntity> todoBox;
   static late final Box<EventEntity> eventBox;
-  static late final Box<EventRelationEntity> eventRelationBox;
+  static late final Box<EventRelationEntity> eventRelationEntityBox;
   static late final Box<Node> nodeBox;
   static late final Box<Edge> edgeBox;
   static late final Box<Attribute> attributeBox;
   static late final Box<Context> contextBox;
+  static late final Box<EventNode> eventNodeBox;
+  static late final Box<EventEntityRelation> eventEntityRelationBox;
+  static late final Box<EventRelation> eventRelationBox;
+  static late final Box<EntityAlignment> entityAlignmentBox;
 
   // Singleton pattern to ensure only one instance of ObjectBoxService
   static final ObjectBoxService _instance = ObjectBoxService._internal();
@@ -58,11 +62,15 @@ class ObjectBoxService {
     speakerBox = Box<SpeakerEntity>(store);
     todoBox = Box<TodoEntity>(store);
     eventBox = Box<EventEntity>(store);
-    eventRelationBox = Box<EventRelationEntity>(store);
+    eventRelationEntityBox = Box<EventRelationEntity>(store);
     nodeBox = Box<Node>(store);
     edgeBox = Box<Edge>(store);
     attributeBox = Box<Attribute>(store);
     contextBox = Box<Context>(store);
+    eventNodeBox = Box<EventNode>(store);
+    eventEntityRelationBox = Box<EventEntityRelation>(store);
+    eventRelationBox = Box<EventRelation>(store);
+    entityAlignmentBox = Box<EntityAlignment>(store);
   }
 
   void insertRecord(RecordEntity record, String category) {
@@ -518,7 +526,190 @@ class ObjectBoxService {
     }
   }
 
-  // 清空事件相关数据的方法
+  // ========== 新增：事件中心知识图谱操作 ==========
+
+  // EventNode 操作
+  void insertEventNode(EventNode eventNode) {
+    try {
+      eventNodeBox.put(eventNode);
+    } catch (e) {
+      print('Error inserting event node: $e');
+    }
+  }
+
+  EventNode? findEventNodeById(String id) {
+    try {
+      return eventNodeBox.query(EventNode_.id.equals(id)).build().findFirst();
+    } catch (e) {
+      print('Error finding event node by id: $e');
+      return null;
+    }
+  }
+
+  List<EventNode> queryEventNodes() {
+    try {
+      return eventNodeBox.getAll();
+    } catch (e) {
+      print('Error querying all event nodes: $e');
+      return [];
+    }
+  }
+
+  List<EventNode> queryEventNodesByType(String type) {
+    try {
+      return eventNodeBox.query(EventNode_.type.equals(type)).build().find();
+    } catch (e) {
+      print('Error querying event nodes by type: $e');
+      return [];
+    }
+  }
+
+  List<EventNode> queryEventNodesByTimeRange(DateTime startTime, DateTime endTime) {
+    try {
+      return eventNodeBox.query(
+        EventNode_.startTime.between(startTime.millisecondsSinceEpoch, endTime.millisecondsSinceEpoch)
+      ).build().find();
+    } catch (e) {
+      print('Error querying event nodes by time range: $e');
+      return [];
+    }
+  }
+
+  // EventEntityRelation 操作
+  void insertEventEntityRelation(EventEntityRelation relation) {
+    try {
+      eventEntityRelationBox.put(relation);
+    } catch (e) {
+      print('Error inserting event entity relation: $e');
+    }
+  }
+
+  List<EventEntityRelation> queryEventEntityRelations({String? eventId, String? entityId}) {
+    try {
+      if (eventId != null && entityId != null) {
+        return eventEntityRelationBox.query(
+          EventEntityRelation_.eventId.equals(eventId)
+            .and(EventEntityRelation_.entityId.equals(entityId))
+        ).build().find();
+      } else if (eventId != null) {
+        return eventEntityRelationBox.query(
+          EventEntityRelation_.eventId.equals(eventId)
+        ).build().find();
+      } else if (entityId != null) {
+        return eventEntityRelationBox.query(
+          EventEntityRelation_.entityId.equals(entityId)
+        ).build().find();
+      } else {
+        return eventEntityRelationBox.getAll();
+      }
+    } catch (e) {
+      print('Error querying event entity relations: $e');
+      return [];
+    }
+  }
+
+  // EventRelation 操作
+  void insertEventRelation(EventRelation relation) {
+    try {
+      eventRelationBox.put(relation);
+    } catch (e) {
+      print('Error inserting event relation: $e');
+    }
+  }
+
+  List<EventRelation> queryEventRelations({String? sourceEventId, String? targetEventId}) {
+    try {
+      if (sourceEventId != null && targetEventId != null) {
+        return eventRelationBox.query(
+          EventRelation_.sourceEventId.equals(sourceEventId)
+            .and(EventRelation_.targetEventId.equals(targetEventId))
+        ).build().find();
+      } else if (sourceEventId != null) {
+        return eventRelationBox.query(
+          EventRelation_.sourceEventId.equals(sourceEventId)
+        ).build().find();
+      } else if (targetEventId != null) {
+        return eventRelationBox.query(
+          EventRelation_.targetEventId.equals(targetEventId)
+        ).build().find();
+      } else {
+        return eventRelationBox.getAll();
+      }
+    } catch (e) {
+      print('Error querying event relations: $e');
+      return [];
+    }
+  }
+
+  // EntityAlignment 操作
+  void insertEntityAlignment(EntityAlignment alignment) {
+    try {
+      entityAlignmentBox.put(alignment);
+    } catch (e) {
+      print('Error inserting entity alignment: $e');
+    }
+  }
+
+  List<EntityAlignment> queryEntityAlignments({String? canonicalId, String? aliasName}) {
+    try {
+      if (canonicalId != null && aliasName != null) {
+        return entityAlignmentBox.query(
+          EntityAlignment_.canonicalId.equals(canonicalId)
+            .and(EntityAlignment_.aliasId.contains(aliasName))
+        ).build().find();
+      } else if (canonicalId != null) {
+        return entityAlignmentBox.query(
+          EntityAlignment_.canonicalId.equals(canonicalId)
+        ).build().find();
+      } else if (aliasName != null) {
+        return entityAlignmentBox.query(
+          EntityAlignment_.aliasId.contains(aliasName)
+        ).build().find();
+      } else {
+        return entityAlignmentBox.getAll();
+      }
+    } catch (e) {
+      print('Error querying entity alignments: $e');
+      return [];
+    }
+  }
+
+  // 更新Node
+  void updateNode(Node node) {
+    try {
+      nodeBox.put(node);
+    } catch (e) {
+      print('Error updating node: $e');
+    }
+  }
+
+  // 更新EventNode
+  void updateEventNode(EventNode eventNode) {
+    try {
+      eventNodeBox.put(eventNode);
+    } catch (e) {
+      print('Error updating event node: $e');
+    }
+  }
+
+  // 清空新增的知识图谱数据
+  Future<void> clearEventNodes() async {
+    try {
+      eventNodeBox.removeAll();
+    } catch (e) {
+      print('Error clearing event nodes: $e');
+    }
+  }
+
+  Future<void> clearEventEntityRelations() async {
+    try {
+      eventEntityRelationBox.removeAll();
+    } catch (e) {
+      print('Error clearing event entity relations: $e');
+    }
+  }
+
+  // 清空事件相关数据的方法（兼容旧版本）
   Future<void> clearEvents() async {
     try {
       eventBox.removeAll();
@@ -529,9 +720,26 @@ class ObjectBoxService {
 
   Future<void> clearEventRelations() async {
     try {
-      eventRelationBox.removeAll();
+      eventRelationEntityBox.removeAll();
     } catch (e) {
       print('Error clearing event relations: $e');
+    }
+  }
+
+  // 清空所有知识图谱数据
+  Future<void> clearAllKnowledgeGraph() async {
+    try {
+      nodeBox.removeAll();
+      edgeBox.removeAll();
+      attributeBox.removeAll();
+      contextBox.removeAll();
+      eventNodeBox.removeAll();
+      eventEntityRelationBox.removeAll();
+      eventRelationBox.removeAll();
+      entityAlignmentBox.removeAll();
+      print('All knowledge graph data cleared');
+    } catch (e) {
+      print('Error clearing all knowledge graph data: $e');
     }
   }
 }

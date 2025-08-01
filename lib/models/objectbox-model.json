@@ -345,7 +345,7 @@
     },
     {
       "id": "8:5160658936453162190",
-      "lastPropertyId": "6:5213066320880571025",
+      "lastPropertyId": "7:7638736480589356268",
       "name": "Attribute",
       "properties": [
         {
@@ -378,6 +378,11 @@
           "id": "6:5213066320880571025",
           "name": "context",
           "type": 9
+        },
+        {
+          "id": "7:7638736480589356268",
+          "name": "lastUpdated",
+          "type": 10
         }
       ],
       "relations": []
@@ -418,7 +423,7 @@
     },
     {
       "id": "10:5251477228624044292",
-      "lastPropertyId": "6:5332698215552110956",
+      "lastPropertyId": "9:800984086675071422",
       "name": "Edge",
       "properties": [
         {
@@ -451,13 +456,28 @@
           "id": "6:5332698215552110956",
           "name": "timestamp",
           "type": 10
+        },
+        {
+          "id": "7:546245536805634873",
+          "name": "lastUpdated",
+          "type": 10
+        },
+        {
+          "id": "8:340943392216242678",
+          "name": "sourceContext",
+          "type": 9
+        },
+        {
+          "id": "9:800984086675071422",
+          "name": "confidence",
+          "type": 8
         }
       ],
       "relations": []
     },
     {
       "id": "11:3958473152149590383",
-      "lastPropertyId": "5:6431245406455872551",
+      "lastPropertyId": "10:979814422374273084",
       "name": "Node",
       "properties": [
         {
@@ -487,13 +507,231 @@
           "id": "5:6431245406455872551",
           "name": "attributesJson",
           "type": 9
+        },
+        {
+          "id": "6:6967199601170263764",
+          "name": "canonicalName",
+          "type": 9
+        },
+        {
+          "id": "7:5527076242438638850",
+          "name": "lastUpdated",
+          "type": 10
+        },
+        {
+          "id": "8:3165083504290697149",
+          "name": "sourceContext",
+          "type": 9
+        },
+        {
+          "id": "9:673146459892066940",
+          "name": "aliasesJson",
+          "type": 9
+        },
+        {
+          "id": "10:979814422374273084",
+          "name": "aliases",
+          "type": 30
+        }
+      ],
+      "relations": []
+    },
+    {
+      "id": "12:1512485180639659028",
+      "lastPropertyId": "7:6710851810278955921",
+      "name": "EntityAlignment",
+      "properties": [
+        {
+          "id": "1:5520576823515890648",
+          "name": "obxId",
+          "type": 6,
+          "flags": 1
+        },
+        {
+          "id": "2:8379825383682658310",
+          "name": "canonicalId",
+          "type": 9
+        },
+        {
+          "id": "3:7508003411367301617",
+          "name": "aliasId",
+          "type": 9
+        },
+        {
+          "id": "4:3173466076144392623",
+          "name": "alignmentType",
+          "type": 9
+        },
+        {
+          "id": "5:1394502901613472671",
+          "name": "confidence",
+          "type": 8
+        },
+        {
+          "id": "6:6271916194985475134",
+          "name": "createdAt",
+          "type": 10
+        },
+        {
+          "id": "7:6710851810278955921",
+          "name": "sourceContext",
+          "type": 9
+        }
+      ],
+      "relations": []
+    },
+    {
+      "id": "13:9205112891195779515",
+      "lastPropertyId": "6:8002782670297001618",
+      "name": "EventEntityRelation",
+      "properties": [
+        {
+          "id": "1:7184005680401832851",
+          "name": "obxId",
+          "type": 6,
+          "flags": 1
+        },
+        {
+          "id": "2:6151550587798331815",
+          "name": "eventId",
+          "type": 9
+        },
+        {
+          "id": "3:2265665795717610897",
+          "name": "entityId",
+          "type": 9
+        },
+        {
+          "id": "4:680577964184191430",
+          "name": "role",
+          "type": 9
+        },
+        {
+          "id": "5:4220811307359381272",
+          "name": "description",
+          "type": 9
+        },
+        {
+          "id": "6:8002782670297001618",
+          "name": "lastUpdated",
+          "type": 10
+        }
+      ],
+      "relations": []
+    },
+    {
+      "id": "14:5846656904559202287",
+      "lastPropertyId": "12:1062563719176946852",
+      "name": "EventNode",
+      "properties": [
+        {
+          "id": "1:2407673535706238363",
+          "name": "obxId",
+          "type": 6,
+          "flags": 1
+        },
+        {
+          "id": "2:1084225367109824866",
+          "name": "id",
+          "type": 9,
+          "flags": 2080,
+          "indexId": "13:930329328396835669"
+        },
+        {
+          "id": "3:6761070788532377698",
+          "name": "name",
+          "type": 9
+        },
+        {
+          "id": "4:6441823734006488059",
+          "name": "type",
+          "type": 9
+        },
+        {
+          "id": "5:8537106087534978773",
+          "name": "startTime",
+          "type": 10
+        },
+        {
+          "id": "6:5598527933482384852",
+          "name": "endTime",
+          "type": 10
+        },
+        {
+          "id": "7:4440995354655928179",
+          "name": "location",
+          "type": 9
+        },
+        {
+          "id": "8:7784613453953897831",
+          "name": "purpose",
+          "type": 9
+        },
+        {
+          "id": "9:3208854710532543179",
+          "name": "result",
+          "type": 9
+        },
+        {
+          "id": "10:4389902135877713651",
+          "name": "description",
+          "type": 9
+        },
+        {
+          "id": "11:674965243315869688",
+          "name": "lastUpdated",
+          "type": 10
+        },
+        {
+          "id": "12:1062563719176946852",
+          "name": "sourceContext",
+          "type": 9
+        }
+      ],
+      "relations": []
+    },
+    {
+      "id": "15:4105732853769386625",
+      "lastPropertyId": "6:6889691014386926801",
+      "name": "EventRelation",
+      "properties": [
+        {
+          "id": "1:6184793367628222740",
+          "name": "obxId",
+          "type": 6,
+          "flags": 1
+        },
+        {
+          "id": "2:6661789770736835427",
+          "name": "sourceEventId",
+          "type": 9
+        },
+        {
+          "id": "3:8498848394401703993",
+          "name": "targetEventId",
+          "type": 9
+        },
+        {
+          "id": "4:4063072486710872004",
+          "name": "relationType",
+          "type": 9
+        },
+        {
+          "id": "5:8384536404037980911",
+          "name": "description",
+          "type": 9
+        },
+        {
+          "id": "6:6889691014386926801",
+          "name": "lastUpdated",
+          "type": 10
         }
       ],
       "relations": []
     }
   ],
-  "lastEntityId": "11:3958473152149590383",
-  "lastIndexId": "12:1613306649122174680",
+  "lastEntityId": "15:4105732853769386625",
+  "lastIndexId": "13:930329328396835669",
   "lastRelationId": "0:0",
   "lastSequenceId": "0:0",
   "modelVersion": 5,
