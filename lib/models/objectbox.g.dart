@@ -374,7 +374,7 @@ final _entities = <obx_int.ModelEntity>[
   obx_int.ModelEntity(
       id: const obx_int.IdUid(8, 5160658936453162190),
       name: 'Attribute',
-      lastPropertyId: const obx_int.IdUid(6, 5213066320880571025),
+      lastPropertyId: const obx_int.IdUid(7, 7638736480589356268),
       flags: 0,
       properties: <obx_int.ModelProperty>[
         obx_int.ModelProperty(
@@ -406,6 +406,11 @@ final _entities = <obx_int.ModelEntity>[
             id: const obx_int.IdUid(6, 5213066320880571025),
             name: 'context',
             type: 9,
+            flags: 0),
+        obx_int.ModelProperty(
+            id: const obx_int.IdUid(7, 7638736480589356268),
+            name: 'lastUpdated',
+            type: 10,
             flags: 0)
       ],
       relations: <obx_int.ModelRelation>[],
@@ -447,7 +452,7 @@ final _entities = <obx_int.ModelEntity>[
   obx_int.ModelEntity(
       id: const obx_int.IdUid(10, 5251477228624044292),
       name: 'Edge',
-      lastPropertyId: const obx_int.IdUid(6, 5332698215552110956),
+      lastPropertyId: const obx_int.IdUid(9, 800984086675071422),
       flags: 0,
       properties: <obx_int.ModelProperty>[
         obx_int.ModelProperty(
@@ -479,6 +484,21 @@ final _entities = <obx_int.ModelEntity>[
             id: const obx_int.IdUid(6, 5332698215552110956),
             name: 'timestamp',
             type: 10,
+            flags: 0),
+        obx_int.ModelProperty(
+            id: const obx_int.IdUid(7, 546245536805634873),
+            name: 'lastUpdated',
+            type: 10,
+            flags: 0),
+        obx_int.ModelProperty(
+            id: const obx_int.IdUid(8, 340943392216242678),
+            name: 'sourceContext',
+            type: 9,
+            flags: 0),
+        obx_int.ModelProperty(
+            id: const obx_int.IdUid(9, 800984086675071422),
+            name: 'confidence',
+            type: 8,
             flags: 0)
       ],
       relations: <obx_int.ModelRelation>[],
@@ -486,7 +506,7 @@ final _entities = <obx_int.ModelEntity>[
   obx_int.ModelEntity(
       id: const obx_int.IdUid(11, 3958473152149590383),
       name: 'Node',
-      lastPropertyId: const obx_int.IdUid(5, 6431245406455872551),
+      lastPropertyId: const obx_int.IdUid(10, 979814422374273084),
       flags: 0,
       properties: <obx_int.ModelProperty>[
         obx_int.ModelProperty(
@@ -514,6 +534,223 @@ final _entities = <obx_int.ModelEntity>[
             id: const obx_int.IdUid(5, 6431245406455872551),
             name: 'attributesJson',
             type: 9,
+            flags: 0),
+        obx_int.ModelProperty(
+            id: const obx_int.IdUid(6, 6967199601170263764),
+            name: 'canonicalName',
+            type: 9,
+            flags: 0),
+        obx_int.ModelProperty(
+            id: const obx_int.IdUid(7, 5527076242438638850),
+            name: 'lastUpdated',
+            type: 10,
+            flags: 0),
+        obx_int.ModelProperty(
+            id: const obx_int.IdUid(8, 3165083504290697149),
+            name: 'sourceContext',
+            type: 9,
+            flags: 0),
+        obx_int.ModelProperty(
+            id: const obx_int.IdUid(9, 673146459892066940),
+            name: 'aliasesJson',
+            type: 9,
+            flags: 0),
+        obx_int.ModelProperty(
+            id: const obx_int.IdUid(10, 979814422374273084),
+            name: 'aliases',
+            type: 30,
+            flags: 0)
+      ],
+      relations: <obx_int.ModelRelation>[],
+      backlinks: <obx_int.ModelBacklink>[]),
+  obx_int.ModelEntity(
+      id: const obx_int.IdUid(12, 1512485180639659028),
+      name: 'EntityAlignment',
+      lastPropertyId: const obx_int.IdUid(7, 6710851810278955921),
+      flags: 0,
+      properties: <obx_int.ModelProperty>[
+        obx_int.ModelProperty(
+            id: const obx_int.IdUid(1, 5520576823515890648),
+            name: 'obxId',
+            type: 6,
+            flags: 1),
+        obx_int.ModelProperty(
+            id: const obx_int.IdUid(2, 8379825383682658310),
+            name: 'canonicalId',
+            type: 9,
+            flags: 0),
+        obx_int.ModelProperty(
+            id: const obx_int.IdUid(3, 7508003411367301617),
+            name: 'aliasId',
+            type: 9,
+            flags: 0),
+        obx_int.ModelProperty(
+            id: const obx_int.IdUid(4, 3173466076144392623),
+            name: 'alignmentType',
+            type: 9,
+            flags: 0),
+        obx_int.ModelProperty(
+            id: const obx_int.IdUid(5, 1394502901613472671),
+            name: 'confidence',
+            type: 8,
+            flags: 0),
+        obx_int.ModelProperty(
+            id: const obx_int.IdUid(6, 6271916194985475134),
+            name: 'createdAt',
+            type: 10,
+            flags: 0),
+        obx_int.ModelProperty(
+            id: const obx_int.IdUid(7, 6710851810278955921),
+            name: 'sourceContext',
+            type: 9,
+            flags: 0)
+      ],
+      relations: <obx_int.ModelRelation>[],
+      backlinks: <obx_int.ModelBacklink>[]),
+  obx_int.ModelEntity(
+      id: const obx_int.IdUid(13, 9205112891195779515),
+      name: 'EventEntityRelation',
+      lastPropertyId: const obx_int.IdUid(6, 8002782670297001618),
+      flags: 0,
+      properties: <obx_int.ModelProperty>[
+        obx_int.ModelProperty(
+            id: const obx_int.IdUid(1, 7184005680401832851),
+            name: 'obxId',
+            type: 6,
+            flags: 1),
+        obx_int.ModelProperty(
+            id: const obx_int.IdUid(2, 6151550587798331815),
+            name: 'eventId',
+            type: 9,
+            flags: 0),
+        obx_int.ModelProperty(
+            id: const obx_int.IdUid(3, 2265665795717610897),
+            name: 'entityId',
+            type: 9,
+            flags: 0),
+        obx_int.ModelProperty(
+            id: const obx_int.IdUid(4, 680577964184191430),
+            name: 'role',
+            type: 9,
+            flags: 0),
+        obx_int.ModelProperty(
+            id: const obx_int.IdUid(5, 4220811307359381272),
+            name: 'description',
+            type: 9,
+            flags: 0),
+        obx_int.ModelProperty(
+            id: const obx_int.IdUid(6, 8002782670297001618),
+            name: 'lastUpdated',
+            type: 10,
+            flags: 0)
+      ],
+      relations: <obx_int.ModelRelation>[],
+      backlinks: <obx_int.ModelBacklink>[]),
+  obx_int.ModelEntity(
+      id: const obx_int.IdUid(14, 5846656904559202287),
+      name: 'EventNode',
+      lastPropertyId: const obx_int.IdUid(12, 1062563719176946852),
+      flags: 0,
+      properties: <obx_int.ModelProperty>[
+        obx_int.ModelProperty(
+            id: const obx_int.IdUid(1, 2407673535706238363),
+            name: 'obxId',
+            type: 6,
+            flags: 1),
+        obx_int.ModelProperty(
+            id: const obx_int.IdUid(2, 1084225367109824866),
+            name: 'id',
+            type: 9,
+            flags: 2080,
+            indexId: const obx_int.IdUid(13, 930329328396835669)),
+        obx_int.ModelProperty(
+            id: const obx_int.IdUid(3, 6761070788532377698),
+            name: 'name',
+            type: 9,
+            flags: 0),
+        obx_int.ModelProperty(
+            id: const obx_int.IdUid(4, 6441823734006488059),
+            name: 'type',
+            type: 9,
+            flags: 0),
+        obx_int.ModelProperty(
+            id: const obx_int.IdUid(5, 8537106087534978773),
+            name: 'startTime',
+            type: 10,
+            flags: 0),
+        obx_int.ModelProperty(
+            id: const obx_int.IdUid(6, 5598527933482384852),
+            name: 'endTime',
+            type: 10,
+            flags: 0),
+        obx_int.ModelProperty(
+            id: const obx_int.IdUid(7, 4440995354655928179),
+            name: 'location',
+            type: 9,
+            flags: 0),
+        obx_int.ModelProperty(
+            id: const obx_int.IdUid(8, 7784613453953897831),
+            name: 'purpose',
+            type: 9,
+            flags: 0),
+        obx_int.ModelProperty(
+            id: const obx_int.IdUid(9, 3208854710532543179),
+            name: 'result',
+            type: 9,
+            flags: 0),
+        obx_int.ModelProperty(
+            id: const obx_int.IdUid(10, 4389902135877713651),
+            name: 'description',
+            type: 9,
+            flags: 0),
+        obx_int.ModelProperty(
+            id: const obx_int.IdUid(11, 674965243315869688),
+            name: 'lastUpdated',
+            type: 10,
+            flags: 0),
+        obx_int.ModelProperty(
+            id: const obx_int.IdUid(12, 1062563719176946852),
+            name: 'sourceContext',
+            type: 9,
+            flags: 0)
+      ],
+      relations: <obx_int.ModelRelation>[],
+      backlinks: <obx_int.ModelBacklink>[]),
+  obx_int.ModelEntity(
+      id: const obx_int.IdUid(15, 4105732853769386625),
+      name: 'EventRelation',
+      lastPropertyId: const obx_int.IdUid(6, 6889691014386926801),
+      flags: 0,
+      properties: <obx_int.ModelProperty>[
+        obx_int.ModelProperty(
+            id: const obx_int.IdUid(1, 6184793367628222740),
+            name: 'obxId',
+            type: 6,
+            flags: 1),
+        obx_int.ModelProperty(
+            id: const obx_int.IdUid(2, 6661789770736835427),
+            name: 'sourceEventId',
+            type: 9,
+            flags: 0),
+        obx_int.ModelProperty(
+            id: const obx_int.IdUid(3, 8498848394401703993),
+            name: 'targetEventId',
+            type: 9,
+            flags: 0),
+        obx_int.ModelProperty(
+            id: const obx_int.IdUid(4, 4063072486710872004),
+            name: 'relationType',
+            type: 9,
+            flags: 0),
+        obx_int.ModelProperty(
+            id: const obx_int.IdUid(5, 8384536404037980911),
+            name: 'description',
+            type: 9,
+            flags: 0),
+        obx_int.ModelProperty(
+            id: const obx_int.IdUid(6, 6889691014386926801),
+            name: 'lastUpdated',
+            type: 10,
             flags: 0)
       ],
       relations: <obx_int.ModelRelation>[],
@@ -555,8 +792,8 @@ Future<obx.Store> openStore(
 obx_int.ModelDefinition getObjectBoxModel() {
   final model = obx_int.ModelInfo(
       entities: _entities,
-      lastEntityId: const obx_int.IdUid(11, 3958473152149590383),
-      lastIndexId: const obx_int.IdUid(12, 1613306649122174680),
+      lastEntityId: const obx_int.IdUid(15, 4105732853769386625),
+      lastIndexId: const obx_int.IdUid(13, 930329328396835669),
       lastRelationId: const obx_int.IdUid(0, 0),
       lastSequenceId: const obx_int.IdUid(0, 0),
       retiredEntityUids: const [],
@@ -998,13 +1235,14 @@ obx_int.ModelDefinition getObjectBoxModel() {
           final valueOffset = fbb.writeString(object.value);
           final contextOffset =
               object.context == null ? null : fbb.writeString(object.context!);
-          fbb.startTable(7);
+          fbb.startTable(8);
           fbb.addInt64(0, object.obxId);
           fbb.addOffset(1, nodeIdOffset);
           fbb.addOffset(2, keyOffset);
           fbb.addOffset(3, valueOffset);
           fbb.addInt64(4, object.timestamp?.millisecondsSinceEpoch);
           fbb.addOffset(5, contextOffset);
+          fbb.addInt64(6, object.lastUpdated.millisecondsSinceEpoch);
           fbb.finish(fbb.endTable());
           return object.obxId;
         },
@@ -1026,13 +1264,16 @@ obx_int.ModelDefinition getObjectBoxModel() {
               : DateTime.fromMillisecondsSinceEpoch(timestampValue);
           final contextParam = const fb.StringReader(asciiOptimization: true)
               .vTableGetNullable(buffer, rootOffset, 14);
+          final lastUpdatedParam = DateTime.fromMillisecondsSinceEpoch(
+              const fb.Int64Reader().vTableGet(buffer, rootOffset, 16, 0));
           final object = Attribute(
               obxId: obxIdParam,
               nodeId: nodeIdParam,
               key: keyParam,
               value: valueParam,
               timestamp: timestampParam,
-              context: contextParam);
+              context: contextParam,
+              lastUpdated: lastUpdatedParam);
 
           return object;
         }),
@@ -1093,13 +1334,19 @@ obx_int.ModelDefinition getObjectBoxModel() {
           final targetOffset = fbb.writeString(object.target);
           final contextOffset =
               object.context == null ? null : fbb.writeString(object.context!);
-          fbb.startTable(7);
+          final sourceContextOffset = object.sourceContext == null
+              ? null
+              : fbb.writeString(object.sourceContext!);
+          fbb.startTable(10);
           fbb.addInt64(0, object.obxId);
           fbb.addOffset(1, sourceOffset);
           fbb.addOffset(2, relationOffset);
           fbb.addOffset(3, targetOffset);
           fbb.addOffset(4, contextOffset);
           fbb.addInt64(5, object.timestamp?.millisecondsSinceEpoch);
+          fbb.addInt64(6, object.lastUpdated.millisecondsSinceEpoch);
+          fbb.addOffset(7, sourceContextOffset);
+          fbb.addFloat64(8, object.confidence);
           fbb.finish(fbb.endTable());
           return object.obxId;
         },
@@ -1121,13 +1368,23 @@ obx_int.ModelDefinition getObjectBoxModel() {
           final timestampParam = timestampValue == null
               ? null
               : DateTime.fromMillisecondsSinceEpoch(timestampValue);
+          final lastUpdatedParam = DateTime.fromMillisecondsSinceEpoch(
+              const fb.Int64Reader().vTableGet(buffer, rootOffset, 16, 0));
+          final sourceContextParam =
+              const fb.StringReader(asciiOptimization: true)
+                  .vTableGetNullable(buffer, rootOffset, 18);
+          final confidenceParam =
+              const fb.Float64Reader().vTableGet(buffer, rootOffset, 20, 0);
           final object = Edge(
               obxId: obxIdParam,
               source: sourceParam,
               relation: relationParam,
               target: targetParam,
               context: contextParam,
-              timestamp: timestampParam);
+              timestamp: timestampParam,
+              lastUpdated: lastUpdatedParam,
+              sourceContext: sourceContextParam,
+              confidence: confidenceParam);
 
           return object;
         }),
@@ -1144,12 +1401,24 @@ obx_int.ModelDefinition getObjectBoxModel() {
           final nameOffset = fbb.writeString(object.name);
           final typeOffset = fbb.writeString(object.type);
           final attributesJsonOffset = fbb.writeString(object.attributesJson);
-          fbb.startTable(6);
+          final canonicalNameOffset = fbb.writeString(object.canonicalName);
+          final sourceContextOffset = object.sourceContext == null
+              ? null
+              : fbb.writeString(object.sourceContext!);
+          final aliasesJsonOffset = fbb.writeString(object.aliasesJson);
+          final aliasesOffset = fbb.writeList(
+              object.aliases.map(fbb.writeString).toList(growable: false));
+          fbb.startTable(11);
           fbb.addInt64(0, object.obxId);
           fbb.addOffset(1, idOffset);
           fbb.addOffset(2, nameOffset);
           fbb.addOffset(3, typeOffset);
           fbb.addOffset(4, attributesJsonOffset);
+          fbb.addOffset(5, canonicalNameOffset);
+          fbb.addInt64(6, object.lastUpdated.millisecondsSinceEpoch);
+          fbb.addOffset(7, sourceContextOffset);
+          fbb.addOffset(8, aliasesJsonOffset);
+          fbb.addOffset(9, aliasesOffset);
           fbb.finish(fbb.endTable());
           return object.obxId;
         },
@@ -1164,10 +1433,285 @@ obx_int.ModelDefinition getObjectBoxModel() {
               .vTableGet(buffer, rootOffset, 8, '');
           final typeParam = const fb.StringReader(asciiOptimization: true)
               .vTableGet(buffer, rootOffset, 10, '');
+          final canonicalNameParam =
+              const fb.StringReader(asciiOptimization: true)
+                  .vTableGet(buffer, rootOffset, 14, '');
+          final lastUpdatedParam = DateTime.fromMillisecondsSinceEpoch(
+              const fb.Int64Reader().vTableGet(buffer, rootOffset, 16, 0));
+          final sourceContextParam =
+              const fb.StringReader(asciiOptimization: true)
+                  .vTableGetNullable(buffer, rootOffset, 18);
+          final aliasesParam = const fb.ListReader<String>(
+                  fb.StringReader(asciiOptimization: true),
+                  lazy: false)
+              .vTableGet(buffer, rootOffset, 22, []);
           final object = Node(
-              obxId: obxIdParam, id: idParam, name: nameParam, type: typeParam)
+              obxId: obxIdParam,
+              id: idParam,
+              name: nameParam,
+              type: typeParam,
+              canonicalName: canonicalNameParam,
+              lastUpdated: lastUpdatedParam,
+              sourceContext: sourceContextParam,
+              aliases: aliasesParam)
             ..attributesJson = const fb.StringReader(asciiOptimization: true)
-                .vTableGet(buffer, rootOffset, 12, '');
+                .vTableGet(buffer, rootOffset, 12, '')
+            ..aliasesJson = const fb.StringReader(asciiOptimization: true)
+                .vTableGet(buffer, rootOffset, 20, '');
+
+          return object;
+        }),
+    EntityAlignment: obx_int.EntityDefinition<EntityAlignment>(
+        model: _entities[11],
+        toOneRelations: (EntityAlignment object) => [],
+        toManyRelations: (EntityAlignment object) => {},
+        getId: (EntityAlignment object) => object.obxId,
+        setId: (EntityAlignment object, int id) {
+          object.obxId = id;
+        },
+        objectToFB: (EntityAlignment object, fb.Builder fbb) {
+          final canonicalIdOffset = fbb.writeString(object.canonicalId);
+          final aliasIdOffset = fbb.writeString(object.aliasId);
+          final alignmentTypeOffset = fbb.writeString(object.alignmentType);
+          final sourceContextOffset = object.sourceContext == null
+              ? null
+              : fbb.writeString(object.sourceContext!);
+          fbb.startTable(8);
+          fbb.addInt64(0, object.obxId);
+          fbb.addOffset(1, canonicalIdOffset);
+          fbb.addOffset(2, aliasIdOffset);
+          fbb.addOffset(3, alignmentTypeOffset);
+          fbb.addFloat64(4, object.confidence);
+          fbb.addInt64(5, object.createdAt.millisecondsSinceEpoch);
+          fbb.addOffset(6, sourceContextOffset);
+          fbb.finish(fbb.endTable());
+          return object.obxId;
+        },
+        objectFromFB: (obx.Store store, ByteData fbData) {
+          final buffer = fb.BufferContext(fbData);
+          final rootOffset = buffer.derefObject(0);
+          final obxIdParam =
+              const fb.Int64Reader().vTableGet(buffer, rootOffset, 4, 0);
+          final canonicalIdParam =
+              const fb.StringReader(asciiOptimization: true)
+                  .vTableGet(buffer, rootOffset, 6, '');
+          final aliasIdParam = const fb.StringReader(asciiOptimization: true)
+              .vTableGet(buffer, rootOffset, 8, '');
+          final alignmentTypeParam =
+              const fb.StringReader(asciiOptimization: true)
+                  .vTableGet(buffer, rootOffset, 10, '');
+          final confidenceParam =
+              const fb.Float64Reader().vTableGet(buffer, rootOffset, 12, 0);
+          final createdAtParam = DateTime.fromMillisecondsSinceEpoch(
+              const fb.Int64Reader().vTableGet(buffer, rootOffset, 14, 0));
+          final sourceContextParam =
+              const fb.StringReader(asciiOptimization: true)
+                  .vTableGetNullable(buffer, rootOffset, 16);
+          final object = EntityAlignment(
+              obxId: obxIdParam,
+              canonicalId: canonicalIdParam,
+              aliasId: aliasIdParam,
+              alignmentType: alignmentTypeParam,
+              confidence: confidenceParam,
+              createdAt: createdAtParam,
+              sourceContext: sourceContextParam);
+
+          return object;
+        }),
+    EventEntityRelation: obx_int.EntityDefinition<EventEntityRelation>(
+        model: _entities[12],
+        toOneRelations: (EventEntityRelation object) => [],
+        toManyRelations: (EventEntityRelation object) => {},
+        getId: (EventEntityRelation object) => object.obxId,
+        setId: (EventEntityRelation object, int id) {
+          object.obxId = id;
+        },
+        objectToFB: (EventEntityRelation object, fb.Builder fbb) {
+          final eventIdOffset = fbb.writeString(object.eventId);
+          final entityIdOffset = fbb.writeString(object.entityId);
+          final roleOffset = fbb.writeString(object.role);
+          final descriptionOffset = object.description == null
+              ? null
+              : fbb.writeString(object.description!);
+          fbb.startTable(7);
+          fbb.addInt64(0, object.obxId);
+          fbb.addOffset(1, eventIdOffset);
+          fbb.addOffset(2, entityIdOffset);
+          fbb.addOffset(3, roleOffset);
+          fbb.addOffset(4, descriptionOffset);
+          fbb.addInt64(5, object.lastUpdated.millisecondsSinceEpoch);
+          fbb.finish(fbb.endTable());
+          return object.obxId;
+        },
+        objectFromFB: (obx.Store store, ByteData fbData) {
+          final buffer = fb.BufferContext(fbData);
+          final rootOffset = buffer.derefObject(0);
+          final obxIdParam =
+              const fb.Int64Reader().vTableGet(buffer, rootOffset, 4, 0);
+          final eventIdParam = const fb.StringReader(asciiOptimization: true)
+              .vTableGet(buffer, rootOffset, 6, '');
+          final entityIdParam = const fb.StringReader(asciiOptimization: true)
+              .vTableGet(buffer, rootOffset, 8, '');
+          final roleParam = const fb.StringReader(asciiOptimization: true)
+              .vTableGet(buffer, rootOffset, 10, '');
+          final descriptionParam =
+              const fb.StringReader(asciiOptimization: true)
+                  .vTableGetNullable(buffer, rootOffset, 12);
+          final lastUpdatedParam = DateTime.fromMillisecondsSinceEpoch(
+              const fb.Int64Reader().vTableGet(buffer, rootOffset, 14, 0));
+          final object = EventEntityRelation(
+              obxId: obxIdParam,
+              eventId: eventIdParam,
+              entityId: entityIdParam,
+              role: roleParam,
+              description: descriptionParam,
+              lastUpdated: lastUpdatedParam);
+
+          return object;
+        }),
+    EventNode: obx_int.EntityDefinition<EventNode>(
+        model: _entities[13],
+        toOneRelations: (EventNode object) => [],
+        toManyRelations: (EventNode object) => {},
+        getId: (EventNode object) => object.obxId,
+        setId: (EventNode object, int id) {
+          object.obxId = id;
+        },
+        objectToFB: (EventNode object, fb.Builder fbb) {
+          final idOffset = fbb.writeString(object.id);
+          final nameOffset = fbb.writeString(object.name);
+          final typeOffset = fbb.writeString(object.type);
+          final locationOffset = object.location == null
+              ? null
+              : fbb.writeString(object.location!);
+          final purposeOffset =
+              object.purpose == null ? null : fbb.writeString(object.purpose!);
+          final resultOffset =
+              object.result == null ? null : fbb.writeString(object.result!);
+          final descriptionOffset = object.description == null
+              ? null
+              : fbb.writeString(object.description!);
+          final sourceContextOffset = object.sourceContext == null
+              ? null
+              : fbb.writeString(object.sourceContext!);
+          fbb.startTable(13);
+          fbb.addInt64(0, object.obxId);
+          fbb.addOffset(1, idOffset);
+          fbb.addOffset(2, nameOffset);
+          fbb.addOffset(3, typeOffset);
+          fbb.addInt64(4, object.startTime?.millisecondsSinceEpoch);
+          fbb.addInt64(5, object.endTime?.millisecondsSinceEpoch);
+          fbb.addOffset(6, locationOffset);
+          fbb.addOffset(7, purposeOffset);
+          fbb.addOffset(8, resultOffset);
+          fbb.addOffset(9, descriptionOffset);
+          fbb.addInt64(10, object.lastUpdated.millisecondsSinceEpoch);
+          fbb.addOffset(11, sourceContextOffset);
+          fbb.finish(fbb.endTable());
+          return object.obxId;
+        },
+        objectFromFB: (obx.Store store, ByteData fbData) {
+          final buffer = fb.BufferContext(fbData);
+          final rootOffset = buffer.derefObject(0);
+          final startTimeValue =
+              const fb.Int64Reader().vTableGetNullable(buffer, rootOffset, 12);
+          final endTimeValue =
+              const fb.Int64Reader().vTableGetNullable(buffer, rootOffset, 14);
+          final obxIdParam =
+              const fb.Int64Reader().vTableGet(buffer, rootOffset, 4, 0);
+          final idParam = const fb.StringReader(asciiOptimization: true)
+              .vTableGet(buffer, rootOffset, 6, '');
+          final nameParam = const fb.StringReader(asciiOptimization: true)
+              .vTableGet(buffer, rootOffset, 8, '');
+          final typeParam = const fb.StringReader(asciiOptimization: true)
+              .vTableGet(buffer, rootOffset, 10, '');
+          final startTimeParam = startTimeValue == null
+              ? null
+              : DateTime.fromMillisecondsSinceEpoch(startTimeValue);
+          final endTimeParam = endTimeValue == null
+              ? null
+              : DateTime.fromMillisecondsSinceEpoch(endTimeValue);
+          final locationParam = const fb.StringReader(asciiOptimization: true)
+              .vTableGetNullable(buffer, rootOffset, 16);
+          final purposeParam = const fb.StringReader(asciiOptimization: true)
+              .vTableGetNullable(buffer, rootOffset, 18);
+          final resultParam = const fb.StringReader(asciiOptimization: true)
+              .vTableGetNullable(buffer, rootOffset, 20);
+          final descriptionParam =
+              const fb.StringReader(asciiOptimization: true)
+                  .vTableGetNullable(buffer, rootOffset, 22);
+          final lastUpdatedParam = DateTime.fromMillisecondsSinceEpoch(
+              const fb.Int64Reader().vTableGet(buffer, rootOffset, 24, 0));
+          final sourceContextParam =
+              const fb.StringReader(asciiOptimization: true)
+                  .vTableGetNullable(buffer, rootOffset, 26);
+          final object = EventNode(
+              obxId: obxIdParam,
+              id: idParam,
+              name: nameParam,
+              type: typeParam,
+              startTime: startTimeParam,
+              endTime: endTimeParam,
+              location: locationParam,
+              purpose: purposeParam,
+              result: resultParam,
+              description: descriptionParam,
+              lastUpdated: lastUpdatedParam,
+              sourceContext: sourceContextParam);
+
+          return object;
+        }),
+    EventRelation: obx_int.EntityDefinition<EventRelation>(
+        model: _entities[14],
+        toOneRelations: (EventRelation object) => [],
+        toManyRelations: (EventRelation object) => {},
+        getId: (EventRelation object) => object.obxId,
+        setId: (EventRelation object, int id) {
+          object.obxId = id;
+        },
+        objectToFB: (EventRelation object, fb.Builder fbb) {
+          final sourceEventIdOffset = fbb.writeString(object.sourceEventId);
+          final targetEventIdOffset = fbb.writeString(object.targetEventId);
+          final relationTypeOffset = fbb.writeString(object.relationType);
+          final descriptionOffset = object.description == null
+              ? null
+              : fbb.writeString(object.description!);
+          fbb.startTable(7);
+          fbb.addInt64(0, object.obxId);
+          fbb.addOffset(1, sourceEventIdOffset);
+          fbb.addOffset(2, targetEventIdOffset);
+          fbb.addOffset(3, relationTypeOffset);
+          fbb.addOffset(4, descriptionOffset);
+          fbb.addInt64(5, object.lastUpdated.millisecondsSinceEpoch);
+          fbb.finish(fbb.endTable());
+          return object.obxId;
+        },
+        objectFromFB: (obx.Store store, ByteData fbData) {
+          final buffer = fb.BufferContext(fbData);
+          final rootOffset = buffer.derefObject(0);
+          final obxIdParam =
+              const fb.Int64Reader().vTableGet(buffer, rootOffset, 4, 0);
+          final sourceEventIdParam =
+              const fb.StringReader(asciiOptimization: true)
+                  .vTableGet(buffer, rootOffset, 6, '');
+          final targetEventIdParam =
+              const fb.StringReader(asciiOptimization: true)
+                  .vTableGet(buffer, rootOffset, 8, '');
+          final relationTypeParam =
+              const fb.StringReader(asciiOptimization: true)
+                  .vTableGet(buffer, rootOffset, 10, '');
+          final descriptionParam =
+              const fb.StringReader(asciiOptimization: true)
+                  .vTableGetNullable(buffer, rootOffset, 12);
+          final lastUpdatedParam = DateTime.fromMillisecondsSinceEpoch(
+              const fb.Int64Reader().vTableGet(buffer, rootOffset, 14, 0));
+          final object = EventRelation(
+              obxId: obxIdParam,
+              sourceEventId: sourceEventIdParam,
+              targetEventId: targetEventIdParam,
+              relationType: relationTypeParam,
+              description: descriptionParam,
+              lastUpdated: lastUpdatedParam);
 
           return object;
         })
@@ -1426,6 +1970,10 @@ class Attribute_ {
   /// See [Attribute.context].
   static final context =
       obx.QueryStringProperty<Attribute>(_entities[7].properties[5]);
+
+  /// See [Attribute.lastUpdated].
+  static final lastUpdated =
+      obx.QueryDateProperty<Attribute>(_entities[7].properties[6]);
 }
 
 /// [Context] entity fields to define ObjectBox queries.
@@ -1476,6 +2024,18 @@ class Edge_ {
   /// See [Edge.timestamp].
   static final timestamp =
       obx.QueryDateProperty<Edge>(_entities[9].properties[5]);
+
+  /// See [Edge.lastUpdated].
+  static final lastUpdated =
+      obx.QueryDateProperty<Edge>(_entities[9].properties[6]);
+
+  /// See [Edge.sourceContext].
+  static final sourceContext =
+      obx.QueryStringProperty<Edge>(_entities[9].properties[7]);
+
+  /// See [Edge.confidence].
+  static final confidence =
+      obx.QueryDoubleProperty<Edge>(_entities[9].properties[8]);
 }
 
 /// [Node] entity fields to define ObjectBox queries.
@@ -1498,4 +2058,160 @@ class Node_ {
   /// See [Node.attributesJson].
   static final attributesJson =
       obx.QueryStringProperty<Node>(_entities[10].properties[4]);
+
+  /// See [Node.canonicalName].
+  static final canonicalName =
+      obx.QueryStringProperty<Node>(_entities[10].properties[5]);
+
+  /// See [Node.lastUpdated].
+  static final lastUpdated =
+      obx.QueryDateProperty<Node>(_entities[10].properties[6]);
+
+  /// See [Node.sourceContext].
+  static final sourceContext =
+      obx.QueryStringProperty<Node>(_entities[10].properties[7]);
+
+  /// See [Node.aliasesJson].
+  static final aliasesJson =
+      obx.QueryStringProperty<Node>(_entities[10].properties[8]);
+
+  /// See [Node.aliases].
+  static final aliases =
+      obx.QueryStringVectorProperty<Node>(_entities[10].properties[9]);
+}
+
+/// [EntityAlignment] entity fields to define ObjectBox queries.
+class EntityAlignment_ {
+  /// See [EntityAlignment.obxId].
+  static final obxId =
+      obx.QueryIntegerProperty<EntityAlignment>(_entities[11].properties[0]);
+
+  /// See [EntityAlignment.canonicalId].
+  static final canonicalId =
+      obx.QueryStringProperty<EntityAlignment>(_entities[11].properties[1]);
+
+  /// See [EntityAlignment.aliasId].
+  static final aliasId =
+      obx.QueryStringProperty<EntityAlignment>(_entities[11].properties[2]);
+
+  /// See [EntityAlignment.alignmentType].
+  static final alignmentType =
+      obx.QueryStringProperty<EntityAlignment>(_entities[11].properties[3]);
+
+  /// See [EntityAlignment.confidence].
+  static final confidence =
+      obx.QueryDoubleProperty<EntityAlignment>(_entities[11].properties[4]);
+
+  /// See [EntityAlignment.createdAt].
+  static final createdAt =
+      obx.QueryDateProperty<EntityAlignment>(_entities[11].properties[5]);
+
+  /// See [EntityAlignment.sourceContext].
+  static final sourceContext =
+      obx.QueryStringProperty<EntityAlignment>(_entities[11].properties[6]);
+}
+
+/// [EventEntityRelation] entity fields to define ObjectBox queries.
+class EventEntityRelation_ {
+  /// See [EventEntityRelation.obxId].
+  static final obxId = obx.QueryIntegerProperty<EventEntityRelation>(
+      _entities[12].properties[0]);
+
+  /// See [EventEntityRelation.eventId].
+  static final eventId =
+      obx.QueryStringProperty<EventEntityRelation>(_entities[12].properties[1]);
+
+  /// See [EventEntityRelation.entityId].
+  static final entityId =
+      obx.QueryStringProperty<EventEntityRelation>(_entities[12].properties[2]);
+
+  /// See [EventEntityRelation.role].
+  static final role =
+      obx.QueryStringProperty<EventEntityRelation>(_entities[12].properties[3]);
+
+  /// See [EventEntityRelation.description].
+  static final description =
+      obx.QueryStringProperty<EventEntityRelation>(_entities[12].properties[4]);
+
+  /// See [EventEntityRelation.lastUpdated].
+  static final lastUpdated =
+      obx.QueryDateProperty<EventEntityRelation>(_entities[12].properties[5]);
+}
+
+/// [EventNode] entity fields to define ObjectBox queries.
+class EventNode_ {
+  /// See [EventNode.obxId].
+  static final obxId =
+      obx.QueryIntegerProperty<EventNode>(_entities[13].properties[0]);
+
+  /// See [EventNode.id].
+  static final id =
+      obx.QueryStringProperty<EventNode>(_entities[13].properties[1]);
+
+  /// See [EventNode.name].
+  static final name =
+      obx.QueryStringProperty<EventNode>(_entities[13].properties[2]);
+
+  /// See [EventNode.type].
+  static final type =
+      obx.QueryStringProperty<EventNode>(_entities[13].properties[3]);
+
+  /// See [EventNode.startTime].
+  static final startTime =
+      obx.QueryDateProperty<EventNode>(_entities[13].properties[4]);
+
+  /// See [EventNode.endTime].
+  static final endTime =
+      obx.QueryDateProperty<EventNode>(_entities[13].properties[5]);
+
+  /// See [EventNode.location].
+  static final location =
+      obx.QueryStringProperty<EventNode>(_entities[13].properties[6]);
+
+  /// See [EventNode.purpose].
+  static final purpose =
+      obx.QueryStringProperty<EventNode>(_entities[13].properties[7]);
+
+  /// See [EventNode.result].
+  static final result =
+      obx.QueryStringProperty<EventNode>(_entities[13].properties[8]);
+
+  /// See [EventNode.description].
+  static final description =
+      obx.QueryStringProperty<EventNode>(_entities[13].properties[9]);
+
+  /// See [EventNode.lastUpdated].
+  static final lastUpdated =
+      obx.QueryDateProperty<EventNode>(_entities[13].properties[10]);
+
+  /// See [EventNode.sourceContext].
+  static final sourceContext =
+      obx.QueryStringProperty<EventNode>(_entities[13].properties[11]);
+}
+
+/// [EventRelation] entity fields to define ObjectBox queries.
+class EventRelation_ {
+  /// See [EventRelation.obxId].
+  static final obxId =
+      obx.QueryIntegerProperty<EventRelation>(_entities[14].properties[0]);
+
+  /// See [EventRelation.sourceEventId].
+  static final sourceEventId =
+      obx.QueryStringProperty<EventRelation>(_entities[14].properties[1]);
+
+  /// See [EventRelation.targetEventId].
+  static final targetEventId =
+      obx.QueryStringProperty<EventRelation>(_entities[14].properties[2]);
+
+  /// See [EventRelation.relationType].
+  static final relationType =
+      obx.QueryStringProperty<EventRelation>(_entities[14].properties[3]);
+
+  /// See [EventRelation.description].
+  static final description =
+      obx.QueryStringProperty<EventRelation>(_entities[14].properties[4]);
+
+  /// See [EventRelation.lastUpdated].
+  static final lastUpdated =
+      obx.QueryDateProperty<EventRelation>(_entities[14].properties[5]);
 }

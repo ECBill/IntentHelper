@@ -9,39 +9,115 @@ class KnowledgeGraphService {
   factory KnowledgeGraphService() => _instance;
   KnowledgeGraphService._internal();
 
-  // 从对话文本中提取事件
-  static Future<Map<String, List<dynamic>>> extractEventsFromText(String conversationText, {DateTime? conversationTime}) async {
+  // 指代消解映射表
+  static const Map<String, List<String>> pronounMap = {
+    '我': ['自己', '本人', '我自己'],
+    '你': ['您', '你们'],
+    '他': ['这位', '那位', '这个人', '那个人'],
+    '她': ['这位女士', '那位女士', '这个女生', '那个女生'],
+    '它': ['这个', '那个', '这件事', '那件事'],
+  };
+
+  // 1. 实体对齐与唯一标识机制
+  static String generateEntityId(String name, String type) {
+    final normalizedName = _normalizeEntityName(name);
+    return '${normalizedName}_$type';
+  }
+
+  static String _normalizeEntityName(String name) {
+    // 标准化实体名称，处理常见的指代消解
+    String normalized = name.trim().toLowerCase();
+
+    // 处理指代消解
+    for (final entry in pronounMap.entries) {
+      if (entry.value.contains(normalized)) {
+        return entry.key;
+      }
+    }
+
+    return normalized;
+  }
+
+  // 实体对齐：查找或创建规范实体
+  static Future<String> alignEntity(String name, String type, String contextId) async {
+    final objectBox = ObjectBoxService();
+    final normalizedName = _normalizeEntityName(name);
+    final candidateId = generateEntityId(normalizedName, type);
+
+    // 查找现有实体
+    final existingNode = objectBox.findNodeByNameType(normalizedName, type);
+    if (existingNode != null) {
+      // 更新别名列表
+      final aliases = existingNode.aliases;
+      if (!aliases.contains(name) && name != normalizedName) {
+        aliases.add(name);
+        existingNode.aliases = aliases;
+        objectBox.updateNode(existingNode);
+      }
+      return existingNode.id;
+    }
+
+    // 检查是否有对齐记录
+    final alignments = objectBox.queryEntityAlignments(aliasName: name);
+    if (alignments.isNotEmpty) {
+      return alignments.first.canonicalId;
+    }
+
+    return candidateId;
+  }
+
+  // 2. 从对话中提取事件和实体（事件中心设计）
+  static Future<Map<String, dynamic>> extractEventsAndEntitiesFromText(
+    String conversationText,
+    {DateTime? conversationTime}
+  ) async {
     final now = conversationTime ?? DateTime.now();
     final timeContext = "${now.year}年${now.month.toString().padLeft(2, '0')}月${now.day.toString().padLeft(2, '0')}日";
-    final eventExtractionPrompt = """
-你是一个知识图谱构建助手。请从我提供的对话中提取出结构化的知识图谱信息，由于我给你的对话内容是由语音转文字生成的，所以可能会不太准确或者有些发音的转换错误，请你试着先猜测还原一下。输出格式为 JSON，包含以下部分：
 
-1. nodes：实体节点数组，每个节点结构如下：
+    final eventExtractionPrompt = """
+你是一个知识图谱构建助手。请从对话中提取事件和实体信息，采用事件中心的图谱设计。
+
+输出格式为 JSON，包含以下部分：
+
+1. events: 事件数组，每个事件结构如下：
 {
-  "id": "唯一标识（可用name type组合）",
+  "name": "事件名称",
+  "type": "事件类型（会议、购买、计划、经历、讨论等）",
+  "start_time": "事件开始时间（可选，格式：YYYY-MM-DD HH:mm）",
+  "end_time": "事件结束时间（可选）",
+  "location": "事件地点（可选）",
+  "purpose": "事件目的（可选）",
+  "result": "事件结果（可选）",
+  "description": "事件描述",
+  "participants": ["参与者列表"],
+  "tools_used": ["使用的工具或物品"],
+  "related_locations": ["相关地点"]
+}
+
+2. entities: 实体数组，每个实体结构如下：
+{
   "name": "实体名称",
-  "type": "实体类型（如 手机、人、事件、政策、地点）",
+  "type": "实体类型（人、物品、地点、概念等）",
   "attributes": {
-    "属性名1": "属性值1",
-    "属性名2": "属性值2"
+    "属性名": "属性值"
   }
 }
 
-2. edges：关系边数组，每个边结构如下：
+3. event_relations: 事件间关系数组：
 {
-  "source": "源实体ID",
-  "relation": "关系类型（如 使用、购买、建议）",
-  "target": "目标实体ID或值",
-  "context": "可选：上下文描述，如对话原文",
-  "timestamp": "可选：时间戳或日期"
+  "source_event": "源事件名称",
+  "target_event": "目标事件名称",
+  "relation_type": "关系类型（时间顺序、因果关系、包含关系等）",
+  "description": "关系描述"
 }
 
-请保持字段标准化，确保结果可以被 JSON 解析器直接解析,当前对话的发生时间是$timeContext。
+请确保识别出对话中的所有重要事件，以及参与这些事件的人物、地点、工具等实体。当前对话发生时间：$timeContext
 
-对话内容如下：
+对话内容：
 """;
+
     try {
-      print('[KnowledgeGraphService] 🔍 开始提取事件，对话长度: ${conversationText.length}');
+      print('[KnowledgeGraphService] 🔍 开始提取事件和实体，对话长度: ${conversationText.length}');
       final llm = await LLM.create('gpt-4o-mini', systemPrompt: eventExtractionPrompt);
       final response = await llm.createRequest(content: conversationText);
 
@@ -50,84 +126,221 @@ class KnowledgeGraphService {
       if (jsonStart == -1 || jsonEnd == -1 || jsonEnd <= jsonStart) {
         throw FormatException('未找到合法的 JSON 对象');
       }
+
       final jsonStr = response.substring(jsonStart, jsonEnd + 1);
       final decoded = jsonDecode(jsonStr);
-      if (decoded is Map && decoded['edges'] is List && decoded['nodes'] is List) {
+
+      if (decoded is Map) {
         return {
-          'nodes': decoded['nodes'] as List,
-          'edges': decoded['edges'] as List,
+          'events': decoded['events'] ?? [],
+          'entities': decoded['entities'] ?? [],
+          'event_relations': decoded['event_relations'] ?? [],
         };
       } else {
-        throw FormatException('返回内容不是包含nodes和edges的对象');
+        throw FormatException('返回内容格式不正确');
       }
     } catch (e, st) {
       print('[KnowledgeGraphService] ❌ 事件提取错误: $e\n$st');
-      return {'nodes': [], 'edges': []};
+      return {'events': [], 'entities': [], 'event_relations': []};
     }
   }
 
-  // 批量处理事件，写入知识图谱
-  static Future<void> processEventsFromConversation(String conversationText, {required String contextId, DateTime? conversationTime}) async {
+  // 3. 图谱更新与演化机制
+  static Future<void> processEventsFromConversation(
+    String conversationText,
+    {required String contextId, DateTime? conversationTime}
+  ) async {
     try {
-      final result = await extractEventsFromText(conversationText, conversationTime: conversationTime);
-      final nodes = result['nodes'] ?? [];
-      final edges = result['edges'] ?? [];
+      final result = await extractEventsAndEntitiesFromText(
+        conversationText,
+        conversationTime: conversationTime
+      );
+
+      final events = result['events'] ?? [];
+      final entities = result['entities'] ?? [];
+      final eventRelations = result['event_relations'] ?? [];
       final objectBox = ObjectBoxService();
+      final now = conversationTime ?? DateTime.now();
 
-      // 1. 写入节点（查重）
-      for (final nodeData in nodes) {
-        if (nodeData is Map) {
-          final id = nodeData['id']?.toString() ?? (nodeData['name']?.toString() ?? '') + '_' + (nodeData['type']?.toString() ?? '');
-          final name = nodeData['name']?.toString() ?? '';
-          final type = nodeData['type']?.toString() ?? '';
-          final attributes = nodeData['attributes'] is Map ? Map<String, String>.from(nodeData['attributes']) : <String, String>{};
+      print('[KnowledgeGraphService] 📊 提取结果: ${events.length}个事件, ${entities.length}个实体');
 
-          if (objectBox.findNodeByNameType(name, type) == null) {
-            objectBox.insertNode(Node(id: id, name: name, type: type, attributes: attributes));
+      // 1. 处理实体（实体对齐）
+      final Map<String, String> entityIdMap = {};
+      for (final entityData in entities) {
+        if (entityData is Map) {
+          final name = entityData['name']?.toString() ?? '';
+          final type = entityData['type']?.toString() ?? '';
+          final attributes = entityData['attributes'] is Map
+            ? Map<String, String>.from(entityData['attributes'])
+            : <String, String>{};
+
+          if (name.isNotEmpty && type.isNotEmpty) {
+            final entityId = await alignEntity(name, type, contextId);
+            entityIdMap['${name}_$type'] = entityId;
+
+            // 检查是否需要更新或创建实体
+            final existingNode = objectBox.findNodeById(entityId);
+            if (existingNode != null) {
+              // 合并属性（时间戳策略）
+              final existingAttrs = existingNode.attributes;
+              bool hasChanges = false;
+
+              for (final entry in attributes.entries) {
+                if (!existingAttrs.containsKey(entry.key) ||
+                    existingAttrs[entry.key] != entry.value) {
+                  existingAttrs[entry.key] = entry.value;
+                  hasChanges = true;
+                }
+              }
+
+              if (hasChanges) {
+                existingNode.attributes = existingAttrs;
+                existingNode.lastUpdated = now;
+                existingNode.sourceContext = contextId;
+                objectBox.updateNode(existingNode);
+              }
+            } else {
+              // 创建新实体
+              final newNode = Node(
+                id: entityId,
+                name: name,
+                type: type,
+                canonicalName: _normalizeEntityName(name),
+                attributes: attributes,
+                lastUpdated: now,
+                sourceContext: contextId,
+                aliases: [name],
+              );
+              objectBox.insertNode(newNode);
+            }
           }
+        }
+      }
 
-          // 同步属性到 Attribute 表
-          attributes.forEach((k, v) {
-            objectBox.insertAttribute(Attribute(
-              nodeId: id,
-              key: k,
-              value: v,
-              timestamp: conversationTime ?? DateTime.now(),
-              context: contextId,
+      // 2. 处理事件（事件中心设计）
+      final Map<String, String> eventIdMap = {};
+      for (final eventData in events) {
+        if (eventData is Map) {
+          final name = eventData['name']?.toString() ?? '';
+          final type = eventData['type']?.toString() ?? '';
+          final description = eventData['description']?.toString();
+          final location = eventData['location']?.toString();
+          final purpose = eventData['purpose']?.toString();
+          final result = eventData['result']?.toString();
+
+          if (name.isNotEmpty && type.isNotEmpty) {
+            final eventId = 'event_${name.replaceAll(' ', '_')}_${now.millisecondsSinceEpoch}';
+            eventIdMap[name] = eventId;
+
+            // 解析时间
+            DateTime? startTime;
+            DateTime? endTime;
+            try {
+              if (eventData['start_time'] != null) {
+                startTime = DateTime.parse(eventData['start_time'].toString());
+              }
+              if (eventData['end_time'] != null) {
+                endTime = DateTime.parse(eventData['end_time'].toString());
+              }
+            } catch (e) {
+              print('[KnowledgeGraphService] 时间解析错误: $e');
+            }
+
+            // 创建事件节点
+            final eventNode = EventNode(
+              id: eventId,
+              name: name,
+              type: type,
+              startTime: startTime,
+              endTime: endTime,
+              location: location,
+              purpose: purpose,
+              result: result,
+              description: description,
+              lastUpdated: now,
+              sourceContext: contextId,
+            );
+            objectBox.insertEventNode(eventNode);
+
+            // 3. 建立事件-实体关系
+            // 参与者
+            final participants = eventData['participants'] as List? ?? [];
+            for (final participant in participants) {
+              final participantStr = participant.toString();
+              final participantId = await alignEntity(participantStr, '人', contextId);
+              objectBox.insertEventEntityRelation(EventEntityRelation(
+                eventId: eventId,
+                entityId: participantId,
+                role: '参与者',
+                lastUpdated: now,
+              ));
+            }
+
+            // 使用的工具
+            final toolsUsed = eventData['tools_used'] as List? ?? [];
+            for (final tool in toolsUsed) {
+              final toolStr = tool.toString();
+              final toolId = await alignEntity(toolStr, '工具', contextId);
+              objectBox.insertEventEntityRelation(EventEntityRelation(
+                eventId: eventId,
+                entityId: toolId,
+                role: '使用工具',
+                lastUpdated: now,
+              ));
+            }
+
+            // 相关地点
+            final relatedLocations = eventData['related_locations'] as List? ?? [];
+            for (final location in relatedLocations) {
+              final locationStr = location.toString();
+              final locationId = await alignEntity(locationStr, '地点', contextId);
+              objectBox.insertEventEntityRelation(EventEntityRelation(
+                eventId: eventId,
+                entityId: locationId,
+                role: '发生地点',
+                lastUpdated: now,
+              ));
+            }
+          }
+        }
+      }
+
+      // 4. 处理事件间关系
+      for (final relationData in eventRelations) {
+        if (relationData is Map) {
+          final sourceEvent = relationData['source_event']?.toString() ?? '';
+          final targetEvent = relationData['target_event']?.toString() ?? '';
+          final relationType = relationData['relation_type']?.toString() ?? '';
+          final description = relationData['description']?.toString();
+
+          final sourceEventId = eventIdMap[sourceEvent];
+          final targetEventId = eventIdMap[targetEvent];
+
+          if (sourceEventId != null && targetEventId != null && relationType.isNotEmpty) {
+            objectBox.insertEventRelation(EventRelation(
+              sourceEventId: sourceEventId,
+              targetEventId: targetEventId,
+              relationType: relationType,
+              description: description,
+              lastUpdated: now,
             ));
-          });
+          }
         }
       }
 
-      // 2. 写入边
-      for (final edgeData in edges) {
-        if (edgeData is Map) {
-          final source = edgeData['source']?.toString() ?? '';
-          final relation = edgeData['relation']?.toString() ?? '';
-          final target = edgeData['target']?.toString() ?? '';
-          final timestamp = edgeData['timestamp'] != null ? DateTime.tryParse(edgeData['timestamp'].toString()) : (conversationTime ?? DateTime.now());
-          objectBox.insertEdge(Edge(
-            source: source,
-            relation: relation,
-            target: target,
-            context: contextId,
-            timestamp: timestamp,
-          ));
-        }
-      }
-
-      print('[KnowledgeGraphService] 成功写入节点数据: $nodes');
-      print('[KnowledgeGraphService] 成功写入边数据: $edges');
+      print('[KnowledgeGraphService] ✅ 成功处理对话知识图谱');
     } catch (e) {
-      print('[KnowledgeGraphService] Error processing conversation: $e');
+      print('[KnowledgeGraphService] ❌ 处理对话错误: $e');
     }
   }
 
-  // 按10分钟分段处理对话，逐段调用LLM
-  static Future<void> processEventsFromConversationBySegments(List<RecordEntity> records, {int segmentMinutes = 10}) async {
+  // 按时间分段处理对话
+  static Future<void> processEventsFromConversationBySegments(
+    List<RecordEntity> records,
+    {int segmentMinutes = 10}
+  ) async {
     if (records.isEmpty) return;
 
-    // 1. 按时间排序
     records.sort((a, b) => (a.createdAt ?? 0).compareTo(b.createdAt ?? 0));
     final List<List<RecordEntity>> segments = [];
     List<RecordEntity> currentSegment = [];
@@ -144,43 +357,108 @@ class KnowledgeGraphService {
     }
     if (currentSegment.isNotEmpty) segments.add(currentSegment);
 
-    print('[KnowledgeGraphService] 分段数量: ${segments.length}');
+    print('[KnowledgeGraphService] 📝 分段处理: ${segments.length}个时间段');
 
-    // 2. 逐段处理
     for (int i = 0; i < segments.length; i++) {
       final seg = segments[i];
       final chatHistoryBuffer = StringBuffer();
+      DateTime? segmentTime;
+
       for (final record in seg) {
         if (record.content != null && record.content!.trim().isNotEmpty) {
-          final formattedTime = DateTime.fromMillisecondsSinceEpoch(record.createdAt ?? 0).toString();
-          chatHistoryBuffer.write('($formattedTime) ${record.role}: ${record.content}\n');
+          final recordTime = DateTime.fromMillisecondsSinceEpoch(record.createdAt ?? 0);
+          segmentTime ??= recordTime;
+          chatHistoryBuffer.write('${record.role}: ${record.content}\n');
         }
       }
+
       final chatHistory = chatHistoryBuffer.toString();
       if (chatHistory.trim().isEmpty) continue;
 
-      print('[KnowledgeGraphService] 处理第${i+1}段, 长度: ${chatHistory.length}');
-      await processEventsFromConversation(chatHistory, contextId: '${segments[i].first.createdAt}');
+      print('[KnowledgeGraphService] 🔄 处理第${i+1}段, 长度: ${chatHistory.length}');
+      await processEventsFromConversation(
+        chatHistory,
+        contextId: 'segment_${seg.first.createdAt}',
+        conversationTime: segmentTime,
+      );
     }
   }
 
-  // 获取节点的关联节点（通过边连接）
-  static Future<List<Node>> getRelatedNodes(String nodeId) async {
+  // 图谱完整性校验器
+  static Future<Map<String, List<String>>> validateGraphIntegrity() async {
+    final objectBox = ObjectBoxService();
+    final issues = <String, List<String>>{
+      'orphaned_nodes': [],
+      'duplicate_edges': [],
+      'invalid_references': [],
+      'outdated_entities': [],
+    };
+
+    try {
+      // 检查孤立节点
+      final allNodes = objectBox.queryNodes();
+      final allEdges = objectBox.queryEdges();
+      final referencedNodeIds = <String>{};
+
+      for (final edge in allEdges) {
+        referencedNodeIds.add(edge.source);
+        referencedNodeIds.add(edge.target);
+      }
+
+      for (final node in allNodes) {
+        if (!referencedNodeIds.contains(node.id)) {
+          issues['orphaned_nodes']!.add(node.id);
+        }
+      }
+
+      // 检查重复边
+      final edgeSignatures = <String, List<String>>{};
+      for (final edge in allEdges) {
+        final signature = '${edge.source}_${edge.relation}_${edge.target}';
+        edgeSignatures.putIfAbsent(signature, () => []).add('${edge.obxId}');
+      }
+
+      for (final entry in edgeSignatures.entries) {
+        if (entry.value.length > 1) {
+          issues['duplicate_edges']!.add(entry.key);
+        }
+      }
+
+      // 检查无效引用
+      final nodeIds = allNodes.map((n) => n.id).toSet();
+      for (final edge in allEdges) {
+        if (!nodeIds.contains(edge.source)) {
+          issues['invalid_references']!.add('Edge ${edge.obxId}: invalid source ${edge.source}');
+        }
+        if (!nodeIds.contains(edge.target)) {
+          issues['invalid_references']!.add('Edge ${edge.obxId}: invalid target ${edge.target}');
+        }
+      }
+
+      print('[KnowledgeGraphService] 🔍 图谱完整性检查完成');
+      return issues;
+    } catch (e) {
+      print('[KnowledgeGraphService] ❌ 图谱完整性检查错误: $e');
+      return issues;
+    }
+  }
+
+  // 查询相关事件
+  static Future<List<EventNode>> getRelatedEvents(String entityId) async {
     try {
       final objectBox = ObjectBoxService();
-      final edges = objectBox.queryEdges(source: nodeId);
-      final targetIds = edges.map((e) => e.target).toSet();
-      final relatedNodes = <Node>[];
-      for (final id in targetIds) {
-        Node? node = objectBox.queryNodes().firstWhere(
-          (n) => n.id == id,
-          orElse: () => Node(id: '', name: '', type: ''),
-        );
-        if (node.id.isNotEmpty) relatedNodes.add(node);
+      final relations = objectBox.queryEventEntityRelations(entityId: entityId);
+      final eventIds = relations.map((r) => r.eventId).toSet();
+      final events = <EventNode>[];
+
+      for (final eventId in eventIds) {
+        final event = objectBox.findEventNodeById(eventId);
+        if (event != null) events.add(event);
       }
-      return relatedNodes;
+
+      return events;
     } catch (e) {
-      print('[KnowledgeGraphService] Error getting related nodes: $e');
+      print('[KnowledgeGraphService] ❌ 查询相关事件错误: $e');
       return [];
     }
   }
@@ -191,25 +469,50 @@ class KnowledgeGraphService {
       final objectBox = ObjectBoxService();
       final allNodes = objectBox.queryNodes();
       final Set<Node> result = {};
+
       for (final keyword in keywords) {
         for (final node in allNodes) {
+          // 检查节点名称是否包含关键词
           if (node.name.contains(keyword)) {
             result.add(node);
-            // 也可以查找与该节点直接关联的节点
+            // 查找与该节点直接关联的节点
             final edges = objectBox.queryEdges(source: node.id);
             for (final edge in edges) {
-              final related = allNodes.firstWhere(
-                (n) => n.id == edge.target,
-                orElse: () => Node(id: '', name: '', type: ''),
-              );
-              if (related.id.isNotEmpty) result.add(related);
+              final related = allNodes.where((n) => n.id == edge.target).firstOrNull;
+              if (related != null) result.add(related);
+            }
+
+            // 查找指向该节点的边
+            final incomingEdges = objectBox.queryEdges(target: node.id);
+            for (final edge in incomingEdges) {
+              final related = allNodes.where((n) => n.id == edge.source).firstOrNull;
+              if (related != null) result.add(related);
+            }
+          }
+
+          // 检查节点属性是否包含关键词
+          final attributes = node.attributes;
+          for (final value in attributes.values) {
+            if (value.contains(keyword)) {
+              result.add(node);
+              break;
+            }
+          }
+
+          // 检查别名是否包含关键词
+          final aliases = node.aliases;
+          for (final alias in aliases) {
+            if (alias.contains(keyword)) {
+              result.add(node);
+              break;
             }
           }
         }
       }
+
       return result.toList();
     } catch (e) {
-      print('[KnowledgeGraphService] Error in getRelatedNodesByKeywords: $e');
+      print('[KnowledgeGraphService] ❌ 根据关键词查找相关节点错误: $e');
       return [];
     }
   }
