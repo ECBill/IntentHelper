@@ -28,12 +28,22 @@ class _KGTestPageState extends State<KGTestPage> with TickerProviderStateMixin {
   bool _isLoading = false;
   String _searchQuery = '';
 
+  // 新增：手动整理相关变量
+  DateTime? _selectedStartDate;
+  DateTime? _selectedEndDate;
+  bool _isProcessing = false;
+  String _processResult = '';
+
   @override
   void initState() {
     super.initState();
     _tabController = TabController(length: 4, vsync: this);
     _loadKGData();
     _initChatManager();
+
+    // 默认设置为最近一周
+    _selectedEndDate = DateTime.now();
+    _selectedStartDate = _selectedEndDate!.subtract(Duration(days: 7));
   }
 
   @override
@@ -387,49 +397,191 @@ class _KGTestPageState extends State<KGTestPage> with TickerProviderStateMixin {
     );
   }
 
-  // Tab 3: 图谱维护 - 清理和维护操作
+  // Tab 3: 图谱维护 - 手动整理知识图谱
   Widget _buildMaintenanceTab() {
     return Padding(
       padding: EdgeInsets.all(16.w),
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
-          Text('知识图谱维护工具', style: TextStyle(fontSize: 18.sp, fontWeight: FontWeight.bold)),
+          Text('手动整理知识图谱', style: TextStyle(fontSize: 18.sp, fontWeight: FontWeight.bold)),
           SizedBox(height: 16.h),
 
-          _buildMaintenanceCard(
-            '数据完整性检查',
-            '检查图谱中的孤立节点、重复边和无效引用',
-            Icons.health_and_safety,
-            _validateGraphIntegrity,
+          // 提示信息
+          Container(
+            padding: EdgeInsets.all(12.w),
+            decoration: BoxDecoration(
+              color: Colors.amber[50],
+              borderRadius: BorderRadius.circular(8.r),
+              border: Border.all(color: Colors.amber[200]!),
+            ),
+            child: Row(
+              children: [
+                Icon(Icons.info_outline, color: Colors.amber[700]),
+                SizedBox(width: 8.w),
+                Expanded(
+                  child: Text(
+                    '当对话意外结束时，可以手动整理指定日期范围内的对话记录到知识图谱中',
+                    style: TextStyle(color: Colors.amber[700], fontSize: 13.sp),
+                  ),
+                ),
+              ],
+            ),
           ),
 
-          _buildMaintenanceCard(
-            '生成测试数据',
-            '创建一些示例数据用于测试',
-            Icons.data_object,
-            _generateTestData,
-          ),
+          SizedBox(height: 20.h),
 
-          _buildMaintenanceCard(
-            '清空事件数据',
-            '清除所有事件相关数据（保留基础实体）',
-            Icons.event_busy,
-            _clearEventData,
-          ),
+          // 日期选择
+          Text('选择日期范围：', style: TextStyle(fontSize: 14.sp, fontWeight: FontWeight.bold)),
+          SizedBox(height: 8.h),
 
-          _buildMaintenanceCard(
-            '完全重置',
-            '清空所有知识图谱数据',
-            Icons.delete_forever,
-            _clearAllData,
-            isDestructive: true,
+          Row(
+            children: [
+              Expanded(
+                child: InkWell(
+                  onTap: () => _selectStartDate(),
+                  child: Container(
+                    padding: EdgeInsets.symmetric(horizontal: 12.w, vertical: 16.h),
+                    decoration: BoxDecoration(
+                      border: Border.all(color: Colors.grey[300]!),
+                      borderRadius: BorderRadius.circular(8.r),
+                    ),
+                    child: Row(
+                      children: [
+                        Icon(Icons.calendar_today, size: 20, color: Colors.grey[600]),
+                        SizedBox(width: 8.w),
+                        Column(
+                          crossAxisAlignment: CrossAxisAlignment.start,
+                          children: [
+                            Text('开始日期', style: TextStyle(fontSize: 12.sp, color: Colors.grey[600])),
+                            Text(
+                              _selectedStartDate != null
+                                ? DateFormat('yyyy-MM-dd').format(_selectedStartDate!)
+                                : '选择开始日期',
+                              style: TextStyle(fontSize: 14.sp),
+                            ),
+                          ],
+                        ),
+                      ],
+                    ),
+                  ),
+                ),
+              ),
+
+              SizedBox(width: 12.w),
+
+              Expanded(
+                child: InkWell(
+                  onTap: () => _selectEndDate(),
+                  child: Container(
+                    padding: EdgeInsets.symmetric(horizontal: 12.w, vertical: 16.h),
+                    decoration: BoxDecoration(
+                      border: Border.all(color: Colors.grey[300]!),
+                      borderRadius: BorderRadius.circular(8.r),
+                    ),
+                    child: Row(
+                      children: [
+                        Icon(Icons.calendar_today, size: 20, color: Colors.grey[600]),
+                        SizedBox(width: 8.w),
+                        Column(
+                          crossAxisAlignment: CrossAxisAlignment.start,
+                          children: [
+                            Text('结束日期', style: TextStyle(fontSize: 12.sp, color: Colors.grey[600])),
+                            Text(
+                              _selectedEndDate != null
+                                ? DateFormat('yyyy-MM-dd').format(_selectedEndDate!)
+                                : '选择结束日期',
+                              style: TextStyle(fontSize: 14.sp),
+                            ),
+                          ],
+                        ),
+                      ],
+                    ),
+                  ),
+                ),
+              ),
+            ],
           ),
 
           SizedBox(height: 16.h),
 
-          if (_result.isNotEmpty) ...[
-            Text('操作结果：', style: TextStyle(fontSize: 14.sp, fontWeight: FontWeight.bold)),
+          // 快速选择按钮
+          Text('快速选择：', style: TextStyle(fontSize: 14.sp, fontWeight: FontWeight.bold)),
+          SizedBox(height: 8.h),
+          Wrap(
+            spacing: 8.w,
+            children: [
+              _buildQuickDateChip('今天', 0),
+              _buildQuickDateChip('最近3天', 3),
+              _buildQuickDateChip('最近一周', 7),
+              _buildQuickDateChip('最近一月', 30),
+            ],
+          ),
+
+          SizedBox(height: 20.h),
+
+          // 预览信息
+          FutureBuilder<Map<String, dynamic>>(
+            future: _getDateRangeInfo(),
+            builder: (context, snapshot) {
+              if (snapshot.hasData) {
+                final info = snapshot.data!;
+                return Container(
+                  padding: EdgeInsets.all(12.w),
+                  decoration: BoxDecoration(
+                    color: Colors.blue[50],
+                    borderRadius: BorderRadius.circular(8.r),
+                  ),
+                  child: Column(
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    children: [
+                      Text('预计处理：', style: TextStyle(fontWeight: FontWeight.bold)),
+                      SizedBox(height: 4.h),
+                      Text('• 对话记录：${info['recordCount']} 条'),
+                      Text('• 预计Token消耗：约 ${info['estimatedTokens']} tokens'),
+                      Text('• 处理时间：约 ${info['estimatedTime']} 分钟'),
+                    ],
+                  ),
+                );
+              }
+              return SizedBox.shrink();
+            },
+          ),
+
+          SizedBox(height: 20.h),
+
+          // 操作按钮
+          Row(
+            children: [
+              Expanded(
+                child: ElevatedButton.icon(
+                  onPressed: (_isProcessing || _selectedStartDate == null || _selectedEndDate == null)
+                    ? null
+                    : _processDateRangeKG,
+                  icon: _isProcessing
+                    ? SizedBox(
+                        width: 16,
+                        height: 16,
+                        child: CircularProgressIndicator(strokeWidth: 2),
+                      )
+                    : Icon(Icons.auto_fix_high),
+                  label: Text(_isProcessing ? '处理中...' : '开始整理'),
+                ),
+              ),
+              SizedBox(width: 12.w),
+              OutlinedButton.icon(
+                onPressed: _isProcessing ? null : _showLastUnprocessedConversations,
+                icon: Icon(Icons.search),
+                label: Text('查找未处理'),
+              ),
+            ],
+          ),
+
+          SizedBox(height: 20.h),
+
+          // 处理结果显示
+          if (_processResult.isNotEmpty) ...[
+            Text('处理结果：', style: TextStyle(fontSize: 14.sp, fontWeight: FontWeight.bold)),
             SizedBox(height: 8.h),
             Expanded(
               child: Container(
@@ -441,7 +593,7 @@ class _KGTestPageState extends State<KGTestPage> with TickerProviderStateMixin {
                   color: Colors.grey[50],
                 ),
                 child: SingleChildScrollView(
-                  child: Text(_result, style: TextStyle(fontSize: 12.sp)),
+                  child: Text(_processResult, style: TextStyle(fontSize: 12.sp)),
                 ),
               ),
             ),
@@ -451,23 +603,240 @@ class _KGTestPageState extends State<KGTestPage> with TickerProviderStateMixin {
     );
   }
 
-  Widget _buildMaintenanceCard(String title, String description, IconData icon, VoidCallback onPressed, {bool isDestructive = false}) {
-    return Card(
-      margin: EdgeInsets.only(bottom: 12.h),
-      child: ListTile(
-        leading: CircleAvatar(
-          backgroundColor: isDestructive ? Colors.red[100] : Colors.blue[100],
-          child: Icon(icon, color: isDestructive ? Colors.red : Colors.blue),
-        ),
-        title: Text(title),
-        subtitle: Text(description),
-        trailing: ElevatedButton(
-          onPressed: _isLoading ? null : onPressed,
-          style: ElevatedButton.styleFrom(
-            backgroundColor: isDestructive ? Colors.red : null,
+  Widget _buildQuickDateChip(String label, int daysBack) {
+    return ActionChip(
+      label: Text(label, style: TextStyle(fontSize: 11.sp)),
+      onPressed: () {
+        setState(() {
+          _selectedEndDate = DateTime.now();
+          _selectedStartDate = daysBack == 0
+            ? DateTime(_selectedEndDate!.year, _selectedEndDate!.month, _selectedEndDate!.day)
+            : _selectedEndDate!.subtract(Duration(days: daysBack));
+        });
+      },
+    );
+  }
+
+  Future<void> _selectStartDate() async {
+    final date = await showDatePicker(
+      context: context,
+      initialDate: _selectedStartDate ?? DateTime.now().subtract(Duration(days: 7)),
+      firstDate: DateTime.now().subtract(Duration(days: 365)),
+      lastDate: DateTime.now(),
+    );
+    if (date != null) {
+      setState(() {
+        _selectedStartDate = date;
+      });
+    }
+  }
+
+  Future<void> _selectEndDate() async {
+    final date = await showDatePicker(
+      context: context,
+      initialDate: _selectedEndDate ?? DateTime.now(),
+      firstDate: _selectedStartDate ?? DateTime.now().subtract(Duration(days: 365)),
+      lastDate: DateTime.now(),
+    );
+    if (date != null) {
+      setState(() {
+        _selectedEndDate = date;
+      });
+    }
+  }
+
+  Future<Map<String, dynamic>> _getDateRangeInfo() async {
+    if (_selectedStartDate == null || _selectedEndDate == null) {
+      return {'recordCount': 0, 'estimatedTokens': 0, 'estimatedTime': 0};
+    }
+
+    try {
+      final objectBox = ObjectBoxService();
+      final startMs = _selectedStartDate!.millisecondsSinceEpoch;
+      final endMs = _selectedEndDate!.add(Duration(days: 1)).millisecondsSinceEpoch;
+
+      final records = objectBox.queryRecords().where((r) =>
+        r.createdAt != null &&
+        r.createdAt! >= startMs &&
+        r.createdAt! < endMs &&
+        r.content != null &&
+        r.content!.trim().isNotEmpty
+      ).toList();
+
+      final totalChars = records.fold<int>(0, (sum, r) => sum + (r.content?.length ?? 0));
+      final estimatedTokens = (totalChars * 0.3).round(); // 粗略估算
+      final estimatedTime = (records.length / 20).ceil(); // 假设每20条记录需要1分钟
+
+      return {
+        'recordCount': records.length,
+        'estimatedTokens': estimatedTokens,
+        'estimatedTime': estimatedTime,
+      };
+    } catch (e) {
+      return {'recordCount': 0, 'estimatedTokens': 0, 'estimatedTime': 0};
+    }
+  }
+
+  Future<void> _processDateRangeKG() async {
+    if (_selectedStartDate == null || _selectedEndDate == null) return;
+
+    setState(() {
+      _isProcessing = true;
+      _processResult = '';
+    });
+
+    try {
+      final objectBox = ObjectBoxService();
+      final startMs = _selectedStartDate!.millisecondsSinceEpoch;
+      final endMs = _selectedEndDate!.add(Duration(days: 1)).millisecondsSinceEpoch;
+
+      // 获取指定日期范围内的对话记录
+      final records = objectBox.queryRecords().where((r) =>
+        r.createdAt != null &&
+        r.createdAt! >= startMs &&
+        r.createdAt! < endMs &&
+        r.content != null &&
+        r.content!.trim().isNotEmpty
+      ).toList();
+
+      if (records.isEmpty) {
+        setState(() {
+          _processResult = '❌ 指定日期范围内没有找到对话记录';
+        });
+        return;
+      }
+
+      _processResult = '🔄 开始处理 ${records.length} 条对话记录...\n\n';
+      setState(() {});
+
+      // 按会话分组处理（使用时间间隔判断）
+      final sessionGroups = _groupRecordsIntoSessions(records);
+
+      int processedSessions = 0;
+
+      for (int i = 0; i < sessionGroups.length; i++) {
+        final session = sessionGroups[i];
+
+        _processResult += '处理第 ${i + 1} 个会话 (${session.length} 条记录)...\n';
+        setState(() {});
+
+        try {
+          // 使用分段处理
+          await KnowledgeGraphService.processEventsFromConversationBySegments(session);
+
+          processedSessions++;
+          _processResult += '✅ 会话 ${i + 1} 处理完成\n';
+        } catch (e) {
+          _processResult += '❌ 会话 ${i + 1} 处理失败: $e\n';
+        }
+
+        setState(() {});
+
+        // 添加延迟避免API调用过于频繁
+        await Future.delayed(Duration(milliseconds: 500));
+      }
+
+      // 刷新数据
+      await _loadKGData();
+
+      _processResult += '\n📊 处理完成统计:\n';
+      _processResult += '• 处理会话数: $processedSessions/${sessionGroups.length}\n';
+      _processResult += '• 当前事件总数: ${_allEventNodes.length}\n';
+      _processResult += '• 当前实体总数: ${_allNodes.length}\n';
+
+    } catch (e) {
+      _processResult += '\n❌ 处理过程中发生错误: $e';
+    } finally {
+      setState(() {
+        _isProcessing = false;
+      });
+    }
+  }
+
+  List<List<RecordEntity>> _groupRecordsIntoSessions(List<RecordEntity> records) {
+    if (records.isEmpty) return [];
+
+    // 按时间排序
+    records.sort((a, b) => (a.createdAt ?? 0).compareTo(b.createdAt ?? 0));
+
+    final sessions = <List<RecordEntity>>[];
+    List<RecordEntity> currentSession = [];
+    int? lastTime;
+
+    const sessionGapMinutes = 30; // 30分钟间隔认为是不同会话
+
+    for (final record in records) {
+      if (lastTime != null && record.createdAt != null &&
+          record.createdAt! - lastTime > sessionGapMinutes * 60 * 1000) {
+        if (currentSession.isNotEmpty) {
+          sessions.add(List.from(currentSession));
+          currentSession.clear();
+        }
+      }
+      currentSession.add(record);
+      lastTime = record.createdAt;
+    }
+
+    if (currentSession.isNotEmpty) {
+      sessions.add(currentSession);
+    }
+
+    return sessions;
+  }
+
+  Future<void> _showLastUnprocessedConversations() async {
+    // 查找最近可能未处理的对话
+    final objectBox = ObjectBoxService();
+    final allRecords = objectBox.queryRecords();
+
+    // 找到最近的几个会话
+    final recentRecords = allRecords.where((r) =>
+      r.createdAt != null &&
+      r.createdAt! > DateTime.now().subtract(Duration(days: 3)).millisecondsSinceEpoch
+    ).toList();
+
+    final sessions = _groupRecordsIntoSessions(recentRecords);
+
+    showDialog(
+      context: context,
+      builder: (context) => AlertDialog(
+        title: Text('最近的对话会话'),
+        content: Container(
+          width: double.maxFinite,
+          height: 300,
+          child: ListView.builder(
+            itemCount: sessions.length,
+            itemBuilder: (context, index) {
+              final session = sessions[index];
+              final firstRecord = session.first;
+              final lastRecord = session.last;
+              final duration = Duration(
+                milliseconds: (lastRecord.createdAt ?? 0) - (firstRecord.createdAt ?? 0)
+              );
+
+              return ListTile(
+                title: Text('会话 ${index + 1}'),
+                subtitle: Text(
+                  '${DateFormat('MM-dd HH:mm').format(DateTime.fromMillisecondsSinceEpoch(firstRecord.createdAt ?? 0))}\n'
+                  '${session.length} 条记录，持续 ${duration.inMinutes} 分钟'
+                ),
+                onTap: () {
+                  Navigator.pop(context);
+                  setState(() {
+                    _selectedStartDate = DateTime.fromMillisecondsSinceEpoch(firstRecord.createdAt ?? 0);
+                    _selectedEndDate = DateTime.fromMillisecondsSinceEpoch(lastRecord.createdAt ?? 0);
+                  });
+                },
+              );
+            },
           ),
-          child: Text(isDestructive ? '执行' : '运行'),
         ),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.pop(context),
+            child: Text('关闭'),
+          ),
+        ],
       ),
     );
   }

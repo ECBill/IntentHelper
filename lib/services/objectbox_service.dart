@@ -113,6 +113,11 @@ class ObjectBoxService {
     return recordBox.getAll();
   }
 
+  // 添加 queryRecords 方法作为 getRecords 的别名，供知识图谱服务使用
+  List<RecordEntity> queryRecords() {
+    return recordBox.getAll();
+  }
+
   List<RecordEntity>? getChatRecords({int offset = 0, int limit = 50}) {
     final queryBuilder = recordBox.query().order(RecordEntity_.createdAt, flags: Order.descending);
 

@@ -516,4 +516,170 @@ class KnowledgeGraphService {
       return [];
     }
   }
+
+  // 自动处理未整理的对话记录
+  static Future<void> processUnprocessedConversations() async {
+    try {
+      final objectBox = ObjectBoxService();
+      final now = DateTime.now();
+
+      // 查找最近3天内可能未处理的对话记录
+      final cutoffTime = now.subtract(Duration(days: 3)).millisecondsSinceEpoch;
+      final allRecords = objectBox.queryRecords();
+
+      // 过滤出最近的记录
+      final recentRecords = allRecords.where((r) =>
+        r.createdAt != null &&
+        r.createdAt! > cutoffTime &&
+        r.content != null &&
+        r.content!.trim().isNotEmpty
+      ).toList();
+
+      if (recentRecords.isEmpty) {
+        print('[KnowledgeGraphService] 📝 没有找到需要处理的对话记录');
+        return;
+      }
+
+      // 按会话分组
+      final sessionGroups = _groupRecordsIntoSessions(recentRecords);
+
+      // 检查哪些会话可能未被处理（通过检查是否有对应的事件记录）
+      final unprocessedSessions = <List<RecordEntity>>[];
+
+      for (final session in sessionGroups) {
+        final sessionStart = session.first.createdAt ?? 0;
+        final sessionEnd = session.last.createdAt ?? 0;
+
+        // 检查这个时间段内是否有对应的事件记录
+        final sessionEvents = objectBox.queryEventNodes().where((event) {
+          final eventTime = event.startTime?.millisecondsSinceEpoch ?? event.lastUpdated.millisecondsSinceEpoch;
+          return eventTime >= sessionStart - 60000 && eventTime <= sessionEnd + 60000; // 1分钟容差
+        }).toList();
+
+        // 如果这个会话没有对应的事件记录，或者事件数量明显偏少，则认为可能未处理
+        if (sessionEvents.isEmpty || (session.length > 10 && sessionEvents.length < 2)) {
+          unprocessedSessions.add(session);
+        }
+      }
+
+      if (unprocessedSessions.isEmpty) {
+        print('[KnowledgeGraphService] ✅ 所有对话都已处理');
+        return;
+      }
+
+      print('[KnowledgeGraphService] 🔄 发现 ${unprocessedSessions.length} 个可能未处理的会话，开始自动处理...');
+
+      // 处理未处理的会话
+      for (int i = 0; i < unprocessedSessions.length; i++) {
+        final session = unprocessedSessions[i];
+
+        try {
+          print('[KnowledgeGraphService] 📝 处理会话 ${i + 1}/${unprocessedSessions.length} (${session.length} 条记录)');
+
+          await processEventsFromConversationBySegments(session);
+
+          // 添加延迟避免API调用过于频繁
+          await Future.delayed(Duration(milliseconds: 800));
+
+        } catch (e) {
+          print('[KnowledgeGraphService] ❌ 处理会话 ${i + 1} 失败: $e');
+        }
+      }
+
+      print('[KnowledgeGraphService] ✅ 自动处理完成，已处理 ${unprocessedSessions.length} 个会话');
+
+    } catch (e) {
+      print('[KnowledgeGraphService] ❌ 自动处理未整理对话失败: $e');
+    }
+  }
+
+  // 辅助方法：按会话分组记录
+  static List<List<RecordEntity>> _groupRecordsIntoSessions(List<RecordEntity> records) {
+    if (records.isEmpty) return [];
+
+    // 按时间排序
+    records.sort((a, b) => (a.createdAt ?? 0).compareTo(b.createdAt ?? 0));
+
+    final sessions = <List<RecordEntity>>[];
+    List<RecordEntity> currentSession = [];
+    int? lastTime;
+
+    const sessionGapMinutes = 30; // 30分钟间隔认为是不同会话
+
+    for (final record in records) {
+      if (lastTime != null && record.createdAt != null &&
+          record.createdAt! - lastTime > sessionGapMinutes * 60 * 1000) {
+        if (currentSession.isNotEmpty) {
+          sessions.add(List.from(currentSession));
+          currentSession.clear();
+        }
+      }
+      currentSession.add(record);
+      lastTime = record.createdAt;
+    }
+
+    if (currentSession.isNotEmpty) {
+      sessions.add(currentSession);
+    }
+
+    return sessions;
+  }
+
+  // 应用启动时检查未处理的对话
+  static Future<void> initializeAndProcessMissedConversations() async {
+    try {
+      print('[KnowledgeGraphService] 🚀 应用启动，检查是否有未处理的对话...');
+
+      // 延迟一点时间，确保其他服务已初始化
+      await Future.delayed(Duration(seconds: 2));
+
+      await processUnprocessedConversations();
+
+    } catch (e) {
+      print('[KnowledgeGraphService] ❌ 启动时检查未处理对话失败: $e');
+    }
+  }
+
+  // 检测对话结束并自动处理
+  static Future<void> handleConversationEnd() async {
+    try {
+      print('[KnowledgeGraphService] 🔚 检测到对话结束，开始处理最近的对话记录...');
+
+      final objectBox = ObjectBoxService();
+      final now = DateTime.now();
+
+      // 获取最近2小时内的对话记录
+      final recentTime = now.subtract(Duration(hours: 2)).millisecondsSinceEpoch;
+      final recentRecords = objectBox.queryRecords().where((r) =>
+        r.createdAt != null &&
+        r.createdAt! > recentTime &&
+        r.content != null &&
+        r.content!.trim().isNotEmpty
+      ).toList();
+
+      if (recentRecords.isEmpty) {
+        print('[KnowledgeGraphService] 📝 没有找到最近的对话记录');
+        return;
+      }
+
+      // 找到最后一个会话
+      final sessionGroups = _groupRecordsIntoSessions(recentRecords);
+      if (sessionGroups.isEmpty) return;
+
+      final lastSession = sessionGroups.last;
+      final lastRecordTime = lastSession.last.createdAt ?? 0;
+
+      // 如果最后一条记录是在2分钟前，认为对话可能已经结束
+      if (now.millisecondsSinceEpoch - lastRecordTime > 2 * 60 * 1000) {
+        print('[KnowledgeGraphService] 📊 处理最后一个会话 (${lastSession.length} 条记录)');
+
+        await processEventsFromConversationBySegments([lastSession.last]);
+
+        print('[KnowledgeGraphService] ✅ 对话结束处理完成');
+      }
+
+    } catch (e) {
+      print('[KnowledgeGraphService] ❌ 处理对话结束失败: $e');
+    }
+  }
 }

@@ -1,12 +1,7 @@
 import 'package:flutter/material.dart';
 import 'package:flutter_screenutil/flutter_screenutil.dart';
 import 'package:intl/intl.dart';
-import 'package:graphview/GraphView.dart' as graphview;
-import '../models/event_entity.dart';
-import '../models/event_relation_entity.dart';
-import '../models/record_entity.dart';
 import '../services/objectbox_service.dart';
-import '../services/knowledge_graph_service.dart';
 import '../models/graph_models.dart';
 
 class KnowledgeGraphPage extends StatefulWidget {
@@ -345,109 +340,471 @@ class _KnowledgeGraphPageState extends State<KnowledgeGraphPage> with TickerProv
       );
     }
 
-    // 构建简化的关系图
-    return _buildInteractiveGraph();
+    // 使用分层列表展示，更清晰地显示关系
+    return _buildHierarchicalNetworkView();
   }
 
-  Widget _buildInteractiveGraph() {
-    final graph = graphview.Graph();
-    final nodeMap = <String, graphview.Node>{};
+  Widget _buildHierarchicalNetworkView() {
+    return SingleChildScrollView(
+      padding: EdgeInsets.all(16.w),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          // 控制面板
+          Container(
+            padding: EdgeInsets.all(12.w),
+            decoration: BoxDecoration(
+              color: Colors.blue[50],
+              borderRadius: BorderRadius.circular(8.r),
+            ),
+            child: Row(
+              children: [
+                Icon(Icons.info_outline, color: Colors.blue[700]),
+                SizedBox(width: 8.w),
+                Expanded(
+                  child: Text(
+                    '以事件为中心的关系网络视图，展示事件与相关实体的关系',
+                    style: TextStyle(color: Colors.blue[700], fontSize: 13.sp),
+                  ),
+                ),
+              ],
+            ),
+          ),
 
-    // 只显示有关系的实体和事件
-    final connectedEntities = <String>{};
-    for (final relation in _eventEntityRelations) {
-      connectedEntities.add(relation.entityId);
+          SizedBox(height: 20.h),
+
+          // 按事件类型分组展示
+          ...(_buildEventGroupsWithRelations()),
+        ],
+      ),
+    );
+  }
+
+  List<Widget> _buildEventGroupsWithRelations() {
+    // 按事件类型分组
+    final eventsByType = <String, List<EventNode>>{};
+    for (final event in _eventNodes) {
+      eventsByType.putIfAbsent(event.type, () => []).add(event);
     }
 
-    // 添加事件节点（主要节点）
-    for (final event in _eventNodes.take(20)) { // 限制显示数量
-      final graphNode = graphview.Node(
+    final widgets = <Widget>[];
+
+    for (final entry in eventsByType.entries) {
+      final eventType = entry.key;
+      final events = entry.value;
+
+      widgets.add(_buildEventTypeSection(eventType, events));
+      widgets.add(SizedBox(height: 24.h));
+    }
+
+    return widgets;
+  }
+
+  Widget _buildEventTypeSection(String eventType, List<EventNode> events) {
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: [
+        // 事件类型标题
         Container(
-          padding: EdgeInsets.all(12.w),
+          padding: EdgeInsets.symmetric(horizontal: 12.w, vertical: 8.h),
           decoration: BoxDecoration(
-            color: _getEventTypeColor(event.type),
-            borderRadius: BorderRadius.circular(12.r),
-            boxShadow: [
-              BoxShadow(
-                color: Colors.black.withOpacity(0.1),
-                blurRadius: 4,
-                offset: Offset(0, 2),
-              ),
-            ],
+            color: _getEventTypeColor(eventType),
+            borderRadius: BorderRadius.circular(20.r),
           ),
-          child: Column(
+          child: Row(
             mainAxisSize: MainAxisSize.min,
             children: [
-              Icon(Icons.event, color: Colors.white, size: 16),
-              SizedBox(height: 4.h),
+              Icon(Icons.category, color: Colors.white, size: 16),
+              SizedBox(width: 6.w),
               Text(
-                event.name.length > 8 ? '${event.name.substring(0, 8)}...' : event.name,
-                style: TextStyle(color: Colors.white, fontSize: 10.sp, fontWeight: FontWeight.bold),
-                textAlign: TextAlign.center,
+                '$eventType (${events.length})',
+                style: TextStyle(
+                  color: Colors.white,
+                  fontWeight: FontWeight.bold,
+                  fontSize: 14.sp,
+                ),
               ),
             ],
           ),
         ),
-      );
-      nodeMap[event.id] = graphNode;
-      graph.addNode(graphNode);
-    }
 
-    // 添加重要实体节点
-    final importantEntities = _entities
-        .where((e) => connectedEntities.contains(e.id))
-        .take(15)
+        SizedBox(height: 12.h),
+
+        // 事件列表
+        ...events.map((event) => _buildEventWithRelationsCard(event)),
+      ],
+    );
+  }
+
+  Widget _buildEventWithRelationsCard(EventNode event) {
+    // 获取与此事件相关的实体
+    final relatedEntityRelations = _eventEntityRelations
+        .where((r) => r.eventId == event.id)
         .toList();
 
-    for (final entity in importantEntities) {
-      final graphNode = graphview.Node(
-        Container(
-          padding: EdgeInsets.all(8.w),
-          decoration: BoxDecoration(
-            color: _getEntityTypeColor(entity.type),
-            borderRadius: BorderRadius.circular(8.r),
-            border: Border.all(color: Colors.white, width: 2),
-          ),
-          child: Text(
-            entity.name.length > 6 ? '${entity.name.substring(0, 6)}...' : entity.name,
-            style: TextStyle(color: Colors.white, fontSize: 9.sp),
-            textAlign: TextAlign.center,
-          ),
-        ),
-      );
-      nodeMap[entity.id] = graphNode;
-      graph.addNode(graphNode);
+    final relatedEntities = relatedEntityRelations
+        .map((r) => _entities.firstWhere(
+            (e) => e.id == r.entityId,
+            orElse: () => Node(id: r.entityId, name: r.entityId, type: '未知')))
+        .toList();
+
+    // 按角色分组实体
+    final entitiesByRole = <String, List<Node>>{};
+    for (int i = 0; i < relatedEntityRelations.length; i++) {
+      final relation = relatedEntityRelations[i];
+      final entity = relatedEntities[i];
+      entitiesByRole.putIfAbsent(relation.role, () => []).add(entity);
     }
 
-    // 添加关系边
-    for (final relation in _eventEntityRelations) {
-      final eventNode = nodeMap[relation.eventId];
-      final entityNode = nodeMap[relation.entityId];
-      if (eventNode != null && entityNode != null) {
-        graph.addEdge(eventNode, entityNode, paint: Paint()
-          ..color = Colors.grey[400]!
-          ..strokeWidth = 2);
-      }
-    }
+    return Container(
+      margin: EdgeInsets.only(bottom: 16.h, left: 20.w),
+      decoration: BoxDecoration(
+        border: Border.all(color: Colors.grey[300]!),
+        borderRadius: BorderRadius.circular(12.r),
+        color: Colors.white,
+        boxShadow: [
+          BoxShadow(
+            color: Colors.black.withOpacity(0.05),
+            blurRadius: 4,
+            offset: Offset(0, 2),
+          ),
+        ],
+      ),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          // 事件信息头部
+          Container(
+            padding: EdgeInsets.all(16.w),
+            decoration: BoxDecoration(
+              color: _getEventTypeColor(event.type).withOpacity(0.1),
+              borderRadius: BorderRadius.only(
+                topLeft: Radius.circular(12.r),
+                topRight: Radius.circular(12.r),
+              ),
+            ),
+            child: Row(
+              children: [
+                Container(
+                  padding: EdgeInsets.all(8.w),
+                  decoration: BoxDecoration(
+                    color: _getEventTypeColor(event.type),
+                    borderRadius: BorderRadius.circular(8.r),
+                  ),
+                  child: Icon(Icons.event, color: Colors.white, size: 20),
+                ),
+                SizedBox(width: 12.w),
+                Expanded(
+                  child: Column(
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    children: [
+                      Text(
+                        event.name,
+                        style: TextStyle(
+                          fontSize: 16.sp,
+                          fontWeight: FontWeight.bold,
+                        ),
+                      ),
+                      if (event.description != null) ...[
+                        SizedBox(height: 4.h),
+                        Text(
+                          event.description!,
+                          style: TextStyle(
+                            fontSize: 12.sp,
+                            color: Colors.grey[600],
+                          ),
+                          maxLines: 2,
+                          overflow: TextOverflow.ellipsis,
+                        ),
+                      ],
+                    ],
+                  ),
+                ),
+                if (event.startTime != null)
+                  Container(
+                    padding: EdgeInsets.symmetric(horizontal: 8.w, vertical: 4.h),
+                    decoration: BoxDecoration(
+                      color: Colors.grey[200],
+                      borderRadius: BorderRadius.circular(12.r),
+                    ),
+                    child: Text(
+                      DateFormat('MM/dd HH:mm').format(event.startTime!),
+                      style: TextStyle(fontSize: 11.sp, color: Colors.grey[700]),
+                    ),
+                  ),
+              ],
+            ),
+          ),
 
-    final builder = graphview.FruchtermanReingoldAlgorithm(iterations: 1000);
+          // 关系网络展示
+          if (entitiesByRole.isNotEmpty) ...[
+            Padding(
+              padding: EdgeInsets.all(16.w),
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  Text(
+                    '关联关系',
+                    style: TextStyle(
+                      fontSize: 14.sp,
+                      fontWeight: FontWeight.bold,
+                      color: Colors.grey[700],
+                    ),
+                  ),
+                  SizedBox(height: 12.h),
 
-    return InteractiveViewer(
-      constrained: false,
-      boundaryMargin: EdgeInsets.all(50),
-      minScale: 0.1,
-      maxScale: 3.0,
+                  // 按角色展示相关实体
+                  ...entitiesByRole.entries.map((roleEntry) =>
+                    _buildRoleRelationGroup(roleEntry.key, roleEntry.value)
+                  ),
+                ],
+              ),
+            ),
+          ] else ...[
+            Padding(
+              padding: EdgeInsets.all(16.w),
+              child: Text(
+                '暂无关联实体',
+                style: TextStyle(
+                  fontSize: 12.sp,
+                  color: Colors.grey[500],
+                  fontStyle: FontStyle.italic,
+                ),
+              ),
+            ),
+          ],
+        ],
+      ),
+    );
+  }
+
+  Widget _buildRoleRelationGroup(String role, List<Node> entities) {
+    return Container(
+      margin: EdgeInsets.only(bottom: 12.h),
+      child: Row(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          // 角色标签
+          Container(
+            width: 80.w,
+            padding: EdgeInsets.symmetric(horizontal: 8.w, vertical: 4.h),
+            decoration: BoxDecoration(
+              color: Colors.grey[100],
+              borderRadius: BorderRadius.circular(12.r),
+              border: Border.all(color: Colors.grey[300]!),
+            ),
+            child: Text(
+              role,
+              style: TextStyle(
+                fontSize: 11.sp,
+                color: Colors.grey[700],
+                fontWeight: FontWeight.w500,
+              ),
+              textAlign: TextAlign.center,
+            ),
+          ),
+
+          SizedBox(width: 12.w),
+
+          // 连接线
+          Container(
+            width: 20.w,
+            height: 32.h,
+            child: CustomPaint(
+              painter: ConnectionLinePainter(),
+            ),
+          ),
+
+          // 实体列表
+          Expanded(
+            child: Wrap(
+              spacing: 6.w,
+              runSpacing: 6.h,
+              children: entities.map((entity) => _buildEntityChip(entity)).toList(),
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+
+  Widget _buildEntityChip(Node entity) {
+    return InkWell(
+      onTap: () => _showEntityDetails(entity),
       child: Container(
-        width: MediaQuery.of(context).size.width * 2,
-        height: MediaQuery.of(context).size.height * 2,
-        child: graphview.GraphView(
-          graph: graph,
-          algorithm: builder,
-          builder: (graphview.Node node) => node.key as Widget,
-          paint: Paint()..color = Colors.transparent,
+        padding: EdgeInsets.symmetric(horizontal: 10.w, vertical: 6.h),
+        decoration: BoxDecoration(
+          color: _getEntityTypeColor(entity.type),
+          borderRadius: BorderRadius.circular(16.r),
+          boxShadow: [
+            BoxShadow(
+              color: Colors.black.withOpacity(0.1),
+              blurRadius: 2,
+              offset: Offset(0, 1),
+            ),
+          ],
+        ),
+        child: Row(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            Container(
+              width: 6.w,
+              height: 6.h,
+              decoration: BoxDecoration(
+                color: Colors.white,
+                shape: BoxShape.circle,
+              ),
+            ),
+            SizedBox(width: 6.w),
+            Text(
+              entity.name,
+              style: TextStyle(
+                color: Colors.white,
+                fontSize: 11.sp,
+                fontWeight: FontWeight.w500,
+              ),
+            ),
+            SizedBox(width: 4.w),
+            Text(
+              '(${entity.type})',
+              style: TextStyle(
+                color: Colors.white.withOpacity(0.8),
+                fontSize: 9.sp,
+              ),
+            ),
+          ],
         ),
       ),
     );
+  }
+
+  void _showEntityDetails(Node entity) {
+    // 查找与该实体相关的所有事件
+    final relatedEventRelations = _eventEntityRelations
+        .where((r) => r.entityId == entity.id)
+        .toList();
+
+    final relatedEvents = relatedEventRelations
+        .map((r) => _eventNodes.firstWhere(
+            (e) => e.id == r.eventId,
+            orElse: () => EventNode(id: r.eventId, name: '未知事件', type: '未知')))
+        .toList();
+
+    showModalBottomSheet(
+      context: context,
+      isScrollControlled: true,
+      builder: (context) => DraggableScrollableSheet(
+        expand: false,
+        builder: (context, scrollController) => Container(
+          padding: EdgeInsets.all(16.w),
+          child: Column(
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              // 实体信息
+              Row(
+                children: [
+                  Container(
+                    padding: EdgeInsets.all(8.w),
+                    decoration: BoxDecoration(
+                      color: _getEntityTypeColor(entity.type),
+                      borderRadius: BorderRadius.circular(8.r),
+                    ),
+                    child: Icon(
+                      _getEntityTypeIcon(entity.type),
+                      color: Colors.white,
+                      size: 20,
+                    ),
+                  ),
+                  SizedBox(width: 12.w),
+                  Expanded(
+                    child: Column(
+                      crossAxisAlignment: CrossAxisAlignment.start,
+                      children: [
+                        Text(
+                          entity.name,
+                          style: TextStyle(fontSize: 18.sp, fontWeight: FontWeight.bold),
+                        ),
+                        Text(
+                          entity.type,
+                          style: TextStyle(fontSize: 14.sp, color: Colors.grey[600]),
+                        ),
+                      ],
+                    ),
+                  ),
+                ],
+              ),
+
+              SizedBox(height: 16.h),
+
+              // 属性信息
+              if (entity.attributes.isNotEmpty) ...[
+                Text('属性信息', style: TextStyle(fontWeight: FontWeight.bold)),
+                SizedBox(height: 8.h),
+                ...entity.attributes.entries.map((attr) =>
+                  Padding(
+                    padding: EdgeInsets.symmetric(vertical: 2.h),
+                    child: Row(
+                      children: [
+                        Text('${attr.key}: ', style: TextStyle(color: Colors.grey[600])),
+                        Expanded(child: Text(attr.value)),
+                      ],
+                    ),
+                  )
+                ),
+                SizedBox(height: 16.h),
+              ],
+
+              // 相关事件
+              Text('相关事件 (${relatedEvents.length})', style: TextStyle(fontWeight: FontWeight.bold)),
+              SizedBox(height: 8.h),
+              Expanded(
+                child: ListView.builder(
+                  controller: scrollController,
+                  itemCount: relatedEvents.length,
+                  itemBuilder: (context, index) {
+                    final event = relatedEvents[index];
+                    final relation = relatedEventRelations[index];
+
+                    return Card(
+                      margin: EdgeInsets.only(bottom: 8.h),
+                      child: ListTile(
+                        leading: Container(
+                          padding: EdgeInsets.all(4.w),
+                          decoration: BoxDecoration(
+                            color: _getEventTypeColor(event.type),
+                            borderRadius: BorderRadius.circular(4.r),
+                          ),
+                          child: Icon(Icons.event, color: Colors.white, size: 16),
+                        ),
+                        title: Text(event.name),
+                        subtitle: Text('${event.type} • ${relation.role}'),
+                        trailing: event.startTime != null
+                          ? Text(
+                              DateFormat('MM/dd').format(event.startTime!),
+                              style: TextStyle(fontSize: 11.sp, color: Colors.grey[600]),
+                            )
+                          : null,
+                      ),
+                    );
+                  },
+                ),
+              ),
+            ],
+          ),
+        ),
+      ),
+    );
+  }
+
+  IconData _getEntityTypeIcon(String type) {
+    switch (type.toLowerCase()) {
+      case '人': case 'person': return Icons.person;
+      case '地点': case 'location': return Icons.location_on;
+      case '工具': case 'tool': return Icons.build;
+      case '物品': case 'item': return Icons.inventory;
+      case '概念': case 'concept': return Icons.lightbulb;
+      default: return Icons.help_outline;
+    }
   }
 
   Widget _buildInsightsTab() {
@@ -719,4 +1076,30 @@ class _KnowledgeGraphPageState extends State<KnowledgeGraphPage> with TickerProv
       default: return Colors.grey[300]!;
     }
   }
+}
+
+// 连接线绘制器
+class ConnectionLinePainter extends CustomPainter {
+  @override
+  void paint(Canvas canvas, Size size) {
+    final paint = Paint()
+      ..color = Colors.grey[400]!
+      ..strokeWidth = 2.0
+      ..style = PaintingStyle.stroke;
+
+    final path = Path();
+    path.moveTo(0, size.height / 2);
+    path.lineTo(size.width, size.height / 2);
+
+    // 添加箭头
+    final arrowSize = 4.0;
+    path.moveTo(size.width - arrowSize, size.height / 2 - arrowSize);
+    path.lineTo(size.width, size.height / 2);
+    path.lineTo(size.width - arrowSize, size.height / 2 + arrowSize);
+
+    canvas.drawPath(path, paint);
+  }
+
+  @override
+  bool shouldRepaint(covariant CustomPainter oldDelegate) => false;
 }
