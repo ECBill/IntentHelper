@@ -798,11 +798,14 @@ class _KnowledgeGraphPageState extends State<KnowledgeGraphPage> with TickerProv
 
   IconData _getEntityTypeIcon(String type) {
     switch (type.toLowerCase()) {
-      case '人': case 'person': return Icons.person;
+      case '人': case 'person': case '人物': return Icons.person;
       case '地点': case 'location': return Icons.location_on;
       case '工具': case 'tool': return Icons.build;
       case '物品': case 'item': return Icons.inventory;
       case '概念': case 'concept': return Icons.lightbulb;
+      case '组织': case 'organization': return Icons.business;
+      case '技能': case 'skill': return Icons.star;
+      case '状态': case 'state': return Icons.circle;
       default: return Icons.help_outline;
     }
   }
@@ -1062,17 +1065,22 @@ class _KnowledgeGraphPageState extends State<KnowledgeGraphPage> with TickerProv
       case '生活': case 'life': return Colors.pink;
       case '计划': case 'plan': return Colors.indigo;
       case '讨论': case 'discussion': return Colors.amber;
+      case '用餐': case 'dining': return Colors.brown;
+      case '经历': case 'experience': return Colors.cyan;
       default: return Colors.grey;
     }
   }
 
   Color _getEntityTypeColor(String type) {
     switch (type.toLowerCase()) {
-      case '人': case 'person': return Colors.red[300]!;
+      case '人': case 'person': case '人物': return Colors.red[300]!;
       case '地点': case 'location': return Colors.green[300]!;
       case '工具': case 'tool': return Colors.blue[300]!;
       case '物品': case 'item': return Colors.orange[300]!;
       case '概念': case 'concept': return Colors.purple[300]!;
+      case '组织': case 'organization': return Colors.teal[300]!;
+      case '技能': case 'skill': return Colors.indigo[300]!;
+      case '状态': case 'state': return Colors.pink[300]!;
       default: return Colors.grey[300]!;
     }
   }

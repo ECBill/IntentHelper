@@ -35,6 +35,19 @@ class KnowledgeGraphService {
       }
     }
 
+    // 清理实体名称中的特殊字符，避免与ID生成冲突
+    // 将下划线替换为连字符，避免与类型分隔符冲突
+    normalized = normalized.replaceAll('_', '-');
+
+    // 移除其他可能影响ID生成的特殊字符
+    normalized = normalized.replaceAll(RegExp(r'[^\u4e00-\u9fa5a-zA-Z0-9\-\s]'), '');
+
+    // 标准化空格为连字符
+    normalized = normalized.replaceAll(RegExp(r'\s+'), '-');
+
+    // 移除开头和结尾的连字符
+    normalized = normalized.replaceAll(RegExp(r'^-+|-+$'), '');
+
     return normalized;
   }
 
@@ -75,49 +88,83 @@ class KnowledgeGraphService {
     final timeContext = "${now.year}年${now.month.toString().padLeft(2, '0')}月${now.day.toString().padLeft(2, '0')}日";
 
     final eventExtractionPrompt = """
-你是一个知识图谱构建助手。请从对话中提取事件和实体信息，采用事件中心的图谱设计。
+你是一个知识图谱构建助手。请从对话中细致地提取事件和实体信息，采用事件中心的图谱设计。
+
+【重要原则】：
+1. 实体抽取要尽可能具体和细致，避免过度泛化
+2. 要识别出具体的人物、物品、地点、概念等实体
+3. 同一实体在不同事件中应保持一致的命名
+4. 要考虑实体间的潜在关联性，为后续的知识发现做准备
+
+【实体抽取指导】：
+- 人物：抽取具体的人名、职务、称谓（如"张三"、"辅导员"、"老板"、"朋友"等）
+- 物品：抽取具体的物品名称（如"水煮面条"、"iPhone 15 Pro"、"MacBook"等）
+- 地点：抽取具体的地点名称（如"苹果店"、"星巴克"、"办公室"等）
+- 概念：抽取具体的概念、活动、状态（如"结婚"、"跑路"、"项目"等）
+- 组织：抽取具体的组织机构（如"公司"、"学校"、"部门"等）
+
+【避免过度泛化】：
+- ❌ 不要用"user"、"others"、"某人"等泛化词汇
+- ❌ 不要用"某物"、"某地"等模糊表达
+- ✅ 要用具体的名称和称谓
+- ✅ 如果没有具体名称，用角色或特征描述（如"辅导员"、"同事"、"邻居"）
 
 输出格式为 JSON，包含以下部分：
 
 1. events: 事件数组，每个事件结构如下：
 {
   "name": "事件名称",
-  "type": "事件类型（会议、购买、计划、经历、讨论等）",
+  "type": "事件类型（用餐、购买、会议、讨论、计划、经历、学习、娱乐、工作、生活等）",
   "start_time": "事件开始时间（可选，格式：YYYY-MM-DD HH:mm）",
   "end_time": "事件结束时间（可选）",
   "location": "事件地点（可选）",
   "purpose": "事件目的（可选）",
   "result": "事件结果（可选）",
   "description": "事件描述",
-  "participants": ["参与者列表"],
-  "tools_used": ["使用的工具或物品"],
-  "related_locations": ["相关地点"]
+  "participants": ["参与者列表 - 具体人物名称或角色"],
+  "tools_used": ["使用的工具或物品 - 具体名称"],
+  "related_locations": ["相关地点 - 具体地点名称"],
+  "related_concepts": ["相关概念 - 如技能、状态、活动等"]
 }
 
 2. entities: 实体数组，每个实体结构如下：
 {
-  "name": "实体名称",
-  "type": "实体类型（人、物品、地点、概念等）",
+  "name": "实体名称（具体、准确）",
+  "type": "实体类型（人物、物品、地点、概念、组织、技能、状态等）",
   "attributes": {
     "属性名": "属性值"
-  }
+  },
+  "aliases": ["可能的别名或同义词"]
 }
 
 3. event_relations: 事件间关系数组：
 {
   "source_event": "源事件名称",
   "target_event": "目标事件名称",
-  "relation_type": "关系类型（时间顺序、因果关系、包含关系等）",
+  "relation_type": "关系类型（时间顺序、因果关系、包含关系、相似关系等）",
   "description": "关系描述"
 }
 
-请确保识别出对话中的所有重要事件，以及参与这些事件的人物、地点、工具等实体。当前对话发生时间：$timeContext
+【示例】：
+输入："晚上吃了一碗水煮面条"
+应该抽取的实体：
+- "水煮面条"（物品类型，属性：{"类别": "面食", "烹饪方式": "水煮"}）
+- "我"（人物类型）
+
+输入："用户们讨论辅导员的婚事，传言辅导员跑路了"
+应该抽取的实体：
+- "辅导员"（人物类型，属性：{"职务": "辅导员"}）
+- "结婚"（概念类型，属性：{"类别": "人生事件"}）
+- "跑路"（概念类型，属性：{"类别": "行为状态"}）
+- 以及相应的讨论事件和传言事件
+
+请确保识别出对话中的所有重要实体，特别是那些可能在未来对话中再次出现的具体实体。当前对话发生时间：$timeContext
 
 对话内容：
 """;
 
     try {
-      print('[KnowledgeGraphService] 🔍 开始提取事件和实体，对话长度: ${conversationText.length}');
+      print('[KnowledgeGraphService] 🔍 开始细致抽取事件和实体，对话长度: ${conversationText.length}');
       final llm = await LLM.create('gpt-4o-mini', systemPrompt: eventExtractionPrompt);
       final response = await llm.createRequest(content: conversationText);
 
@@ -173,6 +220,9 @@ class KnowledgeGraphService {
           final attributes = entityData['attributes'] is Map
             ? Map<String, String>.from(entityData['attributes'])
             : <String, String>{};
+          final aliases = entityData['aliases'] is List
+            ? (entityData['aliases'] as List).map((e) => e.toString()).toList()
+            : <String>[];
 
           if (name.isNotEmpty && type.isNotEmpty) {
             final entityId = await alignEntity(name, type, contextId);
@@ -193,14 +243,25 @@ class KnowledgeGraphService {
                 }
               }
 
+              // 合并别名
+              final existingAliases = existingNode.aliases;
+              for (final alias in aliases) {
+                if (!existingAliases.contains(alias)) {
+                  existingAliases.add(alias);
+                  hasChanges = true;
+                }
+              }
+
               if (hasChanges) {
                 existingNode.attributes = existingAttrs;
+                existingNode.aliases = existingAliases;
                 existingNode.lastUpdated = now;
                 existingNode.sourceContext = contextId;
                 objectBox.updateNode(existingNode);
               }
             } else {
               // 创建新实体
+              final allAliases = [name, ...aliases].toSet().toList();
               final newNode = Node(
                 id: entityId,
                 name: name,
@@ -209,7 +270,7 @@ class KnowledgeGraphService {
                 attributes: attributes,
                 lastUpdated: now,
                 sourceContext: contextId,
-                aliases: [name],
+                aliases: allAliases,
               );
               objectBox.insertNode(newNode);
             }
@@ -267,7 +328,7 @@ class KnowledgeGraphService {
             final participants = eventData['participants'] as List? ?? [];
             for (final participant in participants) {
               final participantStr = participant.toString();
-              final participantId = await alignEntity(participantStr, '人', contextId);
+              final participantId = await alignEntity(participantStr, '人物', contextId);
               objectBox.insertEventEntityRelation(EventEntityRelation(
                 eventId: eventId,
                 entityId: participantId,
@@ -276,15 +337,15 @@ class KnowledgeGraphService {
               ));
             }
 
-            // 使用的工具
+            // 使用的工具或物品
             final toolsUsed = eventData['tools_used'] as List? ?? [];
             for (final tool in toolsUsed) {
               final toolStr = tool.toString();
-              final toolId = await alignEntity(toolStr, '工具', contextId);
+              final toolId = await alignEntity(toolStr, '物品', contextId);
               objectBox.insertEventEntityRelation(EventEntityRelation(
                 eventId: eventId,
                 entityId: toolId,
-                role: '使用工具',
+                role: '使用物品',
                 lastUpdated: now,
               ));
             }
@@ -298,6 +359,19 @@ class KnowledgeGraphService {
                 eventId: eventId,
                 entityId: locationId,
                 role: '发生地点',
+                lastUpdated: now,
+              ));
+            }
+
+            // 新增：相关概念（状态、活动、技能等）
+            final relatedConcepts = eventData['related_concepts'] as List? ?? [];
+            for (final concept in relatedConcepts) {
+              final conceptStr = concept.toString();
+              final conceptId = await alignEntity(conceptStr, '概念', contextId);
+              objectBox.insertEventEntityRelation(EventEntityRelation(
+                eventId: eventId,
+                entityId: conceptId,
+                role: '相关概念',
                 lastUpdated: now,
               ));
             }
@@ -669,8 +743,8 @@ class KnowledgeGraphService {
       final lastSession = sessionGroups.last;
       final lastRecordTime = lastSession.last.createdAt ?? 0;
 
-      // 如果最后一条记录是在2分钟前，认为对话可能已经结束
-      if (now.millisecondsSinceEpoch - lastRecordTime > 2 * 60 * 1000) {
+      // 如果最后一条记录是在1分钟前，认为对话可能已经结束
+      if (now.millisecondsSinceEpoch - lastRecordTime > 1 * 60 * 1000) {
         print('[KnowledgeGraphService] 📊 处理最后一个会话 (${lastSession.length} 条记录)');
 
         await processEventsFromConversationBySegments([lastSession.last]);

@@ -15,7 +15,7 @@ class DialogueSummary {
       int? endTime = ObjectBoxService().getLastRecord()?.createdAt;
       print('[DialogueSummary] start called, startSummaryTime=$startSummaryTime, endTime=$endTime');
 
-      if (endTime == null || (endTime - startSummaryTime! < 2 * 60 * 1000)) {
+      if (endTime == null || (endTime - startSummaryTime! < 1 * 60 * 1000)) {
         print('[DialogueSummary] return: 没有新对话或对话过短');
         return;
       }
