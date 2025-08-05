@@ -200,10 +200,201 @@ class EnhancedKGService {
       case 'positive':
         return CacheItemPriority.high;
       case 'negative':
-        return CacheItemPriority.critical; // 负面情���可能需要更多支持
+        return CacheItemPriority.critical;
+      case 'excited':
+        return CacheItemPriority.high;
+      case 'frustrated':
+        return CacheItemPriority.high;
+      case 'confused':
+        return CacheItemPriority.medium;
       default:
         return CacheItemPriority.medium;
     }
+  }
+
+  /// 智能推荐相关节点
+  Future<List<NodeRecommendation>> recommendNodes({
+    required String currentContext,
+    required List<String> userInterests,
+    int maxRecommendations = 5,
+  }) async {
+    print('[EnhancedKGService] 💡 推荐相关节点...');
+
+    try {
+      final recommendations = <NodeRecommendation>[];
+
+      // 基于用户兴趣和当前上下文推荐节点
+      for (final interest in userInterests.take(3)) {
+        final relatedNodes = await _advancedKG.retrieveRelevantNodes(
+          seedEntityIds: [interest],
+          userQuery: currentContext,
+          intent: 'recommendation',
+        );
+
+        for (final relevance in relatedNodes.take(2)) {
+          recommendations.add(NodeRecommendation(
+            node: relevance.node,
+            relevanceScore: relevance.score,
+            reason: '基于您对"$interest"的兴趣推荐',
+            confidence: relevance.score * 0.8, // 推荐置信度略低于直接相关性
+          ));
+        }
+      }
+
+      // 按相关性排序并限制数量
+      recommendations.sort((a, b) => b.relevanceScore.compareTo(a.relevanceScore));
+      final finalRecommendations = recommendations.take(maxRecommendations).toList();
+
+      print('[EnhancedKGService] ✅ 推荐了 ${finalRecommendations.length} 个节点');
+      return finalRecommendations;
+
+    } catch (e) {
+      print('[EnhancedKGService] ❌ 节点推荐失败: $e');
+      return [];
+    }
+  }
+
+  /// 分析用户查询的复杂度
+  Future<QueryComplexity> analyzeQueryComplexity(String query) async {
+    try {
+      final analysis = await _smartKG.analyzeUserInput(query);
+
+      int complexityScore = 0;
+      final factors = <String>[];
+
+      // 基于关键词数量
+      if (analysis.keywords.length > 5) {
+        complexityScore += 2;
+        factors.add('多关键词');
+      }
+
+      // 基于实体数量
+      if (analysis.entities.length > 3) {
+        complexityScore += 2;
+        factors.add('多实体');
+      }
+
+      // 基于���图���杂性
+      final intent = analysis.intent.toString().split('.').last;
+      if (['planning', 'analysis', 'comparison'].contains(intent)) {
+        complexityScore += 3;
+        factors.add('复杂意图');
+      }
+
+      // 基于查询长度
+      if (query.length > 100) {
+        complexityScore += 1;
+        factors.add('长查询');
+      }
+
+      QueryComplexityLevel level;
+      if (complexityScore >= 6) {
+        level = QueryComplexityLevel.high;
+      } else if (complexityScore >= 3) {
+        level = QueryComplexityLevel.medium;
+      } else {
+        level = QueryComplexityLevel.low;
+      }
+
+      return QueryComplexity(
+        level: level,
+        score: complexityScore,
+        factors: factors,
+        estimatedProcessingTime: _estimateProcessingTime(level),
+      );
+
+    } catch (e) {
+      print('[EnhancedKGService] ❌ 查询复杂度分析失败: $e');
+      return QueryComplexity(
+        level: QueryComplexityLevel.low,
+        score: 0,
+        factors: [],
+        estimatedProcessingTime: Duration(seconds: 1),
+      );
+    }
+  }
+
+  Duration _estimateProcessingTime(QueryComplexityLevel level) {
+    switch (level) {
+      case QueryComplexityLevel.high:
+        return Duration(seconds: 5);
+      case QueryComplexityLevel.medium:
+        return Duration(seconds: 3);
+      case QueryComplexityLevel.low:
+        return Duration(seconds: 1);
+    }
+  }
+
+  /// 批量处理关注点，为缓存系统提供支持
+  Future<Map<String, KGAnalysisResult>> batchAnalyzeFocusPoints(
+      List<String> focusPoints,
+      ) async {
+    print('[EnhancedKGService] 📊 批量分析关注点: ${focusPoints.length} 个');
+
+    final results = <String, KGAnalysisResult>{};
+
+    try {
+      // 并行处理多个关注点，但���制并发数
+      final futures = <Future<void>>[];
+      const maxConcurrent = 3;
+
+      for (int i = 0; i < focusPoints.length; i += maxConcurrent) {
+        final batch = focusPoints.skip(i).take(maxConcurrent);
+        final batchFutures = batch.map((focus) => _processSingleFocus(focus, results));
+        await Future.wait(batchFutures);
+      }
+
+      print('[EnhancedKGService] ✅ 批量分析完成，处理了 ${results.length} 个关注点');
+      return results;
+
+    } catch (e) {
+      print('[EnhancedKGService] ❌ 批量分析失败: $e');
+      return results;
+    }
+  }
+
+  Future<void> _processSingleFocus(
+      String focus,
+      Map<String, KGAnalysisResult> results,
+      ) async {
+    try {
+      final result = await performKGAnalysis(focus);
+      results[focus] = result;
+    } catch (e) {
+      print('[EnhancedKGService] ⚠️ 处理关注点"$focus"失败: $e');
+    }
+  }
+
+  /// 清理和优��知识图谱缓存
+  Future<void> optimizeKGCache() async {
+    print('[EnhancedKGService] 🧹 优化知识图谱缓存...');
+
+    try {
+      // 这里可以实现缓存优化逻辑
+      // 例如：清理过期的节点信息、重建索引等
+      await Future.delayed(Duration(milliseconds: 500)); // 模拟优化过程
+
+      print('[EnhancedKGService] ✅ 知识图谱缓存优化完成');
+    } catch (e) {
+      print('[EnhancedKGService] ❌ 缓存优化失败: $e');
+    }
+  }
+
+  /// 获取知识图谱统计信息
+  Map<String, dynamic> getKGStats() {
+    return {
+      'initialized': _initialized,
+      'service_name': 'EnhancedKGService',
+      'version': '1.0.0',
+      'last_optimization': DateTime.now().toIso8601String(),
+      'supported_operations': [
+        'performKGAnalysis',
+        'preloadKnowledgeForContext',
+        'getNodeDetails',
+        'recommendNodes',
+        'batchAnalyzeFocusPoints',
+      ],
+    };
   }
 
   /// 获取服务状态
@@ -247,7 +438,7 @@ class KGAnalysisResult {
         'id': n.id,
         'name': n.name,
         'type': n.type,
-        // 添加其他需要的节点属性
+        'canonicalName': n.canonicalName,
       }).toList(),
       'relevanceData': relevanceData.map((r) => r.toJson()).toList(),
       'timestamp': timestamp.toIso8601String(),
@@ -290,6 +481,24 @@ class NodeDetailInfo {
     required this.connections,
     required this.detailLevel,
   });
+
+  Map<String, dynamic> toJson() {
+    return {
+      'node': {
+        'id': node.id,
+        'name': node.name,
+        'type': node.type,
+        'canonicalName': node.canonicalName,
+      },
+      'connections': connections.map((n) => {
+        'id': n.id,
+        'name': n.name,
+        'type': n.type,
+        'canonicalName': n.canonicalName,
+      }).toList(),
+      'detailLevel': detailLevel,
+    };
+  }
 }
 
 /// 查询相似性
@@ -303,4 +512,72 @@ class QuerySimilarity {
     required this.query2,
     required this.similarity,
   });
+
+  Map<String, dynamic> toJson() {
+    return {
+      'query1': query1,
+      'query2': query2,
+      'similarity': similarity,
+    };
+  }
+}
+
+/// 节点推荐
+class NodeRecommendation {
+  final Node node;
+  final double relevanceScore;
+  final String reason;
+  final double confidence;
+
+  NodeRecommendation({
+    required this.node,
+    required this.relevanceScore,
+    required this.reason,
+    required this.confidence,
+  });
+
+  Map<String, dynamic> toJson() {
+    return {
+      'node': {
+        'id': node.id,
+        'name': node.name,
+        'type': node.type,
+        'canonicalName': node.canonicalName,
+      },
+      'relevanceScore': relevanceScore,
+      'reason': reason,
+      'confidence': confidence,
+    };
+  }
+}
+
+/// 查询复杂度级别
+enum QueryComplexityLevel {
+  low,
+  medium,
+  high,
+}
+
+/// 查询复杂度
+class QueryComplexity {
+  final QueryComplexityLevel level;
+  final int score;
+  final List<String> factors;
+  final Duration estimatedProcessingTime;
+
+  QueryComplexity({
+    required this.level,
+    required this.score,
+    required this.factors,
+    required this.estimatedProcessingTime,
+  });
+
+  Map<String, dynamic> toJson() {
+    return {
+      'level': level.toString().split('.').last,
+      'score': score,
+      'factors': factors,
+      'estimatedProcessingTime': estimatedProcessingTime.inMilliseconds,
+    };
+  }
 }

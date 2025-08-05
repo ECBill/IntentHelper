@@ -71,7 +71,7 @@ class ConversationFocusDetector {
   String _lastEmotion = 'neutral';
   String _currentIntent = 'general_chat';
 
-  // 新增：�������智能的检测参数
+  // 新增：���������������智能的检测参数
   int _messagesSinceLastUpdate = 0;
   static const int _forceUpdateThreshold = 2; // 降低阈值，每2条消息就可能触发更新
   DateTime? _lastUpdateTime;
@@ -108,7 +108,7 @@ class ConversationFocusDetector {
     if (shouldUpdate) {
       _messagesSinceLastUpdate = 0;
       _lastUpdateTime = DateTime.now();
-      print('[FocusDetector] ✅ 将触发关注点更新');
+      print('[FocusDetector] ✅ 将���发关注点更新');
     } else {
       print('[FocusDetector] ❌ 暂不触发更新');
     }
@@ -170,7 +170,7 @@ class ConversationFocusDetector {
   Set<String> _extractQuickEntities(String text) {
     final entities = <String>{};
 
-    // 简单的实体识别
+    // 简单的实体识��
     final patterns = [
       RegExp(r'[张王李赵刘陈杨黄][一-龯]{1,2}'), // 中文人名
       RegExp(r'[A-Z][a-z]+'), // 英文名词
@@ -207,26 +207,30 @@ class ConversationFocusDetector {
 
   /// 更新当前关注点
   void updateCurrentFocus(Map<String, dynamic> analysis) {
+    // 🔥 修复：支持新的分析结构，包含显式和隐式实体
     final topics = List<String>.from(analysis['topics'] ?? []);
-    final entities = List<String>.from(analysis['entities'] ?? []);
+    final explicitEntities = List<String>.from(analysis['explicit_entities'] ?? []);
+    final implicitEntities = List<String>.from(analysis['implicit_entities'] ?? []);
+    final allEntities = [...explicitEntities, ...implicitEntities];
     final intent = analysis['intent'] ?? 'general_chat';
     final emotion = analysis['emotion'] ?? 'neutral';
 
     _currentTopics.clear();
     _currentTopics.addAll(topics);
     _currentEntities.clear();
-    _currentEntities.addAll(entities);
+    _currentEntities.addAll(allEntities);
     _currentIntent = intent;
     _lastEmotion = emotion;
 
     print('[FocusDetector] 🎯 更新关注点:');
     print('[FocusDetector] 📋 话题: $_currentTopics');
-    print('[FocusDetector] 👥 实体: $_currentEntities');
+    print('[FocusDetector] 👥 显式实体: $explicitEntities');
+    print('[FocusDetector] 🧠 隐式实体: $implicitEntities');
     print('[FocusDetector] 💭 意图: $_currentIntent');
     print('[FocusDetector] 😊 情绪: $_lastEmotion');
   }
 
-  /// 获取当前关注点摘要
+  /// 获取��前关注点摘要
   List<String> getCurrentFocusSummary() {
     final summary = <String>[];
 
@@ -263,7 +267,7 @@ class ConversationCache {
   // 核心组件
   final Map<String, CacheItem> _cache = {};
   final ConversationFocusDetector _focusDetector = ConversationFocusDetector();
-  final EnhancedKGService _enhancedKG = EnhancedKGService(); // 🔥 新增：集成增强知识图谱服务
+  final EnhancedKGService _enhancedKG = EnhancedKGService(); // 🔥 新增：集成增强知识���谱服务
 
   late LLM _llm;
   bool _initialized = false;
@@ -319,19 +323,49 @@ class ConversationCache {
   /// 🔥 新增：独立的LLM初始化方法
   Future<void> _initializeLLM() async {
     _llm = await LLM.create('gpt-3.5-turbo',
-        systemPrompt: '''你是一个对话分析专家。分析用户对话内容，提取关键信息。
+        systemPrompt: '''你是一个专业的对话分析专家，擅长精细化实体识别和语义分析。
 
-输出JSON格式：
+分析用户对话时��需要识别以下类型的实体和概念：
+
+1. 显式实体（直接出现在文本中）：
+   - 具体物品：食物、物品、工具、设备等
+   - 人物：姓名、称谓、角色等
+   - 地点：具体地址、场所、区域等
+   - 时间：具体时间、时段等
+   - 活动：具体行为、动作等
+
+2. 隐式实体（需要语义推断）：
+   - 生活场景：从具体行为推断出的生活情境（如"晚餐"、"食物"、"休闲"）
+   - 工作内容：从描述推断的工作类型（如"软件开发"、"问题调试"、"产品优化"）
+   - 情感状态：从描述推断的情绪和感受
+   - 兴趣爱好：从行为模式推断的兴趣点
+   - 技能领域：从工作或学习内容推断的专��领域
+
+3. 关联概念：
+   - 相关的上下级概念
+   - 同类别的相关事物
+   - 可能的后续行为或需求
+
+输出严格的JSON格式：
 {
-  "topics": ["话题1", "话题2"],
-  "entities": ["实体1", "实体2"],
+  "explicit_entities": ["直接出现的实体1", "实体2"],
+  "implicit_entities": ["推断出的概念1", "概念2"],
+  "topics": ["主要话题1", "话题2"],
   "intent": "用户意图",
   "emotion": "情绪状态",
-  "focus_summary": "关注点总结"
+  "focus_summary": "详细的关注点总结",
+  "semantic_analysis": {
+    "life_scenes": ["生活场景"],
+    "work_context": ["工作相关"],
+    "interests": ["兴趣相关"],
+    "needs": ["可能的需求"]
+  }
 }
 
-可能的意图类型：information_seeking, problem_solving, learning, chatting, planning
-可能的情绪：positive, negative, neutral, excited, confused, frustrated''');
+意图类型：information_seeking, problem_solving, sharing_experience, learning, planning, casual_chat
+情绪类型：positive, negative, neutral, excited, satisfied, frustrated, curious, relaxed
+
+请确保分析要细致入微，宁可多识别一些相关概念，也不要遗漏重要信息。''');
   }
 
   /// 启动定期更新
@@ -416,7 +450,7 @@ class ConversationCache {
     }
 
     try {
-      // 🔥 防止重复处理相同内容
+      // ���� 防止重复处理相同内容
       final contentHash = conversationText.hashCode.toString();
       if (_processedConversations.contains(contentHash)) {
         print('[ConversationCache] ⚠️ 对话已处理过，跳过');
@@ -471,7 +505,7 @@ class ConversationCache {
       // 更新关注点检测器的状态
       _focusDetector.updateCurrentFocus(llmAnalysis);
 
-      // 将分析结果添加到缓存
+      // 将分析结果添��到缓存
       await _addAnalysisToCache(llmAnalysis, context);
 
       // 🔥 新增：如果有知识图谱结果，也添加到缓存
@@ -564,7 +598,7 @@ $context
     print('[ConversationCache] ✅ 知识图谱结果已添加到缓存');
   }
 
-  /// 🔥 新增：确定知识图谱节点的优先级
+  /// 🔥 新增：确定知识图谱节点的优���级
   CacheItemPriority _determineKGPriority(double relevanceScore) {
     if (relevanceScore >= 0.8) return CacheItemPriority.high;
     if (relevanceScore >= 0.6) return CacheItemPriority.medium;
@@ -687,7 +721,7 @@ $context
 
       for (final item in itemsToRemove) {
         _cache.remove(item.key);
-        print('[ConversationCache] ➖ 移除缓存项: ${item.key}');
+        print('[ConversationCache] ➖ 移除缓存���: ${item.key}');
       }
     }
 
@@ -785,21 +819,31 @@ $context
     };
   }
 
-  /// 将分析结果添加到缓存
+  /// 将分析��果添加到缓存
   Future<void> _addAnalysisToCache(Map<String, dynamic> analysis, String context) async {
     print('[ConversationCache] 💾 将分析结果添加到缓存...');
 
     final topics = List<String>.from(analysis['topics'] ?? []);
+    final explicitEntities = List<String>.from(analysis['explicit_entities'] ?? []);
+    final implicitEntities = List<String>.from(analysis['implicit_entities'] ?? []);
     final intent = analysis['intent'] ?? 'general_chat';
     final emotion = analysis['emotion'] ?? 'neutral';
     final focusSummary = analysis['focus_summary'] ?? '';
+    final semanticAnalysis = analysis['semantic_analysis'] as Map<String, dynamic>? ?? {};
 
-    // 创建关注点摘要缓存项
+    // 🔥 新增：提取语义分析结果
+    final lifeScenes = List<String>.from(semanticAnalysis['life_scenes'] ?? []);
+    final workContext = List<String>.from(semanticAnalysis['work_context'] ?? []);
+    final interests = List<String>.from(semanticAnalysis['interests'] ?? []);
+    final needs = List<String>.from(semanticAnalysis['needs'] ?? []);
+
+    // 创建详细的关注点摘要缓存项
     final summaryItem = CacheItem(
       key: 'focus_summary_${DateTime.now().millisecondsSinceEpoch}',
-      content: '用户当前关注: $focusSummary。话题包括: ${topics.join(', ')}。意图: $intent，情绪: $emotion',
+      content: '用户当前关注: $focusSummary。话题包括: ${topics.join(', ')}。意图: $intent，情绪: $emotion。'
+              '显式实体: ${explicitEntities.join(', ')}，隐式概念: ${implicitEntities.join(', ')}',
       priority: CacheItemPriority.high,
-      relatedTopics: topics.toSet(),
+      relatedTopics: {...topics, ...explicitEntities, ...implicitEntities}.toSet(),
       createdAt: DateTime.now(),
       relevanceScore: 0.9,
       category: 'personal_info',
@@ -807,13 +851,103 @@ $context
     );
     _addToCache(summaryItem);
 
+    // 🔥 新增：为显式实体创建缓存项
+    for (final entity in explicitEntities) {
+      final entityItem = CacheItem(
+        key: 'explicit_entity_${entity}_${DateTime.now().millisecondsSinceEpoch}',
+        content: '用户明确提到了 "$entity"，这是一个重要的显式实体，表明用户的直接关注点',
+        priority: CacheItemPriority.high,
+        relatedTopics: {entity, ...topics}.toSet(),
+        createdAt: DateTime.now(),
+        relevanceScore: 0.95,
+        category: 'conversation_grasp',
+        data: {'entity': entity, 'type': 'explicit', 'context': context},
+      );
+      _addToCache(entityItem);
+    }
+
+    // 🔥 新增：为隐式实体创建缓存项
+    for (final entity in implicitEntities) {
+      final entityItem = CacheItem(
+        key: 'implicit_entity_${entity}_${DateTime.now().millisecondsSinceEpoch}',
+        content: '从用户对话中推断出 "$entity" 相关概念，这反映了用户的潜在关注领域',
+        priority: CacheItemPriority.medium,
+        relatedTopics: {entity, ...topics}.toSet(),
+        createdAt: DateTime.now(),
+        relevanceScore: 0.85,
+        category: 'conversation_grasp',
+        data: {'entity': entity, 'type': 'implicit', 'context': context},
+      );
+      _addToCache(entityItem);
+    }
+
+    // 🔥 新增：为生活场景创建缓存项
+    for (final scene in lifeScenes) {
+      final sceneItem = CacheItem(
+        key: 'life_scene_${scene}_${DateTime.now().millisecondsSinceEpoch}',
+        content: '用户当前处于 "$scene" 生活场景中，���有助于理解用户的当前状态和需求',
+        priority: CacheItemPriority.medium,
+        relatedTopics: {scene, '生活场景', ...topics}.toSet(),
+        createdAt: DateTime.now(),
+        relevanceScore: 0.8,
+        category: 'personal_info',
+        data: {'scene': scene, 'type': 'life_context', 'context': context},
+      );
+      _addToCache(sceneItem);
+    }
+
+    // 🔥 新增：为工作内容创建缓存项
+    for (final work in workContext) {
+      final workItem = CacheItem(
+        key: 'work_context_${work}_${DateTime.now().millisecondsSinceEpoch}',
+        content: '用户涉及 "$work" 相关的工作内容，表明用户在这个领域有活跃的需求',
+        priority: CacheItemPriority.high,
+        relatedTopics: {work, '工作', ...topics}.toSet(),
+        createdAt: DateTime.now(),
+        relevanceScore: 0.9,
+        category: 'personal_info',
+        data: {'work': work, 'type': 'work_context', 'context': context},
+      );
+      _addToCache(workItem);
+    }
+
+    // 🔥 新增：为兴趣爱好创建缓存项
+    for (final interest in interests) {
+      final interestItem = CacheItem(
+        key: 'interest_${interest}_${DateTime.now().millisecondsSinceEpoch}',
+        content: '用户对 "$interest" 表现出兴趣，这是了解用户偏好的重要信息',
+        priority: CacheItemPriority.medium,
+        relatedTopics: {interest, '兴趣爱好', ...topics}.toSet(),
+        createdAt: DateTime.now(),
+        relevanceScore: 0.8,
+        category: 'personal_info',
+        data: {'interest': interest, 'type': 'user_interest', 'context': context},
+      );
+      _addToCache(interestItem);
+    }
+
+    // 🔥 新增：为潜在需求创建缓存项
+    for (final need in needs) {
+      final needItem = CacheItem(
+        key: 'need_${need}_${DateTime.now().millisecondsSinceEpoch}',
+        content: '用户可能需要 "$need" 相关的帮助或信息，这是主动服务的机会',
+        priority: CacheItemPriority.high,
+        relatedTopics: {need, '用户需求', ...topics}.toSet(),
+        createdAt: DateTime.now(),
+        relevanceScore: 0.9,
+        category: 'conversation_grasp',
+        data: {'need': need, 'type': 'potential_need', 'context': context},
+      );
+      _addToCache(needItem);
+    }
+
     // 为每个话题创建缓存项
     for (final topic in topics) {
       final topicItem = CacheItem(
-        key: 'topic_$topic',
-        content: '用户对$topic 表现出关注，讨论内容包括相关的问题和需求',
+        key: 'topic_${topic}_${DateTime.now().millisecondsSinceEpoch}',
+        content: '用户对 "$topic" 表现出关注，讨论内容包括相关的问题和需求',
         priority: CacheItemPriority.medium,
-        relatedTopics: {topic},
+        relatedTopics: {topic, ...explicitEntities, ...implicitEntities}.toSet(),
         createdAt: DateTime.now(),
         relevanceScore: 0.8,
         category: 'conversation_grasp',
@@ -824,10 +958,10 @@ $context
 
     // 为意图创建缓存项
     final intentItem = CacheItem(
-      key: 'intent_$intent',
+      key: 'intent_${intent}_${DateTime.now().millisecondsSinceEpoch}',
       content: '用户意图识别为: $intent，表明用户希望进行相应类型的交互',
       priority: CacheItemPriority.medium,
-      relatedTopics: topics.toSet(),
+      relatedTopics: {...topics, ...explicitEntities}.toSet(),
       createdAt: DateTime.now(),
       relevanceScore: 0.8,
       category: 'intent_understanding',
@@ -837,6 +971,9 @@ $context
 
     print('[ConversationCache] ✅ 分析结果已添加到缓存');
     print('[ConversationCache] 📊 当前缓存大小: ${_cache.length}');
+    print('[ConversationCache] 🎯 新增实体: 显式${explicitEntities.length}个, 隐式${implicitEntities.length}个');
+    print('[ConversationCache] 🏠 生活场景: ${lifeScenes.length}个, 工作内容: ${workContext.length}个');
+    print('[ConversationCache] 💖 兴���: ${interests.length}个, 需求: ${needs.length}个');
   }
 
   /// 获取当前个人关注总结
@@ -1034,7 +1171,7 @@ $context
     _addToCache(item);
   }
 
-  /// 释放资���
+  /// 释放资源
   void dispose() {
     _periodicUpdateTimer?.cancel();
     _cache.clear();
