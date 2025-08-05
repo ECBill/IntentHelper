@@ -3,251 +3,304 @@ import 'package:app/services/smart_kg_service.dart';
 import 'package:app/services/conversation_cache.dart';
 import 'package:app/models/graph_models.dart';
 
+/// 增强知识图谱服务 - 专注于知识图谱的检索和分析增强
+/// 与ConversationCache配合工作，避免功能重复
 class EnhancedKGService {
   static final EnhancedKGService _instance = EnhancedKGService._internal();
   factory EnhancedKGService() => _instance;
   EnhancedKGService._internal();
 
-  final ConversationCache _cache = ConversationCache();
   final SmartKGService _smartKG = SmartKGService();
   final AdvancedKGRetrieval _advancedKG = AdvancedKGRetrieval();
 
-  // 初始化服务
-  void initialize() {
-    _cache.initialize();
+  bool _initialized = false;
+
+  /// 初始化服务 - 仅初始化知识图谱相关组件
+  Future<void> initialize() async {
+    if (_initialized) return;
+
+    print('[EnhancedKGService] 🚀 初始化增强知识图谱服务...');
+
+    // 这里可以添加知识图谱特定的初始化逻辑
+    // 例如：预加载重要节点、建立索引等
+
+    _initialized = true;
+    print('[EnhancedKGService] ✅ 增强知识图谱服务初始化完成');
   }
 
-  // 处理背景对话（被动监听）
-  Future<void> processBackgroundConversation(String conversationText) async {
-    print('[EnhancedKGService] 🚀 收到背景对话处理请求');
-    print('[EnhancedKGService] 📝 输入文本: "${conversationText}"');
-    print('[EnhancedKGService] 📏 文本长度: ${conversationText.length}');
+  /// 执行知识图谱分析并返回结构化结果
+  /// 这���核心功能，专注于知识图谱的深度分析
+  Future<KGAnalysisResult> performKGAnalysis(String userQuery) async {
+    if (!_initialized) {
+      await initialize();
+    }
+
+    print('[EnhancedKGService] ��� 执行知识图谱分析: "$userQuery"');
 
     try {
-      // 🔥 修复：使用正确的方法名
-      print('[EnhancedKGService] 🔄 调用缓存处理背景对话...');
-      await _cache.processBackgroundConversation(conversationText);
+      // 1. 基础分析
+      final analysis = await _smartKG.analyzeUserInput(userQuery);
 
-      // 分析对话中的关键信息
-      print('[EnhancedKGService] 🔍 分析关键信息...');
-      await _analyzeAndCacheKeyInfo(conversationText);
+      // 2. 获取相关节点
+      final relevantNodes = await _smartKG.getRelevantNodes(analysis);
 
-      print('[EnhancedKGService] ✅ 背景对话处理完成');
-    } catch (e) {
-      print('[EnhancedKGService] ❌ 处理背景对话时出错: $e');
-    }
-  }
-
-  // ���速响应用户查询（优先使用缓存）
-  Future<Map<String, dynamic>> getQuickResponse(String userQuery) async {
-    try {
-      // 1. 尝试从缓存获取快速响应
-      final cachedResponse = _cache.getQuickResponse(userQuery);
-
-      if (cachedResponse != null && cachedResponse['hasCache'] == true) {
-        // 缓存命中，返回快速响应
-        return {
-          'source': 'cache',
-          'responseTime': 'fast',
-          'data': cachedResponse,
-          'needsFullAnalysis': false,
-        };
-      }
-
-      // 2. 缓存未命中，执行完整分析但异步更新缓存
-      final fullResponse = await _performFullAnalysis(userQuery);
-
-      // 3. 异步更新缓存以备下次使用
-      _updateCacheFromAnalysis(userQuery, fullResponse);
-
-      return {
-        'source': 'analysis',
-        'responseTime': 'normal',
-        'data': fullResponse,
-        'needsFullAnalysis': true,
-      };
-
-    } catch (e) {
-      print('Error getting quick response: $e');
-      return {'source': 'error', 'error': e.toString()};
-    }
-  }
-
-  // 分析并缓存关键信息
-  Future<void> _analyzeAndCacheKeyInfo(String conversationText) async {
-    // 1. 实体识别和关系抽取
-    final entities = await _extractEntitiesFromConversation(conversationText);
-
-    // 2. 话题建模
-    final topics = await _extractTopicsFromConversation(conversationText);
-
-    // 3. 情感和意图分析
-    final sentiment = await _analyzeSentiment(conversationText);
-    final intent = await _analyzeIntent(conversationText);
-
-    // 4. 缓存相关的知识图谱信息
-    await _cacheRelatedKGInfo(entities, topics, sentiment, intent);
-  }
-
-  // 执行完整的分析
-  Future<Map<String, dynamic>> _performFullAnalysis(String userQuery) async {
-    final analysis = await _smartKG.analyzeUserInput(userQuery);
-    final relevantNodes = await _smartKG.getRelevantNodes(analysis);
-
-    final expandedNodes = await _advancedKG.retrieveRelevantNodes(
-      seedEntityIds: relevantNodes.map((n) => n.id).toList(),
-      userQuery: userQuery,
-      intent: analysis.intent.toString().split('.').last,
-    );
-
-    return {
-      'analysis': analysis,
-      'nodes': expandedNodes.map((r) => r.node).toList(),
-      'relevanceScores': expandedNodes.map((r) => {
-        'nodeId': r.node.id,
-        'score': r.score,
-        'depth': r.depth,
-        'reason': r.reason,
-      }).toList(),
-    };
-  }
-
-  // 从分析结果更新缓存
-  void _updateCacheFromAnalysis(String query, Map<String, dynamic> analysis) {
-    // 异步更新，不阻塞主流程
-    Future.microtask(() async {
-      try {
-        final nodes = analysis['nodes'] as List<Node>? ?? [];
-        final queryTopics = _extractQueryTopics(query);
-
-        for (final node in nodes) {
-          final cacheKey = 'analysis_${query.hashCode}_${node.id}';
-
-          // 🔥 修复：使用公共方法添加缓存项
-          final cacheItem = CacheItem(
-            key: cacheKey,
-            content: '基于查询"$query"分析得到的节点: ${node.name} (${node.type})',
-            priority: CacheItemPriority.high,
-            relatedTopics: queryTopics.toSet(),
-            createdAt: DateTime.now(),
-            relevanceScore: 0.8,
-            category: 'knowledge_reserve',
-            data: node,
-          );
-          _cache.addCacheItem(cacheItem);
-        }
-      } catch (e) {
-        print('Error updating cache from analysis: $e');
-      }
-    });
-  }
-
-  // 从对话中提取实体
-  Future<List<String>> _extractEntitiesFromConversation(String text) async {
-    // 使用NLP技术提取命名实体
-    final analysis = await _smartKG.analyzeUserInput(text);
-    return analysis.entities.map((e) => e.entityName).toList();
-  }
-
-  // 从对话中提取话���
-  Future<List<String>> _extractTopicsFromConversation(String text) async {
-    // 使用话题建模技术
-    final analysis = await _smartKG.analyzeUserInput(text);
-    return analysis.keywords;
-  }
-
-  // 情感分析
-  Future<String> _analyzeSentiment(String text) async {
-    // 简化版情感分析
-    final positiveWords = ['好', '棒', '喜欢', '不错', 'good', 'great', 'like'];
-    final negativeWords = ['差', '坏', '讨厌', '不好', 'bad', 'terrible', 'hate'];
-
-    final positive = positiveWords.where((word) => text.contains(word)).length;
-    final negative = negativeWords.where((word) => text.contains(word)).length;
-
-    if (positive > negative) return 'positive';
-    if (negative > positive) return 'negative';
-    return 'neutral';
-  }
-
-  // 意图分析
-  Future<String> _analyzeIntent(String text) async {
-    final analysis = await _smartKG.analyzeUserInput(text);
-    return analysis.intent.toString().split('.').last;
-  }
-
-  // 缓存相关的知识图谱信息
-  Future<void> _cacheRelatedKGInfo(
-    List<String> entities,
-    List<String> topics,
-    String sentiment,
-    String intent
-  ) async {
-    // 基于实体和话题预加载相关信息
-    for (final entity in entities) {
-      final relatedNodes = await _advancedKG.retrieveRelevantNodes(
-        seedEntityIds: [entity],
-        userQuery: entity,
-        intent: intent,
+      // 3. 扩展节点检索
+      final expandedNodes = await _advancedKG.retrieveRelevantNodes(
+        seedEntityIds: relevantNodes.map((n) => n.id).toList(),
+        userQuery: userQuery,
+        intent: analysis.intent.toString().split('.').last,
       );
 
-      for (final relevance in relatedNodes) {
-        final cacheKey = 'bg_${entity}_${relevance.node.id}';
+      // 4. 构建结果
+      final result = KGAnalysisResult(
+        originalQuery: userQuery,
+        analysis: analysis,
+        nodes: expandedNodes.map((r) => r.node).toList(),
+        relevanceData: expandedNodes.map((r) => NodeRelevanceData(
+          nodeId: r.node.id,
+          score: r.score,
+          depth: r.depth,
+          reason: r.reason,
+        )).toList(),
+        timestamp: DateTime.now(),
+      );
 
-        // 🔥 修复：使用公共方法添加缓存项
-        final cacheItem = CacheItem(
-          key: cacheKey,
-          content: '背景预加载的节点: ${relevance.node.name} (${relevance.node.type})，与实体"$entity"相关',
-          priority: _determinePriorityFromSentiment(sentiment),
-          relatedTopics: topics.toSet(),
-          createdAt: DateTime.now(),
-          relevanceScore: relevance.score,
-          category: 'knowledge_reserve',
-          data: relevance.node,
-        );
-        _cache.addCacheItem(cacheItem);
-      }
+      print('[EnhancedKGService] ✅ 知识图谱分析完成，找到 ${result.nodes.length} 个相关节点');
+      return result;
+
+    } catch (e) {
+      print('[EnhancedKGService] ❌ 知识图谱分析失败: $e');
+      rethrow;
     }
   }
 
-  // 根据情感确定优先级
+  /// 基于实体和话题预检索相关知识
+  /// 用于支持ConversationCache的背景预加载
+  Future<List<CacheItem>> preloadKnowledgeForContext({
+    required List<String> entities,
+    required List<String> topics,
+    required String intent,
+    required String sentiment,
+  }) async {
+    print('[EnhancedKGService] 📚 预加载上下文知识...');
+
+    final cacheItems = <CacheItem>[];
+
+    try {
+      for (final entity in entities) {
+        final relatedNodes = await _advancedKG.retrieveRelevantNodes(
+          seedEntityIds: [entity],
+          userQuery: entity,
+          intent: intent,
+        );
+
+        for (final relevance in relatedNodes) {
+          final cacheItem = CacheItem(
+            key: 'kg_preload_${entity}_${relevance.node.id}',
+            content: '知识图谱预加载: ${relevance.node.name} (${relevance.node.type})，与实体"$entity"相关',
+            priority: _determinePriorityFromSentiment(sentiment),
+            relatedTopics: topics.toSet(),
+            createdAt: DateTime.now(),
+            relevanceScore: relevance.score,
+            category: 'knowledge_reserve',
+            data: {
+              'node': relevance.node,
+              'preload_reason': '基于实体"$entity"的背景预加载',
+              'source_intent': intent,
+              'source_sentiment': sentiment,
+            },
+          );
+          cacheItems.add(cacheItem);
+        }
+      }
+
+      print('[EnhancedKGService] ✅ 预加载完成，生成 ${cacheItems.length} 个缓存项');
+      return cacheItems;
+
+    } catch (e) {
+      print('[EnhancedKGService] ❌ 预加载知识失败: $e');
+      return [];
+    }
+  }
+
+  /// 获取节点的详细信息和关联
+  Future<NodeDetailInfo?> getNodeDetails(String nodeId) async {
+    try {
+      // 这里可以实现更详细的节点信息获取逻辑
+      print('[EnhancedKGService] 🔍 获取节点详情: $nodeId');
+
+      // 示例实现 - 实际需要根据具体的知识图谱API调整
+      final relatedNodes = await _advancedKG.retrieveRelevantNodes(
+        seedEntityIds: [nodeId],
+        userQuery: nodeId,
+        intent: 'detail_query',
+      );
+
+      if (relatedNodes.isNotEmpty) {
+        final targetNode = relatedNodes.first.node;
+        return NodeDetailInfo(
+          node: targetNode,
+          connections: relatedNodes.map((r) => r.node).toList(),
+          detailLevel: 'comprehensive',
+        );
+      }
+
+      return null;
+    } catch (e) {
+      print('[EnhancedKGService] ❌ 获取节点详情失败: $e');
+      return null;
+    }
+  }
+
+  /// 批量分析多个查询的相似性
+  Future<List<QuerySimilarity>> analyzeQuerySimilarities(List<String> queries) async {
+    final similarities = <QuerySimilarity>[];
+
+    for (int i = 0; i < queries.length; i++) {
+      for (int j = i + 1; j < queries.length; j++) {
+        final similarity = await _calculateQuerySimilarity(queries[i], queries[j]);
+        similarities.add(QuerySimilarity(
+          query1: queries[i],
+          query2: queries[j],
+          similarity: similarity,
+        ));
+      }
+    }
+
+    return similarities;
+  }
+
+  /// 计算两个查询的相似性
+  Future<double> _calculateQuerySimilarity(String query1, String query2) async {
+    try {
+      // 简化的相似性计算 - 可以用更复杂的语义相似性算法
+      final analysis1 = await _smartKG.analyzeUserInput(query1);
+      final analysis2 = await _smartKG.analyzeUserInput(query2);
+
+      // 基于关键词重叠计算相似性
+      final keywords1 = analysis1.keywords.toSet();
+      final keywords2 = analysis2.keywords.toSet();
+
+      if (keywords1.isEmpty && keywords2.isEmpty) return 1.0;
+      if (keywords1.isEmpty || keywords2.isEmpty) return 0.0;
+
+      final intersection = keywords1.intersection(keywords2);
+      final union = keywords1.union(keywords2);
+
+      return intersection.length / union.length;
+    } catch (e) {
+      print('[EnhancedKGService] ❌ 计算查询相似性失败: $e');
+      return 0.0;
+    }
+  }
+
+  /// 根据情感确定优先级
   CacheItemPriority _determinePriorityFromSentiment(String sentiment) {
     switch (sentiment) {
       case 'positive':
         return CacheItemPriority.high;
       case 'negative':
-        return CacheItemPriority.critical; // 负面情感可能需要更多支持
+        return CacheItemPriority.critical; // 负面情���可能需要更多支持
       default:
         return CacheItemPriority.medium;
     }
   }
 
-  // 提取查询话题
-  List<String> _extractQueryTopics(String query) {
-    return RegExp(r'[\u4e00-\u9fa5A-Za-z0-9]+')
-        .allMatches(query)
-        .map((m) => m.group(0)!)
-        .where((word) => word.length > 1)
-        .toList();
+  /// 获取服务状态
+  Map<String, dynamic> getServiceStatus() {
+    return {
+      'initialized': _initialized,
+      'smart_kg_available': true, // 可以检查_smartKG的状态
+      'advanced_kg_available': true, // 可以检查_advancedKG的状态
+      'service_type': 'enhanced_kg',
+    };
   }
 
-  // 获取缓存性能统计
-  Map<String, dynamic> getCachePerformance() {
-    return _cache.getCacheStats();
-  }
-
-  // 获取所有缓存项 - 用于调试
-  List<CacheItem> getAllCacheItems() {
-    return _cache.getAllCacheItems();
-  }
-
-  // 清理缓存
-  void clearCache() {
-    _cache.clearCache();
-  }
-
-  // 停止服务
+  /// 释放资源
   void dispose() {
-    _cache.dispose();
+    _initialized = false;
+    print('[EnhancedKGService] 🔌 增强知识图谱服务已释放');
   }
+}
+
+/// 知识图谱分析结果
+class KGAnalysisResult {
+  final String originalQuery;
+  final dynamic analysis; // SmartKGService的分析结果
+  final List<Node> nodes;
+  final List<NodeRelevanceData> relevanceData;
+  final DateTime timestamp;
+
+  KGAnalysisResult({
+    required this.originalQuery,
+    required this.analysis,
+    required this.nodes,
+    required this.relevanceData,
+    required this.timestamp,
+  });
+
+  Map<String, dynamic> toJson() {
+    return {
+      'originalQuery': originalQuery,
+      'analysis': analysis,
+      'nodes': nodes.map((n) => {
+        'id': n.id,
+        'name': n.name,
+        'type': n.type,
+        // 添加其他需要的节点属性
+      }).toList(),
+      'relevanceData': relevanceData.map((r) => r.toJson()).toList(),
+      'timestamp': timestamp.toIso8601String(),
+    };
+  }
+}
+
+/// 节点相关性数据
+class NodeRelevanceData {
+  final String nodeId;
+  final double score;
+  final int depth;
+  final String reason;
+
+  NodeRelevanceData({
+    required this.nodeId,
+    required this.score,
+    required this.depth,
+    required this.reason,
+  });
+
+  Map<String, dynamic> toJson() {
+    return {
+      'nodeId': nodeId,
+      'score': score,
+      'depth': depth,
+      'reason': reason,
+    };
+  }
+}
+
+/// 节点详细信息
+class NodeDetailInfo {
+  final Node node;
+  final List<Node> connections;
+  final String detailLevel;
+
+  NodeDetailInfo({
+    required this.node,
+    required this.connections,
+    required this.detailLevel,
+  });
+}
+
+/// 查询相似性
+class QuerySimilarity {
+  final String query1;
+  final String query2;
+  final double similarity;
+
+  QuerySimilarity({
+    required this.query1,
+    required this.query2,
+    required this.similarity,
+  });
 }

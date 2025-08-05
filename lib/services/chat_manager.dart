@@ -124,7 +124,7 @@ class ChatManager {
 
     // 🔥 关键修复：处理助手回复
     if (response.trim().isNotEmpty) {
-      print('[ChatManager] 🤖 处理助手回复缓存: "${response.substring(0, response.length > 30 ? 30 : response.length)}..."');
+      print('[ChatManager] 🤖 处理��手回复缓存: "${response.substring(0, response.length > 30 ? 30 : response.length)}..."');
       await _conversationCache.processBackgroundConversation(response);
     }
 
@@ -210,11 +210,45 @@ class ChatManager {
         kgInfo = kgInfoBuffer.toString();
         performanceInfo = '个人信息缓存命中 | 响应时间：快速';
       } else {
-        // 回退到原有的增强KG服务
-        final oldQuickResponse = await _enhancedKGService.getQuickResponse(userInput);
-        if (oldQuickResponse != null) {
-          kgInfo = oldQuickResponse['kgInfo'] ?? '';
-          performanceInfo = oldQuickResponse['performanceInfo'] ?? '';
+        // 🔥 修复：使用重构后的ConversationCache来获取快速响应
+        final cacheResponse = _conversationCache.getQuickResponse(userInput);
+        if (cacheResponse != null && cacheResponse['hasCache'] == true) {
+          final cacheContent = cacheResponse['content'] as List<String>? ?? [];
+          final relevanceScores = cacheResponse['relevanceScores'] as List<double>? ?? [];
+          final hitCount = cacheResponse['cacheHitCount'] as int? ?? 0;
+
+          // 构建知识图谱信息
+          final kgInfoBuffer = StringBuffer();
+          kgInfoBuffer.writeln('缓存响应结果:');
+          for (int i = 0; i < cacheContent.length && i < 3; i++) {
+            final content = cacheContent[i];
+            final score = i < relevanceScores.length ? relevanceScores[i] : 0.0;
+            kgInfoBuffer.writeln('- $content (相关性: ${score.toStringAsFixed(2)})');
+          }
+
+          kgInfo = kgInfoBuffer.toString();
+          performanceInfo = '缓存命中 $hitCount 项 | 响应时间：极快';
+        } else {
+          // 如果缓存未命中，尝试使用知识图谱增强服务分析
+          try {
+            final kgResult = await _enhancedKGService.performKGAnalysis(userInput);
+            if (kgResult.nodes.isNotEmpty) {
+              final kgInfoBuffer = StringBuffer();
+              kgInfoBuffer.writeln('知识图谱分析结果:');
+              for (final node in kgResult.nodes.take(3)) {
+                kgInfoBuffer.writeln('- ${node.name} (${node.type})');
+              }
+              kgInfo = kgInfoBuffer.toString();
+              performanceInfo = '知识图谱分析 ${kgResult.nodes.length} 个节点 | 响应时间：正常';
+            } else {
+              kgInfo = '暂无相���知识图谱信息';
+              performanceInfo = '知识图谱分析无结果 | 响应时间：正常';
+            }
+          } catch (e) {
+            print('[ChatManager] 知识图谱分析失败: $e');
+            kgInfo = '知识图谱服务暂时不可用';
+            performanceInfo = '知识图谱分析失败 | 响应时间：慢';
+          }
         }
       }
 

@@ -2,7 +2,7 @@ import 'dart:async';
 import 'dart:collection';
 import 'dart:convert';
 import 'package:app/services/llm.dart';
-import 'package:app/services/advanced_kg_retrieval.dart';
+import 'package:app/services/enhanced_kg_service.dart'; // 🔥 新增：使用重构后的增强知识图谱服务
 import 'package:app/services/objectbox_service.dart';
 
 /// 缓存项优先级
@@ -71,7 +71,7 @@ class ConversationFocusDetector {
   String _lastEmotion = 'neutral';
   String _currentIntent = 'general_chat';
 
-  // 新增：更智能的检测参数
+  // 新增：�������智能的检测参数
   int _messagesSinceLastUpdate = 0;
   static const int _forceUpdateThreshold = 2; // 降低阈值，每2条消息就可能触发更新
   DateTime? _lastUpdateTime;
@@ -81,7 +81,7 @@ class ConversationFocusDetector {
   bool shouldTriggerUpdate(String newText) {
     print('[FocusDetector] 🔍 检测关注点变化');
     print('[FocusDetector] 📝 新输入: "${newText.substring(0, newText.length > 50 ? 50 : newText.length)}..."');
-    print('[FocusDetector] 📊 当前状态 - 话题数: ${_currentTopics.length}, 实体数: ${_currentEntities.length}');
+    print('[FocusDetector] �� 当���状态 - 话题数: ${_currentTopics.length}, 实体数: ${_currentEntities.length}');
     print('[FocusDetector] ⏰ 距离上次更新: ${_messagesSinceLastUpdate} 条消息');
 
     _messagesSinceLastUpdate++;
@@ -187,12 +187,12 @@ class ConversationFocusDetector {
   /// 添加对话到历史
   void addConversation(String text) {
     print('[FocusDetector] 📝 添加对话到历史');
-    print('[FocusDetector] 📄 内容: "${text.substring(0, text.length > 100 ? 100 : text.length)}..."');
+    print('[FocusDetector] ��� 内容: "${text.substring(0, text.length > 100 ? 100 : text.length)}..."');
 
     _conversationHistory.addLast(text);
     if (_conversationHistory.length > _historyLimit) {
       _conversationHistory.removeFirst(); // 🔥 移除unused variable警告
-      print('[FocusDetector] 🗑️ 移除旧对话');
+      print('[FocusDetector] 🗑️ 移��旧对话');
     }
     print('[FocusDetector] 📚 当前历史对话数量: ${_conversationHistory.length}');
   }
@@ -263,6 +263,7 @@ class ConversationCache {
   // 核心组件
   final Map<String, CacheItem> _cache = {};
   final ConversationFocusDetector _focusDetector = ConversationFocusDetector();
+  final EnhancedKGService _enhancedKG = EnhancedKGService(); // 🔥 新增：集成增强知识图谱服务
 
   late LLM _llm;
   bool _initialized = false;
@@ -276,7 +277,7 @@ class ConversationCache {
       print('[ConversationCache] ✅ 缓存服务已初始化，跳过');
       return;
     }
-
+    
     if (_initializing) {
       print('[ConversationCache] ⏳ 缓存服务正在初始化中，等待完成...');
       // 等待初始化完成
@@ -290,31 +291,19 @@ class ConversationCache {
     print('[ConversationCache] 🚀 开始初始化缓存服务...');
 
     try {
-      _llm = await LLM.create('gpt-3.5-turbo',
-          systemPrompt: '''你是一个对话分析专家。分析用户对话内容，提取关键信息��
+      // 🔥 优化：并行初始化LLM和知识图谱服务
+      await Future.wait([
+        _initializeLLM(),
+        _enhancedKG.initialize(),
+      ]);
 
-输出JSON格式：
-{
-  "topics": ["话题1", "话题2"],
-  "entities": ["实体1", "实体2"],
-  "intent": "用户意图",
-  "emotion": "情绪状态",
-  "focus_summary": "关注点总结"
-}
-
-可能的意图类型：information_seeking, problem_solving, learning, chatting, planning
-可能的情绪：positive, negative, neutral, excited, confused, frustrated''');
-
-      print('[ConversationCache] 🧠 LLM服务已创建');
+      print('[ConversationCache] 🧠 LLM和知识图谱服务已初始化');
 
       // 加载初始缓存
       await _loadInitialCache();
 
       // 启动定期更新
       _startPeriodicUpdate();
-
-      // 🔥 修复：避免在初始化时循环加载最近对话
-      // await _loadRecentConversations(); // 注释掉这行，避免循环
 
       _initialized = true;
       _initializing = false;
@@ -327,9 +316,27 @@ class ConversationCache {
     }
   }
 
+  /// 🔥 新增：独立的LLM初始化方法
+  Future<void> _initializeLLM() async {
+    _llm = await LLM.create('gpt-3.5-turbo',
+        systemPrompt: '''你是一个对话分析专家。分析用户对话内容，提取关键信息。
+
+输出JSON格式：
+{
+  "topics": ["话题1", "话题2"],
+  "entities": ["实体1", "实体2"],
+  "intent": "用户意图",
+  "emotion": "情绪状态",
+  "focus_summary": "关注点总结"
+}
+
+可能的意图类型：information_seeking, problem_solving, learning, chatting, planning
+可能的情绪：positive, negative, neutral, excited, confused, frustrated''');
+  }
+
   /// 启动定期更新
   void _startPeriodicUpdate() {
-    _periodicUpdateTimer = Timer.periodic(Duration(minutes: 5), (timer) { // 🔥 延长间隔到5分钟
+    _periodicUpdateTimer = Timer.periodic(Duration(minutes: 5), (timer) { // ��� 延长间隔到5分钟
       print('[ConversationCache] ⏰ 定期检查新对话...');
       _loadRecentConversationsBackground(); // 🔥 使用专门的后台方法
     });
@@ -338,7 +345,7 @@ class ConversationCache {
   /// 🔥 新增：后台加载最近对话（避免循环）
   Future<void> _loadRecentConversationsBackground() async {
     if (!_initialized) return;
-
+    
     try {
       print('[ConversationCache] 📚 后台加载最近对话...');
 
@@ -353,7 +360,7 @@ class ConversationCache {
 
       print('[ConversationCache] 📊 找到 ${recentRecords.length} 条最近对话');
 
-      // 🔥 直接处理对话，避免调用processBackgroundConversation
+      // ��� 直接处理对话，避免调用processBackgroundConversation
       for (final record in recentRecords.take(5)) { // ��少处理数量
         final content = record.content ?? '';
         if (content.trim().isNotEmpty) {
@@ -362,7 +369,7 @@ class ConversationCache {
             print('[ConversationCache] 🔄 处理新对话: "${content.substring(0, content.length > 30 ? 30 : content.length)}..."');
             _processedConversations.add(contentHash);
             _focusDetector.addConversation(content);
-
+            
             // 直接触发分析，不通过processBackgroundConversation
             if (_focusDetector.shouldTriggerUpdate(content)) {
               await _analyzeAndUpdateCache();
@@ -370,7 +377,7 @@ class ConversationCache {
           }
         }
       }
-
+      
       // ���理旧的处理记录，防止内存泄漏
       if (_processedConversations.length > 100) {
         _processedConversations.clear();
@@ -380,12 +387,11 @@ class ConversationCache {
     }
   }
 
-  /// 🔥 修复：移除循环调用的_loadRecentConversations方法
-  // 保留原方法但改为私有，避免循环调用
-  Future<void> _loadRecentConversations() async {
-    // 这个方法现在只在需要时手动调用，不在初始化时自动调用
-    await _loadRecentConversationsBackground();
-  }
+  /// 🔥 修复���移除循环调用的_loadRecentConversations方法
+  // 这个方法已被_loadRecentConversationsBackground替代
+  // Future<void> _loadRecentConversations() async {
+  //   await _loadRecentConversationsBackground();
+  // }
 
   /// 处理背景对话（实时监听）
   Future<void> processBackgroundConversation(String conversationText) async {
@@ -416,7 +422,7 @@ class ConversationCache {
         print('[ConversationCache] ⚠️ 对话已处理过，跳过');
         return;
       }
-
+      
       _processedConversations.add(contentHash);
 
       // 添加到对话历史
@@ -437,7 +443,7 @@ class ConversationCache {
   /// 分析并更新缓存
   Future<void> _analyzeAndUpdateCache() async {
     try {
-      print('[ConversationCache] 🧠 开始LLM分析...');
+      print('[ConversationCache] 🧠 开始智能分析...');
 
       // 获取最近对话上下文
       final context = _focusDetector.getRecentContext();
@@ -448,28 +454,32 @@ class ConversationCache {
 
       print('[ConversationCache] 📤 发送给LLM分析，内容长度: ${context.length}');
 
-      // 调用LLM分析关注点
-      final analysisResult = await _llm.createRequest(content: '''
-请分析以下对话内容，提取用户的关注点：
+      // 🔥 优化：并行执行LLM分析和知识图谱分析
+      final futures = await Future.wait([
+        _performLLMAnalysis(context),
+        _performKGAnalysis(context),
+      ]);
 
-对话内容：
-$context
+      final llmAnalysis = futures[0] as Map<String, dynamic>;
+      final kgResult = futures[1] as KGAnalysisResult?;
 
-请按照要求的JSON格式输出分析结果。
-''');
-
-      print('[ConversationCache] 📥 LLM分析结果: ${analysisResult.substring(0, analysisResult.length > 200 ? 200 : analysisResult.length)}...');
-
-      final analysis = _parseAnalysisResult(analysisResult);
-      print('[ConversationCache] 🔍 解析后的分析结果: $analysis');
+      print('[ConversationCache] 🔍 LLM分析结果: ${llmAnalysis.toString().substring(0, 200)}...');
+      if (kgResult != null) {
+        print('[ConversationCache] 🕸️ 知识图谱分析找到 ${kgResult.nodes.length} 个相关节点');
+      }
 
       // 更新关注点检测器的状态
-      _focusDetector.updateCurrentFocus(analysis);
+      _focusDetector.updateCurrentFocus(llmAnalysis);
 
       // 将分析结果添加到缓存
-      await _addAnalysisToCache(analysis, context);
+      await _addAnalysisToCache(llmAnalysis, context);
 
-      print('[ConversationCache] ✅ 关注���分析和缓存更新完成');
+      // 🔥 新增：如果有知识图谱结果，也添加到缓存
+      if (kgResult != null) {
+        await _addKGResultToCache(kgResult);
+      }
+
+      print('[ConversationCache] ✅ 智能分析和缓存更新完成');
 
     } catch (e) {
       print('[ConversationCache] ❌ 分析和更新缓存失败: $e');
@@ -481,84 +491,106 @@ $context
     }
   }
 
-  /// 创建备用分析结���
-  Map<String, dynamic> _createFallbackAnalysis(String context) {
-    print('[ConversationCache] 🔄 创建备用分析结果');
+  /// 🔥 新增：执行LLM分析
+  Future<Map<String, dynamic>> _performLLMAnalysis(String context) async {
+    final analysisResult = await _llm.createRequest(content: '''
+请分析以下对话内容，提取用户的关注点：
 
-    final quickTopics = <String>[];
-    final quickEntities = <String>[];
+对话内容：
+$context
 
-    // 简单的关键词提取
-    if (context.contains('学习') || context.contains('教程')) quickTopics.add('学习');
-    if (context.contains('工作') || context.contains('项目')) quickTopics.add('工作');
-    if (context.contains('问题') || context.contains('怎么')) quickTopics.add('问题解决');
+请按照要求的JSON格式输出分析结果。
+''');
 
-    // 简单的实体提取
-    final namePattern = RegExp(r'[张王李赵刘陈杨黄][一-龯]{1,2}');
-    quickEntities.addAll(namePattern.allMatches(context).map((m) => m.group(0)!));
-
-    return {
-      'topics': quickTopics.isEmpty ? ['对话'] : quickTopics,
-      'entities': quickEntities,
-      'intent': 'general_chat',
-      'emotion': 'neutral',
-      'focus_summary': '基于对话内容的快速分析',
-    };
+    return _parseAnalysisResult(analysisResult);
   }
 
-  /// 将分析结果添加到缓存
-  Future<void> _addAnalysisToCache(Map<String, dynamic> analysis, String context) async {
-    print('[ConversationCache] 💾 将分析结果添加到缓存...');
+  /// 🔥 新增：执行知识图谱分析
+  Future<KGAnalysisResult?> _performKGAnalysis(String context) async {
+    try {
+      // 使用增强知识图谱服务进行分析
+      return await _enhancedKG.performKGAnalysis(context);
+    } catch (e) {
+      print('[ConversationCache] ⚠️ 知识图谱分析失败: $e');
+      return null;
+    }
+  }
 
-    final topics = List<String>.from(analysis['topics'] ?? []);
-    // 🔥 移除未使用的entities变量
-    final intent = analysis['intent'] ?? 'general_chat';
-    final emotion = analysis['emotion'] ?? 'neutral';
-    final focusSummary = analysis['focus_summary'] ?? '';
+  /// 🔥 新增：将知识图谱结果添加到缓存
+  Future<void> _addKGResultToCache(KGAnalysisResult kgResult) async {
+    print('[ConversationCache] 🕸️ 将知识图谱结果添加到缓存...');
 
-    // 创建关注点摘要缓存项
-    final summaryItem = CacheItem(
-      key: 'focus_summary_${DateTime.now().millisecondsSinceEpoch}',
-      content: '用户当前关注: $focusSummary。话题包括: ${topics.join(', ')}。意图: $intent，情绪: $emotion',
-      priority: CacheItemPriority.high,
-      relatedTopics: topics.toSet(),
-      createdAt: DateTime.now(),
-      relevanceScore: 0.9,
-      category: 'personal_info',
-      data: analysis,
-    );
-    _addToCache(summaryItem);
-
-    // 为每个话题创建缓存项
-    for (final topic in topics) {
-      final topicItem = CacheItem(
-        key: 'topic_$topic',
-        content: '用户对$topic 表现出关注，讨论内容包括相关的问题和需求',
-        priority: CacheItemPriority.medium,
-        relatedTopics: {topic},
-        createdAt: DateTime.now(),
-        relevanceScore: 0.8,
-        category: 'conversation_grasp',
-        data: {'topic': topic, 'context': context},
+    // 为每个找到的节点创建缓存项
+    for (final relevanceData in kgResult.relevanceData) {
+      final node = kgResult.nodes.firstWhere(
+        (n) => n.id == relevanceData.nodeId,
+        orElse: () => kgResult.nodes.first,
       );
-      _addToCache(topicItem);
+
+      final kgCacheItem = CacheItem(
+        key: 'kg_node_${node.id}_${DateTime.now().millisecondsSinceEpoch}',
+        content: '知识图谱节点: ${node.name} (${node.type})。相关性: ${relevanceData.reason}',
+        priority: _determineKGPriority(relevanceData.score),
+        relatedTopics: _extractTopicsFromKGAnalysis(kgResult.analysis),
+        createdAt: DateTime.now(),
+        relevanceScore: relevanceData.score,
+        category: 'knowledge_reserve',
+        data: {
+          'node': node,
+          'kg_analysis': kgResult.analysis,
+          'relevance_data': relevanceData,
+          'source_query': kgResult.originalQuery,
+        },
+      );
+      _addToCache(kgCacheItem);
     }
 
-    // 为意图创建缓存项
-    final intentItem = CacheItem(
-      key: 'intent_$intent',
-      content: '用户意图识别为: $intent，表明用户希望进行相应类型的交互',
-      priority: CacheItemPriority.medium,
-      relatedTopics: topics.toSet(),
+    // 创建知识图谱分析摘要缓存项
+    final kgSummaryItem = CacheItem(
+      key: 'kg_summary_${DateTime.now().millisecondsSinceEpoch}',
+      content: '知识图谱分析摘要: 基于查询"${kgResult.originalQuery}"找到${kgResult.nodes.length}个相关节点',
+      priority: CacheItemPriority.high,
+      relatedTopics: _extractTopicsFromKGAnalysis(kgResult.analysis),
       createdAt: DateTime.now(),
-      relevanceScore: 0.8,
-      category: 'intent_understanding',
-      data: {'intent': intent, 'emotion': emotion},
+      relevanceScore: 0.9,
+      category: 'knowledge_reserve',
+      data: {
+        'kg_result': kgResult,
+        'summary_type': 'kg_analysis',
+      },
     );
-    _addToCache(intentItem);
+    _addToCache(kgSummaryItem);
 
-    print('[ConversationCache] ✅ 分析结果已添加到缓存');
-    print('[ConversationCache] 📊 当前缓存大小: ${_cache.length}');
+    print('[ConversationCache] ✅ 知识图谱结果已添加到缓存');
+  }
+
+  /// 🔥 新增：确定知识图谱节点的优先级
+  CacheItemPriority _determineKGPriority(double relevanceScore) {
+    if (relevanceScore >= 0.8) return CacheItemPriority.high;
+    if (relevanceScore >= 0.6) return CacheItemPriority.medium;
+    return CacheItemPriority.low;
+  }
+
+  /// 🔥 新增：从知识图谱分析中提取话题
+  Set<String> _extractTopicsFromKGAnalysis(dynamic analysis) {
+    final topics = <String>{};
+
+    if (analysis != null) {
+      // 尝试从分析结果中提取话题
+      if (analysis is Map) {
+        final keywords = analysis['keywords'] as List?;
+        if (keywords != null) {
+          topics.addAll(keywords.map((k) => k.toString()));
+        }
+
+        final entities = analysis['entities'] as List?;
+        if (entities != null) {
+          topics.addAll(entities.map((e) => e.toString()));
+        }
+      }
+    }
+
+    return topics.isEmpty ? {'知识图谱'} : topics;
   }
 
   /// 加载初始缓存
@@ -569,7 +601,7 @@ $context
     final frameworkItems = [
       {
         'content': '用户是一个独特的个体，有自己的兴趣爱好和专业背景',
-        'topics': {'个人特征', '兴趣爱好'},
+        'topics': {'个���特征', '兴趣爱好'},
         'category': 'personal_info'
       },
       {
@@ -726,6 +758,85 @@ $context
     // 备用解析
     print('[ConversationCache] 🔄 使用备用解析策略');
     return _createFallbackAnalysis(result);
+  }
+
+  /// 创建备用分析结果
+  Map<String, dynamic> _createFallbackAnalysis(String context) {
+    print('[ConversationCache] 🔄 创建备用分析结果');
+
+    final quickTopics = <String>[];
+    final quickEntities = <String>[];
+
+    // 简单的关键词提取
+    if (context.contains('学习') || context.contains('教程')) quickTopics.add('学习');
+    if (context.contains('工作') || context.contains('项目')) quickTopics.add('工作');
+    if (context.contains('问题') || context.contains('怎么')) quickTopics.add('问题解决');
+
+    // 简单的实体提取
+    final namePattern = RegExp(r'[张王李赵刘陈杨黄][一-龯]{1,2}');
+    quickEntities.addAll(namePattern.allMatches(context).map((m) => m.group(0)!));
+
+    return {
+      'topics': quickTopics.isEmpty ? ['对话'] : quickTopics,
+      'entities': quickEntities,
+      'intent': 'general_chat',
+      'emotion': 'neutral',
+      'focus_summary': '基于对话内容的快速分析',
+    };
+  }
+
+  /// 将分析结果添加到缓存
+  Future<void> _addAnalysisToCache(Map<String, dynamic> analysis, String context) async {
+    print('[ConversationCache] 💾 将分析结果添加到缓存...');
+
+    final topics = List<String>.from(analysis['topics'] ?? []);
+    final intent = analysis['intent'] ?? 'general_chat';
+    final emotion = analysis['emotion'] ?? 'neutral';
+    final focusSummary = analysis['focus_summary'] ?? '';
+
+    // 创建关注点摘要缓存项
+    final summaryItem = CacheItem(
+      key: 'focus_summary_${DateTime.now().millisecondsSinceEpoch}',
+      content: '用户当前关注: $focusSummary。话题包括: ${topics.join(', ')}。意图: $intent，情绪: $emotion',
+      priority: CacheItemPriority.high,
+      relatedTopics: topics.toSet(),
+      createdAt: DateTime.now(),
+      relevanceScore: 0.9,
+      category: 'personal_info',
+      data: analysis,
+    );
+    _addToCache(summaryItem);
+
+    // 为每个话题创建缓存项
+    for (final topic in topics) {
+      final topicItem = CacheItem(
+        key: 'topic_$topic',
+        content: '用户对$topic 表现出关注，讨论内容包括相关的问题和需求',
+        priority: CacheItemPriority.medium,
+        relatedTopics: {topic},
+        createdAt: DateTime.now(),
+        relevanceScore: 0.8,
+        category: 'conversation_grasp',
+        data: {'topic': topic, 'context': context},
+      );
+      _addToCache(topicItem);
+    }
+
+    // 为意图创建缓存项
+    final intentItem = CacheItem(
+      key: 'intent_$intent',
+      content: '用户意图识别为: $intent，表明用户希望进行相应类型的交互',
+      priority: CacheItemPriority.medium,
+      relatedTopics: topics.toSet(),
+      createdAt: DateTime.now(),
+      relevanceScore: 0.8,
+      category: 'intent_understanding',
+      data: {'intent': intent, 'emotion': emotion},
+    );
+    _addToCache(intentItem);
+
+    print('[ConversationCache] ✅ 分析结果已添加到缓存');
+    print('[ConversationCache] 📊 当前缓存大小: ${_cache.length}');
   }
 
   /// 获取当前个人关注总结
@@ -923,7 +1034,7 @@ $context
     _addToCache(item);
   }
 
-  /// 释放资源
+  /// 释放资���
   void dispose() {
     _periodicUpdateTimer?.cancel();
     _cache.clear();
