@@ -4,8 +4,6 @@ import 'dart:convert';
 import 'package:app/services/llm.dart';
 import 'package:app/services/advanced_kg_retrieval.dart';
 import 'package:app/services/objectbox_service.dart';
-import 'package:app/models/graph_models.dart';
-import 'package:app/models/record_entity.dart';
 
 /// 缓存项优先级
 enum CacheItemPriority {
@@ -188,12 +186,12 @@ class ConversationFocusDetector {
 
   /// 添加对话到历史
   void addConversation(String text) {
-    print('[FocusDetector] 📝 添加对��到历史');
+    print('[FocusDetector] 📝 添加对话到历史');
     print('[FocusDetector] 📄 内容: "${text.substring(0, text.length > 100 ? 100 : text.length)}..."');
 
     _conversationHistory.addLast(text);
     if (_conversationHistory.length > _historyLimit) {
-      final removed = _conversationHistory.removeFirst();
+      _conversationHistory.removeFirst(); // 🔥 移除unused variable警告
       print('[FocusDetector] 🗑️ 移除旧对话');
     }
     print('[FocusDetector] 📚 当前历史对话数量: ${_conversationHistory.length}');
@@ -265,21 +263,35 @@ class ConversationCache {
   // 核心组件
   final Map<String, CacheItem> _cache = {};
   final ConversationFocusDetector _focusDetector = ConversationFocusDetector();
-  final AdvancedKGRetrieval _kgRetrieval = AdvancedKGRetrieval();
 
   late LLM _llm;
   bool _initialized = false;
+  bool _initializing = false;
   Timer? _periodicUpdateTimer;
+  final Set<String> _processedConversations = {}; // 🔥 防止重复处理
 
   /// 初始化缓存服务
   Future<void> initialize() async {
-    if (_initialized) return;
+    if (_initialized) {
+      print('[ConversationCache] ✅ 缓存服务已初始化，跳过');
+      return;
+    }
 
+    if (_initializing) {
+      print('[ConversationCache] ⏳ 缓存服务正在初始化中，等待完成...');
+      // 等待初始化完成
+      while (_initializing && !_initialized) {
+        await Future.delayed(Duration(milliseconds: 100));
+      }
+      return;
+    }
+
+    _initializing = true;
     print('[ConversationCache] 🚀 开始初始化缓存服务...');
 
     try {
       _llm = await LLM.create('gpt-3.5-turbo',
-          systemPrompt: '''你是一个对话分析专家。分析用户对话内容，提取关键信息。
+          systemPrompt: '''你是一个对话分析专家。分析用户对话内容，提取关键信息��
 
 输出JSON格式：
 {
@@ -301,13 +313,15 @@ class ConversationCache {
       // 启动定期更新
       _startPeriodicUpdate();
 
-      // 立即加载最近对话进行分析
-      await _loadRecentConversations();
+      // 🔥 修复：避免在初始化时循环加载最近对话
+      // await _loadRecentConversations(); // 注释掉这行，避免循环
 
       _initialized = true;
+      _initializing = false;
       print('[ConversationCache] ✅ 缓存服务初始化完成');
       print('[ConversationCache] 📊 缓存统计: ${getCacheStats()}');
     } catch (e) {
+      _initializing = false;
       print('[ConversationCache] ❌ 初始化失败: $e');
       rethrow;
     }
@@ -315,16 +329,18 @@ class ConversationCache {
 
   /// 启动定期更新
   void _startPeriodicUpdate() {
-    _periodicUpdateTimer = Timer.periodic(Duration(minutes: 2), (timer) {
+    _periodicUpdateTimer = Timer.periodic(Duration(minutes: 5), (timer) { // 🔥 延长间隔到5分钟
       print('[ConversationCache] ⏰ 定期检查新对话...');
-      _loadRecentConversations();
+      _loadRecentConversationsBackground(); // 🔥 使用专门的后台方法
     });
   }
 
-  /// 加载最近对话
-  Future<void> _loadRecentConversations() async {
+  /// 🔥 新增：后台加载最近对话（避免循环）
+  Future<void> _loadRecentConversationsBackground() async {
+    if (!_initialized) return;
+
     try {
-      print('[ConversationCache] 📚 从数据库加载最近对话...');
+      print('[ConversationCache] 📚 后台加载最近对话...');
 
       // 获取最近30分钟的对话记录
       final cutoffTime = DateTime.now().subtract(Duration(minutes: 30)).millisecondsSinceEpoch;
@@ -337,17 +353,38 @@ class ConversationCache {
 
       print('[ConversationCache] 📊 找到 ${recentRecords.length} 条最近对话');
 
-      // 处理每条对话
-      for (final record in recentRecords.take(10)) { // 限制处理数量
+      // 🔥 直接处理对话，避免调用processBackgroundConversation
+      for (final record in recentRecords.take(5)) { // ��少处理数量
         final content = record.content ?? '';
         if (content.trim().isNotEmpty) {
-          print('[ConversationCache] 🔄 处理对话: "${content.substring(0, content.length > 30 ? 30 : content.length)}..."');
-          await processBackgroundConversation(content);
+          final contentHash = content.hashCode.toString();
+          if (!_processedConversations.contains(contentHash)) {
+            print('[ConversationCache] 🔄 处理新对话: "${content.substring(0, content.length > 30 ? 30 : content.length)}..."');
+            _processedConversations.add(contentHash);
+            _focusDetector.addConversation(content);
+
+            // 直接触发分析，不通过processBackgroundConversation
+            if (_focusDetector.shouldTriggerUpdate(content)) {
+              await _analyzeAndUpdateCache();
+            }
+          }
         }
       }
+
+      // ���理旧的处理记录，防止内存泄漏
+      if (_processedConversations.length > 100) {
+        _processedConversations.clear();
+      }
     } catch (e) {
-      print('[ConversationCache] ❌ 加载最近对话失败: $e');
+      print('[ConversationCache] ❌ 后台加载对话失败: $e');
     }
+  }
+
+  /// 🔥 修复：移除循环调用的_loadRecentConversations方法
+  // 保留原方法但改为私有，避免循环调用
+  Future<void> _loadRecentConversations() async {
+    // 这个方法现在只在需要时手动调用，不在初始化时自动调用
+    await _loadRecentConversationsBackground();
   }
 
   /// 处理背景对话（实时监听）
@@ -361,12 +398,27 @@ class ConversationCache {
       return;
     }
 
+    // 🔥 修复：检查是否正在初始化，避免循环
+    if (_initializing) {
+      print('[ConversationCache] ⏳ 正在初始化中，稍后处理...');
+      return;
+    }
+
     if (!_initialized) {
       print('[ConversationCache] 🔄 缓存未初始化，先初始化...');
       await initialize();
     }
 
     try {
+      // 🔥 防止重复处理相同内容
+      final contentHash = conversationText.hashCode.toString();
+      if (_processedConversations.contains(contentHash)) {
+        print('[ConversationCache] ⚠️ 对话已处理过，跳过');
+        return;
+      }
+
+      _processedConversations.add(contentHash);
+
       // 添加到对话历史
       _focusDetector.addConversation(conversationText);
 
@@ -375,7 +427,7 @@ class ConversationCache {
         print('[ConversationCache] 🔄 触发关注点分析和缓存更新');
         await _analyzeAndUpdateCache();
       } else {
-        print('[ConversationCache] ℹ️ 暂不触发缓存更新');
+        print('[ConversationCache] ℹ️ 暂不触发缓存��新');
       }
     } catch (e) {
       print('[ConversationCache] ❌ 处理背景对话失败: $e');
@@ -417,7 +469,7 @@ $context
       // 将分析结果添加到缓存
       await _addAnalysisToCache(analysis, context);
 
-      print('[ConversationCache] ✅ 关注点分析和缓存更新完成');
+      print('[ConversationCache] ✅ 关注���分析和缓存更新完成');
 
     } catch (e) {
       print('[ConversationCache] ❌ 分析和更新缓存失败: $e');
@@ -459,7 +511,7 @@ $context
     print('[ConversationCache] 💾 将分析结果添加到缓存...');
 
     final topics = List<String>.from(analysis['topics'] ?? []);
-    final entities = List<String>.from(analysis['entities'] ?? []);
+    // 🔥 移除未使用的entities变量
     final intent = analysis['intent'] ?? 'general_chat';
     final emotion = analysis['emotion'] ?? 'neutral';
     final focusSummary = analysis['focus_summary'] ?? '';
