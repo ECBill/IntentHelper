@@ -1,159 +1,941 @@
 import 'dart:async';
 import 'dart:collection';
+import 'dart:convert';
+import 'package:app/services/llm.dart';
 import 'package:app/services/advanced_kg_retrieval.dart';
-import 'package:app/services/smart_kg_service.dart';
-import 'package:app/services/knowledge_graph_service.dart';
 import 'package:app/services/objectbox_service.dart';
 import 'package:app/models/graph_models.dart';
-import 'package:app/services/llm.dart';
-import 'dart:convert';
+import 'package:app/models/record_entity.dart';
 
-// 缓存项优先级枚举
+/// 缓存项优先级
 enum CacheItemPriority {
-  low,
-  medium,
-  high,
-  critical
+  low(1),
+  medium(2),
+  high(3),
+  critical(4),
+  userProfile(5); // 用户画像最高优先级，永不被替换
+
+  const CacheItemPriority(this.value);
+  final int value;
 }
 
-// 缓存项类
+/// 缓存项类
 class CacheItem {
   final String key;
-  final dynamic data;
-  final String category;
+  final String content; // 自然语言形式的内容
+  final double weight; // 添加weight字段
   final CacheItemPriority priority;
-  final double weight;
-  final DateTime createdAt;
-  final DateTime lastAccessedAt;
-  final int accessCount;
   final Set<String> relatedTopics;
-  final double relevanceScore;
+  final DateTime createdAt;
+  DateTime lastAccessedAt;
+  int accessCount;
+  double relevanceScore;
+  final String category; // 添加category字段
+  final dynamic data; // 添加data字段以兼容旧代码
 
   CacheItem({
     required this.key,
-    required this.data,
-    required this.category,
+    required this.content,
     required this.priority,
-    required this.weight,
-    required this.createdAt,
-    required this.lastAccessedAt,
-    required this.accessCount,
     required this.relatedTopics,
+    required this.createdAt,
     required this.relevanceScore,
-  });
+    this.category = 'general',
+    this.data,
+  }) : lastAccessedAt = createdAt,
+       accessCount = 1,
+       weight = 1.0;
 
-  CacheItem copyWith({
-    String? key,
-    dynamic data,
-    String? category,
-    CacheItemPriority? priority,
-    double? weight,
-    DateTime? createdAt,
-    DateTime? lastAccessedAt,
-    int? accessCount,
-    Set<String>? relatedTopics,
-    double? relevanceScore,
-  }) {
-    return CacheItem(
-      key: key ?? this.key,
-      data: data ?? this.data,
-      category: category ?? this.category,
-      priority: priority ?? this.priority,
-      weight: weight ?? this.weight,
-      createdAt: createdAt ?? this.createdAt,
-      lastAccessedAt: lastAccessedAt ?? this.lastAccessedAt,
-      accessCount: accessCount ?? this.accessCount,
-      relatedTopics: relatedTopics ?? this.relatedTopics,
-      relevanceScore: relevanceScore ?? this.relevanceScore,
-    );
+  /// 更新访问信息
+  void updateAccess() {
+    lastAccessedAt = DateTime.now();
+    accessCount++;
+  }
+
+  /// 计算缓存项的权重（用于替换算法）
+  double calculateWeight() {
+    final timeFactor = DateTime.now().difference(lastAccessedAt).inMinutes / 60.0;
+    final accessFactor = accessCount.toDouble();
+    final priorityFactor = priority.value.toDouble();
+    final relevanceFactor = relevanceScore;
+
+    // 综合权重算法：优先级 + 相关性 + 访问频率 - 时间衰减
+    return (priorityFactor * 2.0 + relevanceFactor + accessFactor * 0.5) / (timeFactor + 1.0);
   }
 }
 
-// 对话摘要类
+/// 对话关注点检测器
+class ConversationFocusDetector {
+  static const int _historyLimit = 20; // 增加历史对话数量
+  final Queue<String> _conversationHistory = Queue();
+  final Set<String> _currentEntities = {};
+  final Set<String> _currentTopics = {};
+  String _lastEmotion = 'neutral';
+  String _currentIntent = 'general_chat';
+
+  // 新增：更智能的检测参数
+  int _messagesSinceLastUpdate = 0;
+  static const int _forceUpdateThreshold = 2; // 降低阈值，每2条消息就可能触发更新
+  DateTime? _lastUpdateTime;
+  static const Duration _timeBasedUpdateInterval = Duration(minutes: 3); // 每3分钟强制更新
+
+  /// 检测是否需要触发关注点更新
+  bool shouldTriggerUpdate(String newText) {
+    print('[FocusDetector] 🔍 检测关注点变化');
+    print('[FocusDetector] 📝 新输入: "${newText.substring(0, newText.length > 50 ? 50 : newText.length)}..."');
+    print('[FocusDetector] 📊 当前状态 - 话题数: ${_currentTopics.length}, 实体数: ${_currentEntities.length}');
+    print('[FocusDetector] ⏰ 距离上次更新: ${_messagesSinceLastUpdate} 条消息');
+
+    _messagesSinceLastUpdate++;
+    bool shouldUpdate = false;
+
+    // 1. 强制更新机制 - 确保缓存系统能够工作
+    if (_shouldForceUpdate()) {
+      print('[FocusDetector] ⚡ 触发强制更新 (达到阈值)');
+      shouldUpdate = true;
+    }
+
+    // 2. 检测关键变化
+    if (_detectSignificantChange(newText)) {
+      print('[FocusDetector] 🔥 检测到重要变化');
+      shouldUpdate = true;
+    }
+
+    // 3. 降低更新门槛 - 只要有实质内容就分析
+    if (newText.trim().length > 5 && _messagesSinceLastUpdate >= 1) {
+      print('[FocusDetector] 📈 内容足够，触发分析');
+      shouldUpdate = true;
+    }
+
+    if (shouldUpdate) {
+      _messagesSinceLastUpdate = 0;
+      _lastUpdateTime = DateTime.now();
+      print('[FocusDetector] ✅ 将触发关注点更新');
+    } else {
+      print('[FocusDetector] ❌ 暂不触发更新');
+    }
+
+    return shouldUpdate;
+  }
+
+  /// 强制更新检查
+  bool _shouldForceUpdate() {
+    // 基于消息数量的强制更新
+    if (_messagesSinceLastUpdate >= _forceUpdateThreshold) {
+      print('[FocusDetector] 🔄 消息数量达到阈值: $_messagesSinceLastUpdate >= $_forceUpdateThreshold');
+      return true;
+    }
+
+    // 基于时间的强制更新
+    if (_lastUpdateTime != null) {
+      final timeSinceLastUpdate = DateTime.now().difference(_lastUpdateTime!);
+      if (timeSinceLastUpdate >= _timeBasedUpdateInterval) {
+        print('[FocusDetector] ⏰ 时间间隔达到阈值: ${timeSinceLastUpdate.inMinutes} >= ${_timeBasedUpdateInterval.inMinutes} 分钟');
+        return true;
+      }
+    } else {
+      // 如果从未更新过，强制更新
+      print('[FocusDetector] 🆕 首次更新');
+      return true;
+    }
+
+    return false;
+  }
+
+  /// 检测重要变化
+  bool _detectSignificantChange(String text) {
+    // 1. 检测问题或请求
+    final questionWords = ['什么', '怎么', '为什么', '如何', '?', '？'];
+    if (questionWords.any((word) => text.contains(word))) {
+      print('[FocusDetector] ❓ 检测到问题');
+      return true;
+    }
+
+    // 2. 检测情绪词汇
+    final emotionWords = ['喜欢', '讨厌', '开心', '难过', '生气', '担心', '兴奋'];
+    if (emotionWords.any((word) => text.contains(word))) {
+      print('[FocusDetector] 😊 检测到情绪表达');
+      return true;
+    }
+
+    // 3. 检测重要实体
+    final entities = _extractQuickEntities(text);
+    if (entities.isNotEmpty) {
+      print('[FocusDetector] 👤 检测到实体: $entities');
+      return true;
+    }
+
+    return false;
+  }
+
+  /// 快速提取实体
+  Set<String> _extractQuickEntities(String text) {
+    final entities = <String>{};
+
+    // 简单的实体识别
+    final patterns = [
+      RegExp(r'[张王李赵刘陈杨黄][一-龯]{1,2}'), // 中文人名
+      RegExp(r'[A-Z][a-z]+'), // 英文名词
+      RegExp(r'[\u4e00-\u9fa5]*(?:公司|大学|学校|医院)'), // 机构名
+    ];
+
+    for (final pattern in patterns) {
+      entities.addAll(pattern.allMatches(text).map((m) => m.group(0)!));
+    }
+
+    return entities;
+  }
+
+  /// 添加对话到历史
+  void addConversation(String text) {
+    print('[FocusDetector] 📝 添加对��到历史');
+    print('[FocusDetector] 📄 内容: "${text.substring(0, text.length > 100 ? 100 : text.length)}..."');
+
+    _conversationHistory.addLast(text);
+    if (_conversationHistory.length > _historyLimit) {
+      final removed = _conversationHistory.removeFirst();
+      print('[FocusDetector] 🗑️ 移除旧对话');
+    }
+    print('[FocusDetector] 📚 当前历史对话数量: ${_conversationHistory.length}');
+  }
+
+  /// 获取最近的对话上下文
+  String getRecentContext() {
+    final context = _conversationHistory.join('\n');
+    print('[FocusDetector] 📖 获取上下文 - 长度: ${context.length} 字符');
+    print('[FocusDetector] 📋 上下文内容预览: "${context.substring(0, context.length > 200 ? 200 : context.length)}..."');
+    return context;
+  }
+
+  /// 更新当前关注点
+  void updateCurrentFocus(Map<String, dynamic> analysis) {
+    final topics = List<String>.from(analysis['topics'] ?? []);
+    final entities = List<String>.from(analysis['entities'] ?? []);
+    final intent = analysis['intent'] ?? 'general_chat';
+    final emotion = analysis['emotion'] ?? 'neutral';
+
+    _currentTopics.clear();
+    _currentTopics.addAll(topics);
+    _currentEntities.clear();
+    _currentEntities.addAll(entities);
+    _currentIntent = intent;
+    _lastEmotion = emotion;
+
+    print('[FocusDetector] 🎯 更新关注点:');
+    print('[FocusDetector] 📋 话题: $_currentTopics');
+    print('[FocusDetector] 👥 实体: $_currentEntities');
+    print('[FocusDetector] 💭 意图: $_currentIntent');
+    print('[FocusDetector] 😊 情绪: $_lastEmotion');
+  }
+
+  /// 获取当前关注点摘要
+  List<String> getCurrentFocusSummary() {
+    final summary = <String>[];
+
+    if (_currentTopics.isNotEmpty) {
+      summary.add('当前话题: ${_currentTopics.join(', ')}');
+    }
+
+    if (_currentEntities.isNotEmpty) {
+      summary.add('涉及实体: ${_currentEntities.join(', ')}');
+    }
+
+    summary.add('用户意图: $_currentIntent');
+    summary.add('情绪状态: $_lastEmotion');
+
+    if (summary.isEmpty) {
+      summary.add('暂无特定关注点');
+    }
+
+    return summary;
+  }
+}
+
+/// 对话缓存服务
+class ConversationCache {
+  static final ConversationCache _instance = ConversationCache._internal();
+  factory ConversationCache() => _instance;
+  ConversationCache._internal();
+
+  // 配置参数
+  static const int _maxCacheSize = 200;
+  static const int _userProfileReserved = 20;
+  static const double _cacheHitThreshold = 0.7;
+
+  // 核心组件
+  final Map<String, CacheItem> _cache = {};
+  final ConversationFocusDetector _focusDetector = ConversationFocusDetector();
+  final AdvancedKGRetrieval _kgRetrieval = AdvancedKGRetrieval();
+
+  late LLM _llm;
+  bool _initialized = false;
+  Timer? _periodicUpdateTimer;
+
+  /// 初始化缓存服务
+  Future<void> initialize() async {
+    if (_initialized) return;
+
+    print('[ConversationCache] 🚀 开始初始化缓存服务...');
+
+    try {
+      _llm = await LLM.create('gpt-3.5-turbo',
+          systemPrompt: '''你是一个对话分析专家。分析用户对话内容，提取关键信息。
+
+输出JSON格式：
+{
+  "topics": ["话题1", "话题2"],
+  "entities": ["实体1", "实体2"],
+  "intent": "用户意图",
+  "emotion": "情绪状态",
+  "focus_summary": "关注点总结"
+}
+
+可能的意图类型：information_seeking, problem_solving, learning, chatting, planning
+可能的情绪：positive, negative, neutral, excited, confused, frustrated''');
+
+      print('[ConversationCache] 🧠 LLM服务已创建');
+
+      // 加载初始缓存
+      await _loadInitialCache();
+
+      // 启动定期更新
+      _startPeriodicUpdate();
+
+      // 立即加载最近对话进行分析
+      await _loadRecentConversations();
+
+      _initialized = true;
+      print('[ConversationCache] ✅ 缓存服务初始化完成');
+      print('[ConversationCache] 📊 缓存统计: ${getCacheStats()}');
+    } catch (e) {
+      print('[ConversationCache] ❌ 初始化失败: $e');
+      rethrow;
+    }
+  }
+
+  /// 启动定期更新
+  void _startPeriodicUpdate() {
+    _periodicUpdateTimer = Timer.periodic(Duration(minutes: 2), (timer) {
+      print('[ConversationCache] ⏰ 定期检查新对话...');
+      _loadRecentConversations();
+    });
+  }
+
+  /// 加载最近对话
+  Future<void> _loadRecentConversations() async {
+    try {
+      print('[ConversationCache] 📚 从数据库加载最近对话...');
+
+      // 获取最近30分钟的对话记录
+      final cutoffTime = DateTime.now().subtract(Duration(minutes: 30)).millisecondsSinceEpoch;
+      final recentRecords = ObjectBoxService().getRecordsSince(cutoffTime);
+
+      if (recentRecords.isEmpty) {
+        print('[ConversationCache] ℹ️ 没有找到最近的对话记录');
+        return;
+      }
+
+      print('[ConversationCache] 📊 找到 ${recentRecords.length} 条最近对话');
+
+      // 处理每条对话
+      for (final record in recentRecords.take(10)) { // 限制处理数量
+        final content = record.content ?? '';
+        if (content.trim().isNotEmpty) {
+          print('[ConversationCache] 🔄 处理对话: "${content.substring(0, content.length > 30 ? 30 : content.length)}..."');
+          await processBackgroundConversation(content);
+        }
+      }
+    } catch (e) {
+      print('[ConversationCache] ❌ 加载最近对话失败: $e');
+    }
+  }
+
+  /// 处理背景对话（实时监听）
+  Future<void> processBackgroundConversation(String conversationText) async {
+    print('[ConversationCache] 🚀 开始处理背景对话');
+    print('[ConversationCache] 📝 输入文本: "${conversationText.substring(0, conversationText.length > 100 ? 100 : conversationText.length)}..."');
+    print('[ConversationCache] 📏 文本长度: ${conversationText.length}');
+
+    if (conversationText.trim().isEmpty) {
+      print('[ConversationCache] ⚠️ 输入文本为空，跳过处理');
+      return;
+    }
+
+    if (!_initialized) {
+      print('[ConversationCache] 🔄 缓存未初始化，先初始化...');
+      await initialize();
+    }
+
+    try {
+      // 添加到对话历史
+      _focusDetector.addConversation(conversationText);
+
+      // 检测是否需要触发关注点更新
+      if (_focusDetector.shouldTriggerUpdate(conversationText)) {
+        print('[ConversationCache] 🔄 触发关注点分析和缓存更新');
+        await _analyzeAndUpdateCache();
+      } else {
+        print('[ConversationCache] ℹ️ 暂不触发缓存更新');
+      }
+    } catch (e) {
+      print('[ConversationCache] ❌ 处理背景对话失败: $e');
+    }
+  }
+
+  /// 分析并更新缓存
+  Future<void> _analyzeAndUpdateCache() async {
+    try {
+      print('[ConversationCache] 🧠 开始LLM分析...');
+
+      // 获取最近对话上下文
+      final context = _focusDetector.getRecentContext();
+      if (context.isEmpty) {
+        print('[ConversationCache] ⚠️ 上下文为空，跳过分析');
+        return;
+      }
+
+      print('[ConversationCache] 📤 发送给LLM分析，内容长度: ${context.length}');
+
+      // 调用LLM分析关注点
+      final analysisResult = await _llm.createRequest(content: '''
+请分析以下对话内容，提取用户的关注点：
+
+对话内容：
+$context
+
+请按照要求的JSON格式输出分析结果。
+''');
+
+      print('[ConversationCache] 📥 LLM分析结果: ${analysisResult.substring(0, analysisResult.length > 200 ? 200 : analysisResult.length)}...');
+
+      final analysis = _parseAnalysisResult(analysisResult);
+      print('[ConversationCache] 🔍 解析后的分析结果: $analysis');
+
+      // 更新关注点检测器的状态
+      _focusDetector.updateCurrentFocus(analysis);
+
+      // 将分析结果添加到缓存
+      await _addAnalysisToCache(analysis, context);
+
+      print('[ConversationCache] ✅ 关注点分析和缓存更新完成');
+
+    } catch (e) {
+      print('[ConversationCache] ❌ 分析和更新缓存失败: $e');
+      // 添加基本的分析结果，确保有内容
+      final context = _focusDetector.getRecentContext();
+      final fallbackAnalysis = _createFallbackAnalysis(context);
+      _focusDetector.updateCurrentFocus(fallbackAnalysis);
+      await _addAnalysisToCache(fallbackAnalysis, context);
+    }
+  }
+
+  /// 创建备用分析结���
+  Map<String, dynamic> _createFallbackAnalysis(String context) {
+    print('[ConversationCache] 🔄 创建备用分析结果');
+
+    final quickTopics = <String>[];
+    final quickEntities = <String>[];
+
+    // 简单的关键词提取
+    if (context.contains('学习') || context.contains('教程')) quickTopics.add('学习');
+    if (context.contains('工作') || context.contains('项目')) quickTopics.add('工作');
+    if (context.contains('问题') || context.contains('怎么')) quickTopics.add('问题解决');
+
+    // 简单的实体提取
+    final namePattern = RegExp(r'[张王李赵刘陈杨黄][一-龯]{1,2}');
+    quickEntities.addAll(namePattern.allMatches(context).map((m) => m.group(0)!));
+
+    return {
+      'topics': quickTopics.isEmpty ? ['对话'] : quickTopics,
+      'entities': quickEntities,
+      'intent': 'general_chat',
+      'emotion': 'neutral',
+      'focus_summary': '基于对话内容的快速分析',
+    };
+  }
+
+  /// 将分析结果添加到缓存
+  Future<void> _addAnalysisToCache(Map<String, dynamic> analysis, String context) async {
+    print('[ConversationCache] 💾 将分析结果添加到缓存...');
+
+    final topics = List<String>.from(analysis['topics'] ?? []);
+    final entities = List<String>.from(analysis['entities'] ?? []);
+    final intent = analysis['intent'] ?? 'general_chat';
+    final emotion = analysis['emotion'] ?? 'neutral';
+    final focusSummary = analysis['focus_summary'] ?? '';
+
+    // 创建关注点摘要缓存项
+    final summaryItem = CacheItem(
+      key: 'focus_summary_${DateTime.now().millisecondsSinceEpoch}',
+      content: '用户当前关注: $focusSummary。话题包括: ${topics.join(', ')}。意图: $intent，情绪: $emotion',
+      priority: CacheItemPriority.high,
+      relatedTopics: topics.toSet(),
+      createdAt: DateTime.now(),
+      relevanceScore: 0.9,
+      category: 'personal_info',
+      data: analysis,
+    );
+    _addToCache(summaryItem);
+
+    // 为每个话题创建缓存项
+    for (final topic in topics) {
+      final topicItem = CacheItem(
+        key: 'topic_$topic',
+        content: '用户对$topic 表现出关注，讨论内容包括相关的问题和需求',
+        priority: CacheItemPriority.medium,
+        relatedTopics: {topic},
+        createdAt: DateTime.now(),
+        relevanceScore: 0.8,
+        category: 'conversation_grasp',
+        data: {'topic': topic, 'context': context},
+      );
+      _addToCache(topicItem);
+    }
+
+    // 为意图创建缓存项
+    final intentItem = CacheItem(
+      key: 'intent_$intent',
+      content: '用户意图识别为: $intent，表明用户希望进行相应类型的交互',
+      priority: CacheItemPriority.medium,
+      relatedTopics: topics.toSet(),
+      createdAt: DateTime.now(),
+      relevanceScore: 0.8,
+      category: 'intent_understanding',
+      data: {'intent': intent, 'emotion': emotion},
+    );
+    _addToCache(intentItem);
+
+    print('[ConversationCache] ✅ 分析结果已添加到缓存');
+    print('[ConversationCache] 📊 当前缓存大小: ${_cache.length}');
+  }
+
+  /// 加载初始缓存
+  Future<void> _loadInitialCache() async {
+    print('[ConversationCache] 📚 加载初始缓存...');
+
+    // 添加基本的框架信息
+    final frameworkItems = [
+      {
+        'content': '用户是一个独特的个体，有自己的兴趣爱好和专业背景',
+        'topics': {'个人特征', '兴趣爱好'},
+        'category': 'personal_info'
+      },
+      {
+        'content': '用户通过对话表达需求、分享想法和解决问题',
+        'topics': {'交流', '对话'},
+        'category': 'conversation_grasp'
+      },
+    ];
+
+    for (int i = 0; i < frameworkItems.length; i++) {
+      final entry = frameworkItems[i];
+      final item = CacheItem(
+        key: 'framework_$i',
+        content: entry['content'] as String,
+        priority: CacheItemPriority.userProfile,
+        relatedTopics: entry['topics'] as Set<String>,
+        createdAt: DateTime.now(),
+        relevanceScore: 1.0,
+        category: entry['category'] as String,
+      );
+      _addToCache(item);
+    }
+
+    print('[ConversationCache] ✅ 初始缓存加载完成');
+  }
+
+  /// 快速响应查询
+  Map<String, dynamic>? getQuickResponse(String userQuery) {
+    if (!_initialized) return null;
+
+    print('[ConversationCache] 🔍 搜索缓存响应: $userQuery');
+
+    final queryKeywords = _extractQueryKeywords(userQuery);
+    final relevantItems = <CacheItem>[];
+
+    // 搜索相关缓存项
+    for (final item in _cache.values) {
+      final relevance = _calculateRelevance(queryKeywords, item);
+      if (relevance >= _cacheHitThreshold) {
+        item.updateAccess();
+        item.relevanceScore = relevance;
+        relevantItems.add(item);
+      }
+    }
+
+    if (relevantItems.isEmpty) {
+      print('[ConversationCache] ❌ 缓存未命中');
+      return null;
+    }
+
+    // 按相关性排序
+    relevantItems.sort((a, b) => b.relevanceScore.compareTo(a.relevanceScore));
+
+    print('[ConversationCache] ✅ 缓存命中，找到 ${relevantItems.length} 个相关项');
+
+    return {
+      'hasCache': true,
+      'content': relevantItems.map((item) => item.content).toList(),
+      'relevanceScores': relevantItems.map((item) => item.relevanceScore).toList(),
+      'cacheHitCount': relevantItems.length,
+    };
+  }
+
+  /// 添加项到缓存
+  void _addToCache(CacheItem item) {
+    _cache[item.key] = item;
+    print('[ConversationCache] ➕ 添加缓存项: ${item.key} (${item.category})');
+    _cleanupCache();
+  }
+
+  /// 清理缓存
+  void _cleanupCache() {
+    if (_cache.length <= _maxCacheSize) return;
+
+    print('[ConversationCache] 🧹 开始清理缓存，当前大小: ${_cache.length}');
+
+    final regularItems = _cache.values.where((item) => item.priority != CacheItemPriority.userProfile).toList();
+    final maxRegularItems = _maxCacheSize - _userProfileReserved;
+
+    if (regularItems.length > maxRegularItems) {
+      regularItems.sort((a, b) => a.calculateWeight().compareTo(b.calculateWeight()));
+      final itemsToRemove = regularItems.take(regularItems.length - maxRegularItems);
+
+      for (final item in itemsToRemove) {
+        _cache.remove(item.key);
+        print('[ConversationCache] ➖ 移除缓存项: ${item.key}');
+      }
+    }
+
+    print('[ConversationCache] ✅ 缓存清理完成，当前大小: ${_cache.length}');
+  }
+
+  /// 提取查询关键词
+  Set<String> _extractQueryKeywords(String query) {
+    final keywords = RegExp(r'[\u4e00-\u9fa5A-Za-z]{2,}')
+        .allMatches(query)
+        .map((m) => m.group(0)!)
+        .where((word) => word.length > 1)
+        .toSet();
+    return keywords;
+  }
+
+  /// 计算查询与缓存项的相关性
+  double _calculateRelevance(Set<String> queryKeywords, CacheItem cacheItem) {
+    if (queryKeywords.isEmpty) return 0.0;
+
+    final contentKeywords = _extractQueryKeywords(cacheItem.content);
+    final keywordOverlap = queryKeywords.intersection(contentKeywords);
+    final keywordScore = keywordOverlap.length / queryKeywords.length;
+
+    final topicOverlap = queryKeywords.intersection(cacheItem.relatedTopics);
+    final topicScore = topicOverlap.length / queryKeywords.length;
+
+    final finalScore = (keywordScore * 0.6 + topicScore * 0.4) * cacheItem.relevanceScore;
+    return finalScore;
+  }
+
+  /// 获取缓存统计信息
+  Map<String, dynamic> getCacheStats() {
+    final totalItems = _cache.length;
+    final categories = <String, int>{};
+
+    for (final item in _cache.values) {
+      categories[item.category] = (categories[item.category] ?? 0) + 1;
+    }
+
+    return {
+      'totalItems': totalItems,
+      'categories': categories,
+      'isActive': _initialized,
+      'lastUpdate': _focusDetector._lastUpdateTime?.toIso8601String(),
+    };
+  }
+
+  /// 解析LLM分析结果
+  Map<String, dynamic> _parseAnalysisResult(String result) {
+    print('[ConversationCache] 🧠 解析LLM分析结果...');
+
+    try {
+      // 尝试找到JSON部分
+      final jsonStart = result.indexOf('{');
+      final jsonEnd = result.lastIndexOf('}');
+
+      if (jsonStart != -1 && jsonEnd != -1 && jsonEnd > jsonStart) {
+        final jsonStr = result.substring(jsonStart, jsonEnd + 1);
+        final parsed = jsonDecode(jsonStr);
+        print('[ConversationCache] ✅ JSON解析成功');
+        return parsed;
+      }
+    } catch (e) {
+      print('[ConversationCache] ⚠️ JSON解析失败: $e');
+    }
+
+    // 备用解析
+    print('[ConversationCache] 🔄 使用备用解析策略');
+    return _createFallbackAnalysis(result);
+  }
+
+  /// 获取当前个人关注总结
+  List<String> getCurrentPersonalFocusSummary() {
+    print('[ConversationCache] 📋 获取当前个人关注总结');
+
+    // 首先从关注点检测器获取当前状态
+    final currentFocus = _focusDetector.getCurrentFocusSummary();
+    if (currentFocus.isNotEmpty) {
+      print('[ConversationCache] ✅ 返回当前关注点: $currentFocus');
+      return currentFocus;
+    }
+
+    // 如果没有当前关注点，从缓存中提取
+    final recentItems = _cache.values
+        .where((item) => item.category == 'personal_info' || item.category == 'conversation_grasp')
+        .toList()
+      ..sort((a, b) => b.lastAccessedAt.compareTo(a.lastAccessedAt));
+
+    if (recentItems.isEmpty) {
+      print('[ConversationCache] ⚠️ 没有找到关注点信息');
+      return ['当前没有特别关注的话题'];
+    }
+
+    final topics = recentItems.take(5).expand((item) => item.relatedTopics).toSet();
+    final result = topics.isEmpty ? ['等待分析用户关注点'] : topics.toList();
+
+    print('[ConversationCache] 📊 从缓存提取关注点: $result');
+    return result;
+  }
+
+  /// 获取个人信息用于生成
+  Map<String, dynamic> getRelevantPersonalInfoForGeneration() {
+    final personalInfo = _cache.values
+        .where((item) => item.category == 'personal_info')
+        .map((item) => item.content)
+        .toList();
+
+    final focusContexts = _cache.values
+        .where((item) => item.category == 'conversation_grasp')
+        .map((item) => {
+          'description': item.content,
+          'type': 'conversation_analysis',
+          'intensity': item.relevanceScore,
+          'keywords': item.relatedTopics.toList(),
+        })
+        .toList();
+
+    return {
+      'personal_nodes': [],
+      'user_events': [],
+      'user_relationships': [],
+      'focus_contexts': focusContexts,
+      'total_personal_info_items': personalInfo.length,
+      'active_focuses_count': focusContexts.length,
+    };
+  }
+
+  /// 根据类别获取缓存项
+  List<CacheItem> getCacheItemsByCategory(String category) {
+    return _cache.values
+        .where((item) => item.category == category)
+        .toList();
+  }
+
+  /// 获取最近的摘要
+  List<ConversationSummary> getRecentSummaries({int limit = 5}) {
+    final recentItems = _cache.values
+        .where((item) => item.category == 'conversation_grasp')
+        .toList()
+      ..sort((a, b) => b.createdAt.compareTo(a.createdAt));
+
+    return recentItems.take(limit).map((item) => ConversationSummary(
+      timestamp: item.createdAt,
+      content: item.content,
+      keyTopics: item.relatedTopics.toList(),
+    )).toList();
+  }
+
+  /// 获取用户个人上下文
+  UserPersonalContext getUserPersonalContext() {
+    final userProfileItems = _cache.values
+        .where((item) => item.category == 'personal_info')
+        .toList();
+
+    return UserPersonalContext(
+      personalInfo: userProfileItems.map((item) => item.content).toList(),
+      preferences: _extractUserPreferences(),
+      interests: _extractUserInterests(),
+    );
+  }
+
+  /// 提取用户偏好
+  List<String> _extractUserPreferences() {
+    final allTopics = _cache.values
+        .expand((item) => item.relatedTopics)
+        .toList();
+
+    final topicFrequency = <String, int>{};
+    for (final topic in allTopics) {
+      topicFrequency[topic] = (topicFrequency[topic] ?? 0) + 1;
+    }
+
+    final sortedTopics = topicFrequency.entries.toList()
+      ..sort((a, b) => b.value.compareTo(a.value));
+
+    return sortedTopics.take(5).map((e) => e.key).toList();
+  }
+
+  /// 提取用户兴趣
+  List<String> _extractUserInterests() {
+    return _extractUserPreferences(); // 简化实现
+  }
+
+  /// 获取主动交互建议
+  Map<String, dynamic> getProactiveInteractionSuggestions() {
+    final currentFocus = _focusDetector.getCurrentFocusSummary();
+    final suggestions = currentFocus.isEmpty
+        ? ['有什么我可以帮助您的吗？']
+        : ['继续讨论您关心的话题？', '需要更多相关信息吗？'];
+
+    return {
+      'suggestions': suggestions,
+      'currentTopics': _focusDetector._currentTopics.toList(),
+      'hasActiveContext': _focusDetector._currentTopics.isNotEmpty,
+      'summaryReady': _cache.isNotEmpty,
+      'reminders': [],
+      'helpOpportunities': [],
+    };
+  }
+
+  /// 获取当前对话上下文
+  ConversationContext getCurrentConversationContext() {
+    final recentContext = _focusDetector.getRecentContext();
+    final currentTopics = _focusDetector._currentTopics.toList();
+    final activeEntities = _focusDetector._currentEntities.toList();
+
+    final topicIntensity = <String, double>{};
+    for (final topic in currentTopics) {
+      final count = _cache.values
+          .where((item) => item.relatedTopics.contains(topic))
+          .length;
+      topicIntensity[topic] = _cache.length > 0 ? count / _cache.length : 0.0;
+    }
+
+    return ConversationContext(
+      recentMessages: recentContext.split('\n').where((msg) => msg.isNotEmpty).toList(),
+      currentTopics: currentTopics,
+      activeEntities: activeEntities,
+      state: _cache.isNotEmpty ? 'active' : 'idle',
+      primaryIntent: _focusDetector._currentIntent,
+      userEmotion: _focusDetector._lastEmotion,
+      startTime: DateTime.now().subtract(Duration(minutes: 30)),
+      participants: ['user', 'assistant'],
+      topicIntensity: topicIntensity,
+      unfinishedTasks: [],
+    );
+  }
+
+  /// 获取所有缓存项
+  List<CacheItem> getAllCacheItems() {
+    return _cache.values.toList();
+  }
+
+  /// 清空缓存
+  void clearCache() {
+    _cache.clear();
+    print('[ConversationCache] 🗑️ 缓存已清空');
+  }
+
+  /// 获取缓存项详细信息
+  Map<String, dynamic> getCacheItemDetails(String key) {
+    final item = _cache[key];
+    if (item == null) {
+      return {'error': '缓存项不存在'};
+    }
+
+    return {
+      'key': item.key,
+      'content': item.content,
+      'priority': item.priority.toString(),
+      'category': item.category,
+      'weight': item.weight,
+      'relatedTopics': item.relatedTopics.toList(),
+      'createdAt': item.createdAt.toIso8601String(),
+      'lastAccessedAt': item.lastAccessedAt.toIso8601String(),
+      'accessCount': item.accessCount,
+      'relevanceScore': item.relevanceScore,
+      'data': item.data,
+    };
+  }
+
+  /// 添加缓存项的公共方法 - 供外部服务调用
+  void addCacheItem(CacheItem item) {
+    _addToCache(item);
+  }
+
+  /// 释放资源
+  void dispose() {
+    _periodicUpdateTimer?.cancel();
+    _cache.clear();
+    _initialized = false;
+    print('[ConversationCache] 🔌 资源已释放');
+  }
+}
+
+/// 对话摘要类
 class ConversationSummary {
-  final String id;
-  final String content;
   final DateTime timestamp;
+  final String content;
   final List<String> keyTopics;
-  final String category;
 
   ConversationSummary({
-    required this.id,
-    required this.content,
     required this.timestamp,
+    required this.content,
     required this.keyTopics,
-    required this.category,
   });
 
   Map<String, dynamic> toJson() {
     return {
-      'id': id,
-      'content': content,
       'timestamp': timestamp.toIso8601String(),
+      'content': content,
       'keyTopics': keyTopics,
-      'category': category,
     };
   }
 }
 
-// 对话状态枚举
-enum ConversationState {
-  idle,
-  active,
-  processing,
-  completed
-}
-
-// 用户意图枚举
-enum UserIntent {
-  question,
-  request,
-  casual,
-  planning,
-  reflection
-}
-
-// 用户情绪枚举
-enum UserEmotion {
-  neutral,
-  positive,
-  negative,
-  excited,
-  confused
-}
-
-// 对话上下文类
+/// 对话上下文类
 class ConversationContext {
-  final String id;
-  final ConversationState state;
-  final UserIntent primaryIntent;
-  final UserEmotion userEmotion;
-  final DateTime startTime;
+  final List<String> recentMessages;
   final List<String> currentTopics;
+  final List<String> activeEntities;
+  final String state;
+  final String primaryIntent;
+  final String userEmotion;
+  final DateTime startTime;
   final List<String> participants;
   final Map<String, double> topicIntensity;
   final List<String> unfinishedTasks;
 
   ConversationContext({
-    required this.id,
-    required this.state,
-    required this.primaryIntent,
-    required this.userEmotion,
-    required this.startTime,
+    required this.recentMessages,
     required this.currentTopics,
-    required this.participants,
-    required this.topicIntensity,
-    required this.unfinishedTasks,
-  });
+    required this.activeEntities,
+    this.state = 'active',
+    this.primaryIntent = 'information_seeking',
+    this.userEmotion = 'neutral',
+    DateTime? startTime,
+    this.participants = const ['user', 'assistant'],
+    this.topicIntensity = const {},
+    this.unfinishedTasks = const [],
+  }) : startTime = startTime ?? DateTime.now();
 
   Map<String, dynamic> toJson() {
     return {
-      'id': id,
-      'state': state.toString(),
-      'primaryIntent': primaryIntent.toString(),
-      'userEmotion': userEmotion.toString(),
-      'startTime': startTime.toIso8601String(),
+      'recentMessages': recentMessages,
       'currentTopics': currentTopics,
+      'activeEntities': activeEntities,
+      'state': state,
+      'primaryIntent': primaryIntent,
+      'userEmotion': userEmotion,
+      'startTime': startTime.toIso8601String(),
       'participants': participants,
       'topicIntensity': topicIntensity,
       'unfinishedTasks': unfinishedTasks,
@@ -161,1277 +943,23 @@ class ConversationContext {
   }
 }
 
-// 用户个人上下文类
+/// 用户个人上下文类
 class UserPersonalContext {
-  final String userId;
-  final Map<String, dynamic> preferences;
-  final Map<String, dynamic> personalInfo;
-  final List<String> recentInterests;
-  final DateTime lastUpdated;
+  final List<String> personalInfo;
+  final List<String> preferences;
+  final List<String> interests;
 
   UserPersonalContext({
-    required this.userId,
-    required this.preferences,
     required this.personalInfo,
-    required this.recentInterests,
-    required this.lastUpdated,
+    required this.preferences,
+    required this.interests,
   });
 
   Map<String, dynamic> toJson() {
     return {
-      'userId': userId,
-      'preferences': preferences,
       'personalInfo': personalInfo,
-      'recentInterests': recentInterests,
-      'lastUpdated': lastUpdated.toIso8601String(),
+      'preferences': preferences,
+      'interests': interests,
     };
-  }
-}
-
-// 用户关注点 - 核心概念（重新定义：专注于个人信息相关）
-class UserFocus {
-  final String focusId;
-  final String description;          // 关注点的自然语言描述
-  final FocusType type;             // 关注点类型
-  final double intensity;           // 关注强度 0-1
-  final List<String> keywords;      // 相关关键词
-  final List<String> entities;      // 相关实体
-  final DateTime identifiedAt;      // 识别时间
-  final Map<String, dynamic> context; // 上下文信息
-
-  UserFocus({
-    required this.focusId,
-    required this.description,
-    required this.type,
-    required this.intensity,
-    required this.keywords,
-    required this.entities,
-    required this.identifiedAt,
-    required this.context,
-  });
-}
-
-// 关注点类型（重新定义：专注于个人信息维度）
-enum FocusType {
-  personal_history,    // 个人历史相关 - 用户想了解自己的过往经历
-  relationship,        // 人际关系相关 - 涉及用户的朋友、家人等
-  preference,          // 个人偏好相关 - 用户的喜好、习惯等
-  goal_tracking,       // 目标追踪相关 - 用户的计划、目标进展
-  behavior_pattern,    // 行为模式相关 - 用户的行为习惯分析
-  emotional_context,   // 情感上下文相关 - 用户的情感状态历史
-  temporal_context,    // 时间上下文相关 - 特定时间段的用户信息
-}
-
-// 个人信息检索结果
-class PersonalInfoRetrievalResult {
-  final String resultId;
-  final List<Node> personalNodes;      // 检索到的用户个人信息节点
-  final List<EventNode> relatedEvents; // 相关的用户事件
-  final List<Edge> relationships;      // 相关的人际关系
-  final double relevanceScore;         // 个人相关性评分
-  final String retrievalReason;        // 检索原因
-  final UserFocus sourceFocus;         // 来源关注点
-  final DateTime retrievedAt;          // 检索时间
-  final Map<String, dynamic> personalContext; // 个人上下文信息
-
-  PersonalInfoRetrievalResult({
-    required this.resultId,
-    required this.personalNodes,
-    required this.relatedEvents,
-    required this.relationships,
-    required this.relevanceScore,
-    required this.retrievalReason,
-    required this.sourceFocus,
-    required this.retrievedAt,
-    required this.personalContext,
-  });
-}
-
-// 智能个人信息缓存系统 - 专注于用户个人知识图谱
-class ConversationCache {
-  static final ConversationCache _instance = ConversationCache._internal();
-  factory ConversationCache() => _instance;
-  ConversationCache._internal();
-
-  // 核心缓存存储
-  final Map<String, UserFocus> _userFocuses = {};           // 用户关注点
-  final Map<String, PersonalInfoRetrievalResult> _personalInfoResults = {}; // 个人信息检索结果
-  final Queue<String> _conversationHistory = Queue<String>(); // 对话历史（用于语义分析）
-  
-  // 用户个人信息上下文
-  String _currentConversationContext = '';
-  DateTime _lastAnalysisTime = DateTime.now();
-  
-  // 配置参数
-  static const int maxFocuses = 15;                    // 最大关注点数量
-  static const int maxPersonalInfoResults = 30;       // 最大个人信息结果数量
-  static const int conversationHistoryLimit = 10;      // 对话历史记录条数
-  static const Duration focusExpirationTime = Duration(hours: 4); // 关注点过期时间
-  static const double minFocusIntensity = 0.3;         // 最小关注强度阈值
-
-  // 服务依赖
-  final SmartKGService _smartKGService = SmartKGService();
-  final AdvancedKGRetrieval _advancedKGRetrieval = AdvancedKGRetrieval();
-
-  // ========== 核心方法 1: 快速分析用户个人信息关注点 ==========
-
-  Future<void> analyzeUserFocusFromConversation(String conversationText) async {
-    print('[PersonalCache] 🧠 开始快速分析用户个人信息关注点: ${conversationText.substring(0, conversationText.length > 50 ? 50 : conversationText.length)}...');
-
-    try {
-      // 1. 更新对话历史
-      _conversationHistory.addLast(conversationText);
-      if (_conversationHistory.length > conversationHistoryLimit) {
-        _conversationHistory.removeFirst();
-      }
-      
-      // 2. 构建上下文
-      _currentConversationContext = _conversationHistory.join('\n');
-      
-      // 3. 快速关键词匹配分析（优先）- 毫秒级响应
-      await _performQuickKeywordAnalysis(conversationText);
-
-      // 4. 异步执行深度LLM分析（不阻塞主流程）
-      _performAsyncDeepAnalysis(_currentConversationContext);
-
-      _lastAnalysisTime = DateTime.now();
-      print('[PersonalCache] ✅ 快速个人信息关注点分析完成，当前活跃关注点: ${_getActiveFocuses().length}');
-
-    } catch (e, stackTrace) {
-      print('[PersonalCache] ❌ 分析用户个人信息关注点错误: $e');
-      print('[PersonalCache] Stack trace: $stackTrace');
-    }
-  }
-
-  // 快速关键词匹配分析 - 毫秒级响应
-  Future<void> _performQuickKeywordAnalysis(String conversationText) async {
-    final personalKeywords = {
-      'personal_history': ['我的', '我之前', '我以前', '我曾经', '我做过', '我去过', '记得我', '我经历过'],
-      'relationship': ['我朋友', '我家人', '我和', '我们', '朋友', '家人', '男友', '女友', '伴侣', '同事'],
-      'preference': ['我喜欢', '我不喜欢', '我习惯', '我通常', '我偏好', '我爱', '我讨厌'],
-      'goal_tracking': ['我的目标', '我计划', '我想要', '我的进展', '我的计划', '我希望', '我打算'],
-      'behavior_pattern': ['我经常', '我总是', '我很少', '我从不', '我习惯', '我一般'],
-      'emotional_context': ['我觉得', '我感觉', '我心情', '我开心', '我难过', '我压力', '我担心', '我兴奋'],
-      'temporal_context': ['最近', '昨天', '上周', '这个月', '去年', '今天', '明天', '下周'],
-    };
-
-    final now = DateTime.now();
-
-    for (final entry in personalKeywords.entries) {
-      final type = entry.key;
-      final keywords = entry.value;
-
-      for (final keyword in keywords) {
-        if (conversationText.contains(keyword)) {
-          // 快速创建关注点
-          final focusId = 'quick_focus_${now.millisecondsSinceEpoch}_${type}';
-          final userFocus = UserFocus(
-            focusId: focusId,
-            description: '用户询问与${type}相关的个人信息',
-            type: _parsePersonalFocusType(type),
-            intensity: 0.7, // 默认强度
-            keywords: [keyword],
-            entities: ['用户'],
-            identifiedAt: now,
-            context: {
-              'trigger_text': conversationText.length > 100 ? conversationText.substring(0, 100) + '...' : conversationText,
-              'time_scope': _detectTimeScope(conversationText),
-              'info_type': _detectInfoType(type),
-              'analysis_type': 'quick_keyword'
-            },
-          );
-
-          _userFocuses[focusId] = userFocus;
-          print('[PersonalCache] ⚡ 快速识别个人信息关注点: ${userFocus.description} (关键词: $keyword)');
-
-          // 立即触发快速个人信息检索
-          _triggerQuickPersonalInfoRetrieval(userFocus);
-          break; // 每个类型最多添加一个
-        }
-      }
-    }
-  }
-
-  // 异步深度分析（不阻塞主流程）
-  void _performAsyncDeepAnalysis(String conversationContext) {
-    Future.microtask(() async {
-      try {
-        print('[PersonalCache] 🔍 开始异步深度分析...');
-        final deepAnalysisResult = await _performPersonalFocusAnalysis(conversationContext);
-        await _processFocusAnalysisResults(deepAnalysisResult);
-        await _triggerPersonalInfoRetrievalForActiveFocuses();
-        print('[PersonalCache] ✅ 异步深度分析完成');
-      } catch (e) {
-        print('[PersonalCache] ⚠️ 异步深度分析失败: $e');
-      }
-    });
-  }
-
-  // 快速个人信息检索
-  void _triggerQuickPersonalInfoRetrieval(UserFocus focus) {
-    Future.microtask(() async {
-      try {
-        // 简化的个人信息检索 - 基于关键词直接匹配
-        final quickResults = await _performQuickPersonalInfoRetrieval(focus);
-        if (quickResults.isNotEmpty) {
-          await _storeQuickPersonalInfoResult(quickResults, focus);
-        }
-      } catch (e) {
-        print('[PersonalCache] ⚠️ 快速个人信息检索失败: $e');
-      }
-    });
-  }
-
-  // 简化的个人信息检索
-  Future<Map<String, dynamic>> _performQuickPersonalInfoRetrieval(UserFocus focus) async {
-    final results = {
-      'personal_nodes': <Node>[],
-      'related_events': <EventNode>[],
-      'relationships': <Edge>[],
-    };
-
-    try {
-      // 使用关键词直接查找相关节点（快速）
-      final keywords = focus.keywords;
-      if (keywords.isNotEmpty) {
-        final relatedNodes = await KnowledgeGraphService.getRelatedNodesByKeywords(keywords);
-
-        // 过滤出与用户相关的节点
-        final personalNodes = relatedNodes.where((node) => _isUserRelatedNode(node)).toList();
-        results['personal_nodes'] = personalNodes.take(3).toList(); // 限制数量以提高速度
-
-        print('[PersonalCache] ⚡ 快速检索到${personalNodes.length}个个人节点');
-      }
-
-      return results;
-    } catch (e) {
-      print('[PersonalCache] ⚠️ 快速个人信息检索错误: $e');
-      return results;
-    }
-  }
-
-  // 存储快速检索结果
-  Future<void> _storeQuickPersonalInfoResult(Map<String, dynamic> results, UserFocus focus) async {
-    final resultId = 'quick_pir_${focus.focusId}_${DateTime.now().millisecondsSinceEpoch}';
-
-    final personalNodes = results['personal_nodes'] as List<Node>? ?? [];
-    final relatedEvents = results['related_events'] as List<EventNode>? ?? [];
-    final relationships = results['relationships'] as List<Edge>? ?? [];
-
-    final avgRelevance = personalNodes.isNotEmpty ? 0.8 : 0.5; // 简化评分
-
-    final personalInfoResult = PersonalInfoRetrievalResult(
-      resultId: resultId,
-      personalNodes: personalNodes,
-      relatedEvents: relatedEvents,
-      relationships: relationships,
-      relevanceScore: avgRelevance,
-      retrievalReason: '基于关键词快速检索个人信息',
-      sourceFocus: focus,
-      retrievedAt: DateTime.now(),
-      personalContext: {
-        'focus_type': focus.type.toString(),
-        'analysis_type': 'quick',
-        'nodes_count': personalNodes.length,
-        'events_count': relatedEvents.length,
-        'relationships_count': relationships.length,
-      },
-    );
-
-    _personalInfoResults[resultId] = personalInfoResult;
-    print('[PersonalCache] ⚡ 快速存储个人信息检索结果: ${personalNodes.length}个节点');
-  }
-
-  // 解析个人关注点类型
-  FocusType _parsePersonalFocusType(String typeStr) {
-    switch (typeStr) {
-      case 'relationship':
-        return FocusType.relationship;
-      case 'preference':
-        return FocusType.preference;
-      case 'goal_tracking':
-        return FocusType.goal_tracking;
-      case 'behavior_pattern':
-        return FocusType.behavior_pattern;
-      case 'emotional_context':
-        return FocusType.emotional_context;
-      case 'temporal_context':
-        return FocusType.temporal_context;
-      default:
-        return FocusType.personal_history;
-    }
-  }
-
-  // ========== 核心方法 2: 精准个人信息检索 ==========
-
-  Future<void> _triggerPersonalInfoRetrievalForActiveFocuses() async {
-    final activeFocuses = _getActiveFocuses();
-    
-    print('[PersonalCache] 🔍 开始为${activeFocuses.length}个关注点检索个人信息');
-
-    for (final focus in activeFocuses) {
-      await _performPersonalInfoRetrievalForFocus(focus);
-    }
-  }
-
-  Future<void> _performPersonalInfoRetrievalForFocus(UserFocus focus) async {
-    try {
-      print('[PersonalCache] 🎯 为关注点检索个人信息: ${focus.description}');
-
-      // 1. 构建个人信息检索查询
-      final retrievalQuery = await _buildPersonalInfoRetrievalQuery(focus);
-
-      // 2. 执行多维度个人信息检索
-      final retrievalResults = await _executePersonalInfoRetrieval(retrievalQuery, focus);
-
-      // 3. 评估和过滤结果
-      final filteredResults = await _evaluateAndFilterPersonalInfoResults(retrievalResults, focus);
-
-      // 4. 存储个人信息检索结果
-      if (filteredResults.isNotEmpty) {
-        await _storePersonalInfoRetrievalResult(filteredResults, focus);
-      }
-      
-    } catch (e) {
-      print('[PersonalCache] ❌ 个人信息检索失败 for ${focus.focusId}: $e');
-    }
-  }
-
-  // 构建个人信息检索查询
-  Future<Map<String, dynamic>> _buildPersonalInfoRetrievalQuery(UserFocus focus) async {
-    return {
-      'focus_type': focus.type.toString(),
-      'keywords': focus.keywords,
-      'entities': focus.entities,
-      'description': focus.description,
-      'time_scope': focus.context['time_scope'] ?? 'recent',
-      'info_type': focus.context['info_type'] ?? 'general',
-      'intensity': focus.intensity,
-    };
-  }
-
-  // 执行多维度个人信息检索
-  Future<Map<String, dynamic>> _executePersonalInfoRetrieval(
-    Map<String, dynamic> query,
-    UserFocus focus
-  ) async {
-    final results = {
-      'personal_nodes': <Node>[],
-      'related_events': <EventNode>[],
-      'relationships': <Edge>[],
-    };
-
-    try {
-      // 1. 检索用户相关的节点（基于关键词和实体）
-      final personalNodes = await _retrieveUserPersonalNodes(query);
-      results['personal_nodes'] = personalNodes;
-
-      // 2. 检索相关的用户事件
-      final relatedEvents = await _retrieveUserRelatedEvents(query, personalNodes);
-      results['related_events'] = relatedEvents;
-
-      // 3. 检索用户的人际关系信息
-      final relationships = await _retrieveUserRelationships(query, personalNodes);
-      results['relationships'] = relationships;
-
-      print('[PersonalCache] 📊 个人信息检索结果: ${personalNodes.length}个节点, ${relatedEvents.length}个事件, ${relationships.length}个关系');
-
-      return results;
-    } catch (e) {
-      print('[PersonalCache] ⚠️ 个人信息检索部分失败: $e');
-      return results;
-    }
-  }
-
-  // 检索用户个人节点
-  Future<List<Node>> _retrieveUserPersonalNodes(Map<String, dynamic> query) async {
-    final results = <Node>[];
-
-    try {
-      final keywords = query['keywords'] as List<String>? ?? [];
-      final entities = query['entities'] as List<String>? ?? [];
-
-      // 使用KnowledgeGraphService查找相关节点
-      final allKeywords = [...keywords, ...entities];
-      final relatedNodes = await KnowledgeGraphService.getRelatedNodesByKeywords(allKeywords);
-
-      // 过滤出与用户直接相关的节点
-      for (final node in relatedNodes) {
-        if (_isUserRelatedNode(node)) {
-          results.add(node);
-        }
-      }
-
-      print('[PersonalCache] 👤 检索到${results.length}个用户相关节点');
-
-    } catch (e) {
-      print('[PersonalCache] ⚠️ 检索用户个人节点失败: $e');
-    }
-    
-    return results;
-  }
-
-  // 检索用户相关事件
-  Future<List<EventNode>> _retrieveUserRelatedEvents(Map<String, dynamic> query, List<Node> personalNodes) async {
-    final results = <EventNode>[];
-
-    try {
-      // 基于个人节点查找相关事件
-      for (final node in personalNodes.take(5)) { // 限制查找数量
-        final events = await KnowledgeGraphService.getRelatedEvents(node.id);
-        results.addAll(events);
-      }
-      
-      // 根据时间范围过滤事件
-      final timeScope = query['time_scope']?.toString() ?? 'recent';
-      final filteredEvents = _filterEventsByTimeScope(results, timeScope);
-
-      print('[PersonalCache] 📅 检索到${filteredEvents.length}个相关用户事件');
-
-      return filteredEvents;
-    } catch (e) {
-      print('[PersonalCache] ⚠️ 检索用户相关事件失败: $e');
-      return results;
-    }
-  }
-
-  // 检索用户关系信息
-  Future<List<Edge>> _retrieveUserRelationships(Map<String, dynamic> query, List<Node> personalNodes) async {
-    final results = <Edge>[];
-
-    try {
-      final objectBox = ObjectBoxService();
-
-      // 查找与用户相关的关系边
-      for (final node in personalNodes.take(3)) { // 限制查找数量
-        final outgoingEdges = objectBox.queryEdges(source: node.id);
-        final incomingEdges = objectBox.queryEdges(target: node.id);
-
-        results.addAll(outgoingEdges);
-        results.addAll(incomingEdges);
-      }
-
-      // 过滤出人际关系相关的边
-      final relationshipEdges = results.where((edge) => _isRelationshipEdge(edge)).toList();
-
-      print('[PersonalCache] 👥 检索到${relationshipEdges.length}个用户关系');
-
-      return relationshipEdges;
-    } catch (e) {
-      print('[PersonalCache] ⚠️ 检索用户关系信息失败: $e');
-      return results;
-    }
-  }
-
-  // 判断节点是否与用户相关
-  bool _isUserRelatedNode(Node node) {
-    // 检查节点是否包含用户相关的信息
-    final userIndicators = ['我', '用户', '个人', '自己'];
-
-    // 检查节点名称
-    for (final indicator in userIndicators) {
-      if (node.name.contains(indicator)) return true;
-    }
-
-    // 检查节点属性
-    for (final value in node.attributes.values) {
-      for (final indicator in userIndicators) {
-        if (value.contains(indicator)) return true;
-      }
-    }
-
-    // 检查节点类型是否为个人相关
-    final personalTypes = ['个人', '用户', '经历', '偏好', '习惯', '目标'];
-    for (final type in personalTypes) {
-      if (node.type.contains(type)) return true;
-    }
-
-    return false;
-  }
-
-  // 根据时间范围过滤事件
-  List<EventNode> _filterEventsByTimeScope(List<EventNode> events, String timeScope) {
-    final now = DateTime.now();
-    DateTime cutoffTime;
-
-    switch (timeScope) {
-      case 'recent':
-        cutoffTime = now.subtract(const Duration(days: 7));
-        break;
-      case 'past_week':
-        cutoffTime = now.subtract(const Duration(days: 14));
-        break;
-      case 'past_month':
-        cutoffTime = now.subtract(const Duration(days: 30));
-        break;
-      default:
-        return events; // 'long_term' 不过滤
-    }
-
-    return events.where((event) {
-      if (event.startTime != null) {
-        return event.startTime!.isAfter(cutoffTime);
-      }
-      // 如果没有时间信息，检查更新时间
-      return event.lastUpdated.isAfter(cutoffTime);
-    }).toList();
-  }
-
-  // 判断边是否为关系边
-  bool _isRelationshipEdge(Edge edge) {
-    final relationshipTypes = ['朋友', '家人', '同事', '认识', '喜欢', '关心', '合作'];
-
-    for (final type in relationshipTypes) {
-      if (edge.relation.contains(type)) return true;
-    }
-
-    return false;
-  }
-
-  // 评估和过滤个人信息结果
-  Future<Map<String, dynamic>> _evaluateAndFilterPersonalInfoResults(
-    Map<String, dynamic> rawResults,
-    UserFocus focus
-  ) async {
-    final personalNodes = rawResults['personal_nodes'] as List<Node>? ?? [];
-    final relatedEvents = rawResults['related_events'] as List<EventNode>? ?? [];
-    final relationships = rawResults['relationships'] as List<Edge>? ?? [];
-
-    // 1. 根据关注点类型调整相关性评分
-    final scoredNodes = _scorePersonalNodesByFocus(personalNodes, focus);
-    final scoredEvents = _scoreEventsByFocus(relatedEvents, focus);
-    final scoredRelationships = _scoreRelationshipsByFocus(relationships, focus);
-
-    // 2. 过滤低分结果
-    final filteredNodes = scoredNodes.where((item) => item['score'] > 0.4).toList();
-    final filteredEvents = scoredEvents.where((item) => item['score'] > 0.4).toList();
-    final filteredRelationships = scoredRelationships.where((item) => item['score'] > 0.4).toList();
-
-    // 3. 排序并限制数量
-    filteredNodes.sort((a, b) => (b['score'] as double).compareTo(a['score'] as double));
-    filteredEvents.sort((a, b) => (b['score'] as double).compareTo(a['score'] as double));
-    filteredRelationships.sort((a, b) => (b['score'] as double).compareTo(a['score'] as double));
-
-    return {
-      'personal_nodes': filteredNodes.take(8).map((item) => item['item']).toList(),
-      'related_events': filteredEvents.take(5).map((item) => item['item']).toList(),
-      'relationships': filteredRelationships.take(5).map((item) => item['item']).toList(),
-    };
-  }
-
-  // 根据关注点为个人节点评分
-  List<Map<String, dynamic>> _scorePersonalNodesByFocus(List<Node> nodes, UserFocus focus) {
-    return nodes.map((node) {
-      double score = 0.5; // 基础分数
-
-      // 根据关注点类型调整分数
-      switch (focus.type) {
-        case FocusType.personal_history:
-          if (node.type.contains('经历') || node.type.contains('事件')) score += 0.3;
-          break;
-        case FocusType.relationship:
-          if (node.type.contains('人') || node.type.contains('朋友')) score += 0.3;
-          break;
-        case FocusType.preference:
-          if (node.type.contains('偏好') || node.type.contains('喜好')) score += 0.3;
-          break;
-        case FocusType.goal_tracking:
-          if (node.type.contains('目标') || node.type.contains('计划')) score += 0.3;
-          break;
-        default:
-          break;
-      }
-      
-      // 关键词匹配加分
-      for (final keyword in focus.keywords) {
-        if (node.name.contains(keyword) || node.attributes.values.any((v) => v.contains(keyword))) {
-          score += 0.2;
-        }
-      }
-
-      // 基于关注点强度调整
-      score *= focus.intensity;
-      
-      return {'item': node, 'score': score.clamp(0.0, 1.0)};
-    }).toList();
-  }
-
-  // 根据关注点为事件评分
-  List<Map<String, dynamic>> _scoreEventsByFocus(List<EventNode> events, UserFocus focus) {
-    return events.map((event) {
-      double score = 0.5; // 基础分数
-
-      // 根据关注点类型调整分数
-      switch (focus.type) {
-        case FocusType.personal_history:
-          score += 0.4; // 事件与个人历史高度相关
-          break;
-        case FocusType.emotional_context:
-          if (event.result != null && (event.result!.contains('开心') || event.result!.contains('难过'))) {
-            score += 0.3;
-          }
-          break;
-        case FocusType.temporal_context:
-          score += 0.3; // 时间上下文中事件重要
-          break;
-        default:
-          break;
-      }
-
-      // 关键词匹配加分
-      for (final keyword in focus.keywords) {
-        if (event.name.contains(keyword) ||
-            (event.description?.contains(keyword) ?? false)) {
-          score += 0.2;
-        }
-      }
-
-      // 基于关注点强度调整
-      score *= focus.intensity;
-
-      return {'item': event, 'score': score.clamp(0.0, 1.0)};
-    }).toList();
-  }
-
-  // 根据关注点为关系评分
-  List<Map<String, dynamic>> _scoreRelationshipsByFocus(List<Edge> relationships, UserFocus focus) {
-    return relationships.map((edge) {
-      double score = 0.5; // 基础分数
-
-      // 根据关注点类型调整分数
-      switch (focus.type) {
-        case FocusType.relationship:
-          score += 0.4; // 关系信息与人际关系关注点高度相关
-          break;
-        case FocusType.emotional_context:
-          if (edge.relation.contains('喜欢') || edge.relation.contains('关心')) {
-            score += 0.3;
-          }
-          break;
-        default:
-          break;
-      }
-      
-      // 关键词匹配加分
-      for (final keyword in focus.keywords) {
-        if (edge.relation.contains(keyword)) {
-          score += 0.2;
-        }
-      }
-
-      // 基于关注点强度调整
-      score *= focus.intensity;
-
-      return {'item': edge, 'score': score.clamp(0.0, 1.0)};
-    }).toList();
-  }
-
-  // 存储个人信息检索结果
-  Future<void> _storePersonalInfoRetrievalResult(
-    Map<String, dynamic> results,
-    UserFocus focus
-  ) async {
-    final resultId = 'pir_${focus.focusId}_${DateTime.now().millisecondsSinceEpoch}';
-
-    final personalNodes = results['personal_nodes'] as List<Node>? ?? [];
-    final relatedEvents = results['related_events'] as List<EventNode>? ?? [];
-    final relationships = results['relationships'] as List<Edge>? ?? [];
-
-    // 计算整体相关性评分
-    double totalRelevance = 0.0;
-    int itemCount = 0;
-
-    if (personalNodes.isNotEmpty) {
-      totalRelevance += personalNodes.length * 0.8;
-      itemCount += personalNodes.length;
-    }
-    if (relatedEvents.isNotEmpty) {
-      totalRelevance += relatedEvents.length * 0.7;
-      itemCount += relatedEvents.length;
-    }
-    if (relationships.isNotEmpty) {
-      totalRelevance += relationships.length * 0.6;
-      itemCount += relationships.length;
-    }
-
-    final avgRelevance = itemCount > 0 ? totalRelevance / itemCount : 0.0;
-
-    final personalInfoResult = PersonalInfoRetrievalResult(
-      resultId: resultId,
-      personalNodes: personalNodes,
-      relatedEvents: relatedEvents,
-      relationships: relationships,
-      relevanceScore: avgRelevance,
-      retrievalReason: '基于个人信息关注点"${focus.description}"检索用户相关信息',
-      sourceFocus: focus,
-      retrievedAt: DateTime.now(),
-      personalContext: {
-        'focus_type': focus.type.toString(),
-        'time_scope': focus.context['time_scope'] ?? 'recent',
-        'info_type': focus.context['info_type'] ?? 'general',
-        'nodes_count': personalNodes.length,
-        'events_count': relatedEvents.length,
-        'relationships_count': relationships.length,
-      },
-    );
-    
-    _personalInfoResults[resultId] = personalInfoResult;
-
-    // 清理过量的检索结果
-    if (_personalInfoResults.length > maxPersonalInfoResults) {
-      _cleanupOldPersonalInfoResults();
-    }
-    
-    print('[PersonalCache] 💾 存储个人信息检索结果: ${personalNodes.length}个节点, ${relatedEvents.length}个事件, ${relationships.length}个关系 (相关度: ${avgRelevance.toStringAsFixed(2)})');
-  }
-
-  // ========== 对外接口方法 ==========
-  
-  // 获取当前最相关的个人信息用于LLM生成
-  Map<String, dynamic> getRelevantPersonalInfoForGeneration() {
-    final activeFocuses = _getActiveFocuses();
-    final relevantResults = <PersonalInfoRetrievalResult>[];
-
-    // 收集所有相关的个人信息检索结果
-    for (final focus in activeFocuses) {
-      final focusResults = _personalInfoResults.values
-          .where((result) => result.sourceFocus.focusId == focus.focusId)
-          .toList();
-      relevantResults.addAll(focusResults);
-    }
-    
-    // 按相关性排序
-    relevantResults.sort((a, b) => b.relevanceScore.compareTo(a.relevanceScore));
-    
-    // 构建个人信息上下文
-    final personalNodes = <Node>[];
-    final userEvents = <EventNode>[];
-    final userRelationships = <Edge>[];
-    final contextInfo = <String, dynamic>{};
-    
-    for (final result in relevantResults.take(10)) { // 最多返回10个最相关的结果
-      personalNodes.addAll(result.personalNodes);
-      userEvents.addAll(result.relatedEvents);
-      userRelationships.addAll(result.relationships);
-
-      contextInfo[result.resultId] = {
-        'focus_description': result.sourceFocus.description,
-        'focus_type': result.sourceFocus.type.toString(),
-        'relevance_score': result.relevanceScore,
-        'retrieval_reason': result.retrievalReason,
-        'personal_context': result.personalContext,
-      };
-    }
-    
-    return {
-      'personal_nodes': personalNodes,
-      'user_events': userEvents,
-      'user_relationships': userRelationships,
-      'focus_contexts': activeFocuses.map((f) => {
-        'description': f.description,
-        'type': f.type.toString(),
-        'intensity': f.intensity,
-        'keywords': f.keywords,
-      }).toList(),
-      'retrieval_contexts': contextInfo,
-      'total_personal_info_items': personalNodes.length + userEvents.length + userRelationships.length,
-      'active_focuses_count': activeFocuses.length,
-    };
-  }
-
-  // 获取用户当前个人信息关注点摘要
-  List<String> getCurrentPersonalFocusSummary() {
-    final activeFocuses = _getActiveFocuses();
-    return activeFocuses
-        .map((focus) => '${focus.description} (${focus.type.toString().split('.').last})')
-        .toList();
-  }
-
-  // ========== 辅助方法 ==========
-  
-  List<UserFocus> _getActiveFocuses() {
-    final now = DateTime.now();
-    return _userFocuses.values
-        .where((focus) => now.difference(focus.identifiedAt) < focusExpirationTime)
-        .toList()
-      ..sort((a, b) => b.intensity.compareTo(a.intensity));
-  }
-
-  void _cleanupExpiredFocuses() {
-    final now = DateTime.now();
-    final expiredKeys = <String>[];
-    
-    for (final entry in _userFocuses.entries) {
-      if (now.difference(entry.value.identifiedAt) > focusExpirationTime) {
-        expiredKeys.add(entry.key);
-      }
-    }
-    
-    for (final key in expiredKeys) {
-      _userFocuses.remove(key);
-      print('[PersonalCache] 🗑️ 清理过期个人信息关注点: $key');
-    }
-    
-    // 如果关注点数量过多，删除一些低强度的
-    if (_userFocuses.length > maxFocuses) {
-      final sortedFocuses = _userFocuses.entries.toList()
-        ..sort((a, b) => a.value.intensity.compareTo(b.value.intensity));
-      
-      final toRemove = sortedFocuses.take(_userFocuses.length - maxFocuses);
-      for (final entry in toRemove) {
-        _userFocuses.remove(entry.key);
-        print('[PersonalCache] 🗑️ 清理低强度个人信息关注点: ${entry.key}');
-      }
-    }
-  }
-
-  void _cleanupOldPersonalInfoResults() {
-    final sortedResults = _personalInfoResults.entries.toList()
-      ..sort((a, b) => a.value.retrievedAt.compareTo(b.value.retrievedAt));
-    
-    final toRemove = sortedResults.take(_personalInfoResults.length - maxPersonalInfoResults);
-    for (final entry in toRemove) {
-      _personalInfoResults.remove(entry.key);
-    }
-  }
-
-  // ========== 调试和监控方法 ==========
-  
-  Map<String, dynamic> getCacheStats() {
-    final activeFocuses = _getActiveFocuses();
-    final now = DateTime.now();
-    
-    return {
-      'active_personal_focuses': activeFocuses.length,
-      'total_personal_focuses': _userFocuses.length,
-      'personal_info_results': _personalInfoResults.length,
-      'conversation_history_length': _conversationHistory.length,
-      'last_analysis_time': _lastAnalysisTime.toIso8601String(),
-      'time_since_last_analysis': now.difference(_lastAnalysisTime).inMinutes,
-      'focus_types_distribution': _getPersonalFocusTypesDistribution(),
-      'avg_focus_intensity': _getAveragePersonalFocusIntensity(),
-      'total_personal_nodes': _getTotalPersonalNodes(),
-      'total_user_events': _getTotalUserEvents(),
-      'total_user_relationships': _getTotalUserRelationships(),
-    };
-  }
-
-  Map<String, int> _getPersonalFocusTypesDistribution() {
-    final distribution = <String, int>{};
-    for (final focus in _getActiveFocuses()) {
-      final type = focus.type.toString().split('.').last;
-      distribution[type] = (distribution[type] ?? 0) + 1;
-    }
-    return distribution;
-  }
-
-  double _getAveragePersonalFocusIntensity() {
-    final activeFocuses = _getActiveFocuses();
-    if (activeFocuses.isEmpty) return 0.0;
-    
-    final totalIntensity = activeFocuses.fold(0.0, (sum, focus) => sum + focus.intensity);
-    return totalIntensity / activeFocuses.length;
-  }
-
-  int _getTotalPersonalNodes() {
-    return _personalInfoResults.values
-        .fold(0, (sum, result) => sum + result.personalNodes.length);
-  }
-
-  int _getTotalUserEvents() {
-    return _personalInfoResults.values
-        .fold(0, (sum, result) => sum + result.relatedEvents.length);
-  }
-
-  int _getTotalUserRelationships() {
-    return _personalInfoResults.values
-        .fold(0, (sum, result) => sum + result.relationships.length);
-  }
-
-  void clearCache() {
-    _userFocuses.clear();
-    _personalInfoResults.clear();
-    _conversationHistory.clear();
-    _currentConversationContext = '';
-    print('[PersonalCache] 🗑️ 个人信息缓存已清空');
-  }
-
-  // 兼容性方法 - 保持原有接口
-  void initialize() {
-    print('[PersonalCache] 🚀 智能个人信息缓存系统已初始化');
-  }
-
-  void dispose() {
-    // 清理资源
-  }
-
-  Future<void> updateConversationContext(String conversationText) async {
-    await analyzeUserFocusFromConversation(conversationText);
-  }
-
-  Map<String, dynamic>? getQuickResponse(String userQuery) {
-    final relevantPersonalInfo = getRelevantPersonalInfoForGeneration();
-    if (relevantPersonalInfo['total_personal_info_items'] > 0) {
-      return {
-        'hasCache': true,
-        'personal_info': relevantPersonalInfo,
-        'focus_summary': getCurrentPersonalFocusSummary(),
-        'timestamp': DateTime.now().toIso8601String(),
-      };
-    }
-    return null;
-  }
-
-  List<CacheItem> getAllCacheItems() {
-    final items = <CacheItem>[];
-    final now = DateTime.now();
-    
-    // 转换个人信息关注点为CacheItem格式用于兼容显示
-    for (final focus in _userFocuses.values) {
-      items.add(CacheItem(
-        key: focus.focusId,
-        data: {
-          'description': focus.description,
-          'type': focus.type.toString(),
-          'intensity': focus.intensity,
-          'keywords': focus.keywords,
-          'entities': focus.entities,
-          'personal_info_focus': true,
-        },
-        priority: _focusTypeToPriority(focus.type),
-        relatedTopics: focus.keywords.toSet(),
-        relevanceScore: focus.intensity,
-        category: 'personal_focus',
-        createdAt: focus.identifiedAt,
-        lastAccessedAt: now,
-        accessCount: 1,
-        weight: focus.intensity,
-      ));
-    }
-    
-    // 转换个人信息检索结果为CacheItem格式
-    for (final result in _personalInfoResults.values) {
-      items.add(CacheItem(
-        key: result.resultId,
-        data: {
-          'personal_nodes_count': result.personalNodes.length,
-          'user_events_count': result.relatedEvents.length,
-          'relationships_count': result.relationships.length,
-          'retrieval_reason': result.retrievalReason,
-          'source_focus': result.sourceFocus.description,
-          'relevance_score': result.relevanceScore,
-          'personal_context': result.personalContext,
-        },
-        priority: CacheItemPriority.high,
-        relatedTopics: result.sourceFocus.keywords.toSet(),
-        relevanceScore: result.relevanceScore,
-        category: 'personal_info_result',
-        createdAt: result.retrievedAt,
-        lastAccessedAt: now,
-        accessCount: 1,
-        weight: result.relevanceScore,
-      ));
-    }
-
-    return items..sort((a, b) => b.createdAt.compareTo(a.createdAt));
-  }
-
-  CacheItemPriority _focusTypeToPriority(FocusType type) {
-    switch (type) {
-      case FocusType.personal_history:
-      case FocusType.relationship:
-        return CacheItemPriority.critical;
-      case FocusType.preference:
-      case FocusType.goal_tracking:
-        return CacheItemPriority.high;
-      case FocusType.emotional_context:
-      case FocusType.behavior_pattern:
-        return CacheItemPriority.medium;
-      default:
-        return CacheItemPriority.low;
-    }
-  }
-
-  // 其他兼容性方法...
-  List<CacheItem> getCacheItemsByCategory(String category) {
-    return getAllCacheItems().where((item) => item.category == category).toList();
-  }
-
-  Map<String, dynamic> getClassifiedCacheStats() {
-    return getCacheStats();
-  }
-
-  // 空实现或简化实现用于兼容
-  Map<String, dynamic> getProactiveInteractionSuggestions() {
-    return {
-      'summaryReady': false,
-      'suggestions': <String>[],
-      'reminders': <String>[],
-      'helpOpportunities': <String>[],
-    };
-  }
-
-  List<ConversationSummary> getRecentSummaries({int limit = 5}) {
-    return <ConversationSummary>[];
-  }
-
-  ConversationContext? getCurrentConversationContext() {
-    return null;
-  }
-
-  UserPersonalContext? getUserPersonalContext() {
-    return null;
-  }
-
-  Map<String, dynamic> getCacheItemDetails(String key) {
-    return <String, dynamic>{};
-  }
-
-  Future<void> triggerCacheUpdate(String conversation) async => await updateConversationContext(conversation);
-
-  Future<void> processBackgroundConversation(String conversation) async => await updateConversationContext(conversation);
-
-  void addToCache({
-    required String key,
-    required data,
-    required CacheItemPriority priority,
-    required Set<String> relatedTopics,
-    required double relevanceScore,
-    String category = 'general'
-  }) {
-    // 简化实现，不实际存储
-  }
-
-  // 深度个人信息关注点分析 - 使用LLM理解用户的个人信息需求
-  Future<Map<String, dynamic>> _performPersonalFocusAnalysis(String conversationContext) async {
-    final analysisPrompt = """
-你是一个用户个人信息分析专家，专门分析用户对其个人历史、经历、偏好、关系等信息的需求。
-
-请分析对话，识别用户可能需要了解的个人信息维度。注意：不要分析通用知识需求，只关注用户个人相关的信息需求。
-
-个人信息维度：
-1. personal_history - 用户想了解自己的过往经历、做过的事情
-2. relationship - 用户关心的人际关系、朋友、家人相关信息  
-3. preference - 用户的个人偏好、喜好、习惯相关
-4. goal_tracking - 用户的目标、计划、进展跟踪相关
-5. behavior_pattern - 用户的行为模式、习惯分析相关
-6. emotional_context - 用户的情感状态、心情历史相关
-7. temporal_context - 特定时间段的用户信息需求
-
-输出JSON格式：
-{
-  "personal_focuses": [
-    {
-      "description": "用户个人信息需求的自然语言描述，如：用户想了解自己最近的约会经历和感受",
-      "type": "personal_history/relationship/preference/goal_tracking/behavior_pattern/emotional_context/temporal_context",
-      "intensity": 0.8,
-      "keywords": ["约会", "感受", "最近"],
-      "entities": ["用户", "朋友", "伴侣"],
-      "reasoning": "识别这个个人信息需求的推理过程",
-      "context": {
-        "trigger_text": "触发这个需求的具体文本",
-        "time_scope": "时间范围：recent/past_week/past_month/long_term",
-        "info_type": "信息类型：experience/relationship/emotion/habit/goal"
-      }
-    }
-  ],
-  "conversation_summary": "对话内容的简要总结",
-  "personal_context_hints": ["用户个人上下文的提示信息"],
-  "expected_personal_info": ["用户可能期望的个人信息类型"]
-}
-
-对话内容：
-$conversationContext
-
-请专注于识别用户个人信息相关的需求，忽略通用知识查询。
-""";
-
-    try {
-      final llm = await LLM.create('gpt-4o-mini', systemPrompt: analysisPrompt);
-      final response = await llm.createRequest(content: '请分析这段对话中的用户个人信息关注点');
-
-      // 解析JSON响应
-      final jsonStart = response.indexOf('{');
-      final jsonEnd = response.lastIndexOf('}');
-      if (jsonStart == -1 || jsonEnd == -1) {
-        throw FormatException('LLM未返回有效的JSON格式');
-      }
-
-      final jsonStr = response.substring(jsonStart, jsonEnd + 1);
-      final result = jsonDecode(jsonStr) as Map<String, dynamic>;
-
-      return result;
-    } catch (e) {
-      print('[PersonalCache] ⚠️ LLM个人信息关注点分析失败，使用备用方法: $e');
-      return await _fallbackPersonalFocusAnalysis(conversationContext);
-    }
-  }
-
-  // 备用个人信息关注点分析方法
-  Future<Map<String, dynamic>> _fallbackPersonalFocusAnalysis(String conversationContext) async {
-    // 使用关键词匹配识别个人信息相关的需求
-    try {
-      final personalKeywords = {
-        'personal_history': ['我的', '我之前', '我以前', '我曾经', '我做过', '我去过', '记得我'],
-        'relationship': ['我朋友', '我家人', '我和', '我们', '朋友', '家人', '男友', '女友', '伴侣'],
-        'preference': ['我喜欢', '我不喜欢', '我习惯', '我通常', '我偏好'],
-        'goal_tracking': ['我的目标', '我计划', '我想要', '我的进展', '我的计划'],
-        'behavior_pattern': ['我经常', '我总是', '我很少', '我从不', '我习惯'],
-        'emotional_context': ['我觉得', '我感觉', '我心情', '我开心', '我难过', '我压力'],
-        'temporal_context': ['最近', '昨天', '上周', '这个月', '去年'],
-      };
-
-      final detectedFocuses = <Map<String, dynamic>>[];
-
-      for (final entry in personalKeywords.entries) {
-        final type = entry.key;
-        final keywords = entry.value;
-
-        for (final keyword in keywords) {
-          if (conversationContext.contains(keyword)) {
-            detectedFocuses.add({
-              'description': '用户询问与${type}相关的个人信息',
-              'type': type,
-              'intensity': 0.6,
-              'keywords': [keyword],
-              'entities': ['用户'],
-              'reasoning': '基于关键词"$keyword"识别',
-              'context': {
-                'trigger_text': conversationContext.length > 100 ? conversationContext.substring(0, 100) + '...' : conversationContext,
-                'time_scope': _detectTimeScope(conversationContext),
-                'info_type': _detectInfoType(type),
-              }
-            });
-            break; // 每个类型最多添加一个
-          }
-        }
-      }
-
-      if (detectedFocuses.isEmpty) {
-        // 如果没有检测到明确的个人信息需求，添加一个默认的
-        detectedFocuses.add({
-          'description': '用户可能需要相关的个人背景信息',
-          'type': 'personal_history',
-          'intensity': 0.4,
-          'keywords': ['对话'],
-          'entities': ['用户'],
-          'reasoning': '基于对话上下文推断',
-          'context': {
-            'trigger_text': conversationContext.length > 50 ? conversationContext.substring(0, 50) + '...' : conversationContext,
-            'time_scope': 'recent',
-            'info_type': 'context',
-          }
-        });
-      }
-
-      return {
-        'personal_focuses': detectedFocuses,
-        'conversation_summary': '用户进行了个人相关的对话',
-        'personal_context_hints': ['需要检索用户个人信息'],
-        'expected_personal_info': ['用户历史', '个人偏好']
-      };
-    } catch (e) {
-      // 最基本的备用方案
-      return {
-        'personal_focuses': [
-          {
-            'description': '用户可能需要个人背景信息',
-            'type': 'personal_history',
-            'intensity': 0.3,
-            'keywords': ['用户'],
-            'entities': ['用户'],
-            'reasoning': '默认个人信息需求',
-            'context': {
-              'trigger_text': conversationContext.length > 50 ? conversationContext.substring(0, 50) + '...' : conversationContext,
-              'time_scope': 'recent',
-              'info_type': 'general',
-            }
-          }
-        ],
-        'conversation_summary': '用户进行了对话',
-        'personal_context_hints': [],
-        'expected_personal_info': []
-      };
-    }
-  }
-
-  String _detectTimeScope(String text) {
-    if (text.contains('最近') || text.contains('今天') || text.contains('昨天')) return 'recent';
-    if (text.contains('这周') || text.contains('上周')) return 'past_week';
-    if (text.contains('这个月') || text.contains('上个月')) return 'past_month';
-    return 'long_term';
-  }
-
-  String _detectInfoType(String type) {
-    switch (type) {
-      case 'personal_history': return 'experience';
-      case 'relationship': return 'relationship';
-      case 'emotional_context': return 'emotion';
-      case 'behavior_pattern': return 'habit';
-      case 'goal_tracking': return 'goal';
-      default: return 'general';
-    }
-  }
-
-  // 处理关注点分析结果
-  Future<void> _processFocusAnalysisResults(Map<String, dynamic> analysisResult) async {
-    final focuses = analysisResult['personal_focuses'] as List? ?? [];
-    final now = DateTime.now();
-
-    for (final focusData in focuses) {
-      if (focusData is Map<String, dynamic>) {
-        final description = focusData['description']?.toString() ?? '';
-        final typeStr = focusData['type']?.toString() ?? 'personal_history';
-        final intensity = (focusData['intensity'] as num?)?.toDouble() ?? 0.5;
-        final keywords = (focusData['keywords'] as List?)?.map((k) => k.toString()).toList() ?? [];
-        final entities = (focusData['entities'] as List?)?.map((e) => e.toString()).toList() ?? [];
-        final context = focusData['context'] as Map<String, dynamic>? ?? {};
-
-        // 过滤掉强度过低的关注点
-        if (intensity < minFocusIntensity) continue;
-
-        // 解析关注点类型
-        FocusType type = FocusType.personal_history;
-        switch (typeStr) {
-          case 'relationship':
-            type = FocusType.relationship;
-            break;
-          case 'preference':
-            type = FocusType.preference;
-            break;
-          case 'goal_tracking':
-            type = FocusType.goal_tracking;
-            break;
-          case 'behavior_pattern':
-            type = FocusType.behavior_pattern;
-            break;
-          case 'emotional_context':
-            type = FocusType.emotional_context;
-            break;
-          case 'temporal_context':
-            type = FocusType.temporal_context;
-            break;
-        }
-
-        // 创建关注点
-        final focusId = 'deep_focus_${now.millisecondsSinceEpoch}_${_userFocuses.length}';
-        final userFocus = UserFocus(
-          focusId: focusId,
-          description: description,
-          type: type,
-          intensity: intensity,
-          keywords: keywords,
-          entities: entities,
-          identifiedAt: now,
-          context: {...context, 'analysis_type': 'deep_llm'},
-        );
-
-        _userFocuses[focusId] = userFocus;
-        print('[PersonalCache] 🔍 深度识别个人信息关注点: $description (强度: ${intensity.toStringAsFixed(2)})');
-      }
-    }
-
-    // 清理过期的关注点
-    _cleanupExpiredFocuses();
   }
 }

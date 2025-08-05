@@ -175,6 +175,19 @@ class ObjectBoxService {
     return recordBox.query(RecordEntity_.createdAt.between(startTime, endTime)).build().find();
   }
 
+  /// 获取指定时间戳之后的记录，用于缓存系统实时分析
+  List<RecordEntity> getRecordsSince(int timestampMs) {
+    print('[ObjectBoxService] 🔍 获取时间戳 $timestampMs 之后的对话记录');
+    final queryBuilder = recordBox
+        .query(RecordEntity_.createdAt.greaterThan(timestampMs))
+        .order(RecordEntity_.createdAt, flags: Order.descending);
+    final query = queryBuilder.build();
+    query.limit = 50; // 限制数量，避免一次性加载过多数据
+    final results = query.find();
+    print('[ObjectBoxService] ✅ 找到 ${results.length} 条记录');
+    return results;
+  }
+
   List<Map<RecordEntity, double>> getSimilarRecordsByContents(List<double> queryVector, int topK) {
     try {
       // 暂时禁用向量搜索，因为ObjectBox版本不支持

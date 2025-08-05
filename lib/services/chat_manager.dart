@@ -22,23 +22,39 @@ class ChatManager {
   ChatManager();
 
   Future<void> init({required String selectedModel, String? systemPrompt}) async {
+    print('[ChatManager] 🚀 初始化ChatManager...');
     _llm = await LLM.create(selectedModel, systemPrompt: systemPrompt);
     _enhancedKGService = EnhancedKGService();
     _conversationCache = ConversationCache();
 
     // 初始化缓存系统
-    _conversationCache.initialize();
+    print('[ChatManager] 🔄 初始化对话缓存系统...');
+    await _conversationCache.initialize();
 
     List<RecordEntity>? recentRecords = ObjectBoxService().getTermRecords();
+    print('[ChatManager] 📚 加载最近对话记录: ${recentRecords?.length ?? 0} 条');
+
     recentRecords?.forEach((RecordEntity recordEntity) {
       String formattedTime = DateFormat('yyyy-MM-dd HH:mm').format(DateTime.fromMillisecondsSinceEpoch(recordEntity.createdAt!));
       addChatSession(recordEntity.role!, recordEntity.content!, time: formattedTime);
+
+      // 🔥 关键修复：将历史对话也添加到缓存系统进行分析
+      final content = recordEntity.content ?? '';
+      if (content.trim().isNotEmpty) {
+        print('[ChatManager] 📝 处理历史对话: "${content.substring(0, content.length > 30 ? 30 : content.length)}..."');
+        _conversationCache.processBackgroundConversation(content);
+      }
     });
+
+    print('[ChatManager] ✅ ChatManager初始化完成');
   }
 
   Stream<String> createStreamingRequest({required String text}) async* {
-    // 更新对话缓存上下文
-    await _conversationCache.updateConversationContext(text);
+    print('[ChatManager] 🚀 开始处理用户输入: "${text.substring(0, text.length > 50 ? 50 : text.length)}..."');
+
+    // 🔥 关键修复：立即处理背景对话，更新缓存
+    print('[ChatManager] 📝 触发对话缓存分析...');
+    await _conversationCache.processBackgroundConversation(text);
 
     RegExp pattern = RegExp(r'[。！？；：.!?;:](?=\s)');
 
@@ -86,24 +102,39 @@ class ChatManager {
       });
     }
 
-    // 更新对话缓存与助手回复
-    await _conversationCache.updateConversationContext(content);
+    // 🔥 关键修复：处理助手回复，也添加到缓存系统
+    if (content.trim().isNotEmpty) {
+      print('[ChatManager] 🤖 处理助手回��缓存: "${content.substring(0, content.length > 30 ? 30 : content.length)}..."');
+      await _conversationCache.processBackgroundConversation(content);
+    }
 
     messages.add({"role": "assistant", "content": content});
     content = '';
   }
 
   Future<String> createRequest({required String text}) async {
-    // 更新对话缓存上下文
-    await _conversationCache.updateConversationContext(text);
+    print('[ChatManager] 🚀 处理非流式请求: "${text.substring(0, text.length > 50 ? 50 : text.length)}..."');
+
+    // 🔥 关键修复：处理用户输入
+    print('[ChatManager] 📝 ��发对话缓存分析...');
+    await _conversationCache.processBackgroundConversation(text);
 
     final content = await buildInputWithKG(text);
     final response = await _llm.createRequest(content: content);
 
-    // 更新对话缓存与助手回复
-    await _conversationCache.updateConversationContext(response);
+    // 🔥 关键修复：处理助手回复
+    if (response.trim().isNotEmpty) {
+      print('[ChatManager] 🤖 处理助手回复缓存: "${response.substring(0, response.length > 30 ? 30 : response.length)}..."');
+      await _conversationCache.processBackgroundConversation(response);
+    }
 
     return response;
+  }
+
+  /// 处理背景对话 - 供外部调用
+  Future<void> processBackgroundConversation(String text) async {
+    print('[ChatManager] 🔄 外部调用处理背景对话');
+    await _conversationCache.processBackgroundConversation(text);
   }
 
   // 智能版本：构建个性化输入，注入知识图谱信息
@@ -138,7 +169,7 @@ class ChatManager {
         // 个人节点信息
         final personalNodes = personalInfo['personal_nodes'] as List? ?? [];
         if (personalNodes.isNotEmpty) {
-          kgInfoBuffer.writeln('\n## 用户个人相关信息：');
+          kgInfoBuffer.writeln('\n## 用户个人相关信息���');
           for (final node in personalNodes.take(3)) {
             final nodeData = node as Map<String, dynamic>? ?? {};
             final name = nodeData['name'] ?? '未知';
@@ -175,7 +206,7 @@ class ChatManager {
             kgInfoBuffer.writeln('- $source $relation $target');
           }
         }
-        
+
         kgInfo = kgInfoBuffer.toString();
         performanceInfo = '个人信息缓存命中 | 响应时间：快速';
       } else {
@@ -221,11 +252,6 @@ $kgInfo
   // 获取相关的个人信息用于生成
   Map<String, dynamic> getRelevantPersonalInfoForGeneration() {
     return _conversationCache.getRelevantPersonalInfoForGeneration();
-  }
-
-  // 处理背景对话
-  Future<void> processBackgroundConversation(String conversation) async {
-    await _conversationCache.processBackgroundConversation(conversation);
   }
 
   // 获取缓存性能统计

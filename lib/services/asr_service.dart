@@ -97,7 +97,7 @@ class RecordServiceHandler extends TaskHandler {
   int _currentDialogueCharCount = 0;
   int? _currentDialogueStartTime;
 
-  static const int minCharLimit = 20;
+  static const int minCharLimit = 150;
   static const int maxCharLimit = 2000;
   static const String _selectedModel = 'gpt-4o';
 

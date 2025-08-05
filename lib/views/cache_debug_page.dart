@@ -654,18 +654,16 @@ class _CacheDebugPageState extends State<CacheDebugPage> with TickerProviderStat
               style: TextStyle(fontSize: 18, fontWeight: FontWeight.bold),
             ),
             const SizedBox(height: 8),
-            if (suggestions['summaryReady'] == true)
+            if (suggestions['hasActiveContext'] == true)
               const Chip(
-                label: Text('可提供摘要'),
+                label: Text('有活跃上下文'),
                 backgroundColor: Colors.green,
               ),
             const SizedBox(height: 8),
-            if ((suggestions['suggestions'] as List).isNotEmpty)
+            if ((suggestions['suggestions'] as List? ?? []).isNotEmpty)
               Text('建议数: ${(suggestions['suggestions'] as List).length}'),
-            if ((suggestions['reminders'] as List).isNotEmpty)
-              Text('提醒数: ${(suggestions['reminders'] as List).length}'),
-            if ((suggestions['helpOpportunities'] as List).isNotEmpty)
-              Text('帮助机会: ${(suggestions['helpOpportunities'] as List).length}'),
+            if ((suggestions['currentTopics'] as List? ?? []).isNotEmpty)
+              Text('当前话题: ${(suggestions['currentTopics'] as List).join(', ')}'),
           ],
         ),
       ),
@@ -1731,6 +1729,8 @@ class _CacheDebugPageState extends State<CacheDebugPage> with TickerProviderStat
         return Colors.blue;
       case CacheItemPriority.low:
         return Colors.grey;
+      case CacheItemPriority.userProfile:
+        return Colors.purple; // 用户画像使用紫色，表示最高优先级且永不被替换
     }
   }
 

@@ -19,19 +19,26 @@ class EnhancedKGService {
 
   // 处理背景对话（被动监听）
   Future<void> processBackgroundConversation(String conversationText) async {
+    print('[EnhancedKGService] 🚀 收到背景对话处理请求');
+    print('[EnhancedKGService] 📝 输入文本: "${conversationText}"');
+    print('[EnhancedKGService] 📏 文本长度: ${conversationText.length}');
+
     try {
-      // 更新对话上下文并触发预测性缓存
-      await _cache.updateConversationContext(conversationText);
+      // 🔥 修复：使用正确的方法名
+      print('[EnhancedKGService] 🔄 调用缓存处理背景对话...');
+      await _cache.processBackgroundConversation(conversationText);
 
       // 分析对话中的关键信息
+      print('[EnhancedKGService] 🔍 分析关键信息...');
       await _analyzeAndCacheKeyInfo(conversationText);
 
+      print('[EnhancedKGService] ✅ 背景对话处理完成');
     } catch (e) {
-      print('Error processing background conversation: $e');
+      print('[EnhancedKGService] ❌ 处理背景对话时出错: $e');
     }
   }
 
-  // 快速响应用户查询（优先使用缓存）
+  // ���速响应用户查询（优先使用缓存）
   Future<Map<String, dynamic>> getQuickResponse(String userQuery) async {
     try {
       // 1. 尝试从缓存获取快速响应
@@ -116,13 +123,18 @@ class EnhancedKGService {
         for (final node in nodes) {
           final cacheKey = 'analysis_${query.hashCode}_${node.id}';
 
-          _cache.addToCache(
+          // 🔥 修复：使用公共方法添加缓存项
+          final cacheItem = CacheItem(
             key: cacheKey,
-            data: node,
+            content: '基于查询"$query"分析得到的节点: ${node.name} (${node.type})',
             priority: CacheItemPriority.high,
             relatedTopics: queryTopics.toSet(),
+            createdAt: DateTime.now(),
             relevanceScore: 0.8,
+            category: 'knowledge_reserve',
+            data: node,
           );
+          _cache.addCacheItem(cacheItem);
         }
       } catch (e) {
         print('Error updating cache from analysis: $e');
@@ -137,7 +149,7 @@ class EnhancedKGService {
     return analysis.entities.map((e) => e.entityName).toList();
   }
 
-  // 从对话中提取话题
+  // 从对话中提取话���
   Future<List<String>> _extractTopicsFromConversation(String text) async {
     // 使用话题建模技术
     final analysis = await _smartKG.analyzeUserInput(text);
@@ -182,13 +194,18 @@ class EnhancedKGService {
       for (final relevance in relatedNodes) {
         final cacheKey = 'bg_${entity}_${relevance.node.id}';
 
-        _cache.addToCache(
+        // 🔥 修复：使用公共方法添加缓存项
+        final cacheItem = CacheItem(
           key: cacheKey,
-          data: relevance.node,
+          content: '背景预加载的节点: ${relevance.node.name} (${relevance.node.type})，与实体"$entity"相关',
           priority: _determinePriorityFromSentiment(sentiment),
           relatedTopics: topics.toSet(),
+          createdAt: DateTime.now(),
           relevanceScore: relevance.score,
+          category: 'knowledge_reserve',
+          data: relevance.node,
         );
+        _cache.addCacheItem(cacheItem);
       }
     }
   }
