@@ -4,6 +4,8 @@ import 'dart:convert';
 import 'package:app/services/llm.dart';
 import 'package:app/services/enhanced_kg_service.dart'; // 🔥 新增：使用重构后的增强知识图谱服务
 import 'package:app/services/objectbox_service.dart';
+import 'package:app/models/todo_entity.dart'; // 新增：导入todo模型
+import 'package:intl/intl.dart'; // 新增：用于时间格式化
 
 /// 缓存项优先级
 enum CacheItemPriority {
@@ -41,8 +43,8 @@ class CacheItem {
     this.category = 'general',
     this.data,
   }) : lastAccessedAt = createdAt,
-       accessCount = 1,
-       weight = 1.0;
+        accessCount = 1,
+        weight = 1.0;
 
   /// 更新访问信息
   void updateAccess() {
@@ -64,7 +66,7 @@ class CacheItem {
 
 /// 对话关注点检测器
 class ConversationFocusDetector {
-  static const int _historyLimit = 20; // 增加历史对话数量
+  static const int _historyLimit = 20; // 增加历��对话数量
   final Queue<String> _conversationHistory = Queue();
   final Set<String> _currentEntities = {};
   final Set<String> _currentTopics = {};
@@ -281,7 +283,7 @@ class ConversationCache {
       print('[ConversationCache] ✅ 缓存服务已初始化，跳过');
       return;
     }
-    
+
     if (_initializing) {
       print('[ConversationCache] ⏳ 缓存服务正在初始化中，等待完成...');
       // 等待初始化完成
@@ -311,7 +313,7 @@ class ConversationCache {
 
       _initialized = true;
       _initializing = false;
-      print('[ConversationCache] ✅ 缓存服务初始化完成');
+      print('[ConversationCache] ✅ 缓存服���初始化完成');
       print('[ConversationCache] 📊 缓存统计: ${getCacheStats()}');
     } catch (e) {
       _initializing = false;
@@ -322,10 +324,17 @@ class ConversationCache {
 
   /// 🔥 新增：独立的LLM初始化方法
   Future<void> _initializeLLM() async {
-    _llm = await LLM.create('gpt-3.5-turbo',
-        systemPrompt: '''你是一个专业的对话分析专家，擅长精细化实体识别和语义分析。
+    // 获取当前时间用于系统提示词
+    final currentTime = DateTime.now();
+    final timeFormatter = DateFormat('yyyy-MM-dd HH:mm:ss');
+    final formattedTime = timeFormatter.format(currentTime);
 
-分析用户对话时��需要识别以下类型的实体和概念：
+    _llm = await LLM.create('gpt-3.5-turbo',
+        systemPrompt: '''你是一个专业的对话分析专家，擅长精细化实体识别、语义分析和待办事项检测。
+
+当前时间：$formattedTime
+
+分析用户对话时需要识别以下类型的实体和概念：
 
 1. 显式实体（直接出现在文本中）：
    - 具体物品：食物、物品、工具、设备等
@@ -339,12 +348,26 @@ class ConversationCache {
    - 工作内容：从描述推断的工作类型（如"软件开发"、"问题调试"、"产品优化"）
    - 情感状态：从描述推断的情绪和感受
    - 兴趣爱好：从行为模式推断的兴趣点
-   - 技能领域：从工作或学习内容推断的专��领域
+   - 技能领域：从工作或学习内容推断的专业领域
 
 3. 关联概念：
    - 相关的上下级概念
    - 同类别的相关事物
    - 可能的后续行为或需求
+
+4. 待办事项检测：
+   分析对话中是否包含需要创建待办事项的内容，包括：
+   - 明确的任务和行动计划
+   - 需要完成的工作或学习目标
+   - 约定的会议或活动
+   - 需要购买或准备的物品
+   - 需要联系或回复的人
+   - 有时间要求的任务
+   
+   如果检测到待办事项，请提取：
+   - 任务描述：具体要做什么
+   - 详细说明：任务的背景或要求
+   - 截止时间：基于对话内容推断合理的完成时间（使用当前时间作为参考）
 
 输出严格的JSON格式：
 {
@@ -352,20 +375,29 @@ class ConversationCache {
   "implicit_entities": ["推断出的概念1", "概念2"],
   "topics": ["主要话题1", "话题2"],
   "intent": "用户意图",
-  "emotion": "情绪状态",
+  "emotion": "情��������",
   "focus_summary": "详细的关注点总结",
   "semantic_analysis": {
     "life_scenes": ["生活场景"],
     "work_context": ["工作相关"],
     "interests": ["兴趣相关"],
-    "needs": ["可能的需求"]
-  }
+    "needs": ["可能的���求"]
+  },
+  "todos": [
+    {
+      "task": "任务描述",
+      "details": "详细说明",
+      "deadline": "yyyy-MM-dd HH:mm",
+      "priority": "high|medium|low"
+    }
+  ]
 }
 
 意图类型：information_seeking, problem_solving, sharing_experience, learning, planning, casual_chat
 情绪类型：positive, negative, neutral, excited, satisfied, frustrated, curious, relaxed
 
-请确保分析要细致入微，宁可多识别一些相关概念，也不要遗漏重要信息。''');
+请注意，因为对话内容是源自本地的语音识别模型，精度可能只有60%左右，请你在阅读对话时尝试补充、修改以及同音词替换等手段，从而还原出对话真实的内容，对于实在无法理解或者不符合日常对话的片段，请忽略它。
+请确保分析要细致入微，宁可多识别一些相关概念，也不要遗漏重要信息。对于待办事项的检测要准确，不是百分百确定的情况不需要创建。''');
   }
 
   /// 启动定期更新
@@ -379,7 +411,7 @@ class ConversationCache {
   /// 🔥 新增：后台加载最近对话（避免循环）
   Future<void> _loadRecentConversationsBackground() async {
     if (!_initialized) return;
-    
+
     try {
       print('[ConversationCache] 📚 后台加载最近对话...');
 
@@ -403,7 +435,7 @@ class ConversationCache {
             print('[ConversationCache] 🔄 处理新对话: "${content.substring(0, content.length > 30 ? 30 : content.length)}..."');
             _processedConversations.add(contentHash);
             _focusDetector.addConversation(content);
-            
+
             // 直接触发分析，不通过processBackgroundConversation
             if (_focusDetector.shouldTriggerUpdate(content)) {
               await _analyzeAndUpdateCache();
@@ -411,13 +443,13 @@ class ConversationCache {
           }
         }
       }
-      
+
       // ���理旧的处理记录，防止内存泄漏
       if (_processedConversations.length > 100) {
         _processedConversations.clear();
       }
     } catch (e) {
-      print('[ConversationCache] ❌ 后台加载对话失败: $e');
+      print('[ConversationCache] ❌ 后台加载��话失败: $e');
     }
   }
 
@@ -456,7 +488,7 @@ class ConversationCache {
         print('[ConversationCache] ⚠️ 对话已处理过，跳过');
         return;
       }
-      
+
       _processedConversations.add(contentHash);
 
       // 添加到对话历史
@@ -508,12 +540,12 @@ class ConversationCache {
       // 将分析结果添��到缓存
       await _addAnalysisToCache(llmAnalysis, context);
 
-      // 🔥 新增：如果有知识图谱结果，也添加到缓存
+      // �� 新增：如果有知识图谱结果，也添加到缓存
       if (kgResult != null) {
         await _addKGResultToCache(kgResult);
       }
 
-      print('[ConversationCache] ✅ 智能分析和缓存更新完成');
+      print('[ConversationCache] ✅ 智能分���和缓存更新完成');
 
     } catch (e) {
       print('[ConversationCache] ❌ 分析和更新缓存失败: $e');
@@ -542,7 +574,7 @@ $context
   /// 🔥 新增：执行知识图谱分析
   Future<KGAnalysisResult?> _performKGAnalysis(String context) async {
     try {
-      // 使用增强知识图谱服务进行分析
+      // 使用增强知识图谱服��进行分析
       return await _enhancedKG.performKGAnalysis(context);
     } catch (e) {
       print('[ConversationCache] ⚠️ 知识图谱分析失败: $e');
@@ -554,10 +586,10 @@ $context
   Future<void> _addKGResultToCache(KGAnalysisResult kgResult) async {
     print('[ConversationCache] 🕸️ 将知识图谱结果添加到缓存...');
 
-    // 为每个找到的节点创建缓存项
+    // 为每个���到的节���创建缓存项
     for (final relevanceData in kgResult.relevanceData) {
       final node = kgResult.nodes.firstWhere(
-        (n) => n.id == relevanceData.nodeId,
+            (n) => n.id == relevanceData.nodeId,
         orElse: () => kgResult.nodes.first,
       );
 
@@ -635,7 +667,7 @@ $context
     final frameworkItems = [
       {
         'content': '用户是一个独特的个体，有自己的兴趣爱好和专业背景',
-        'topics': {'个���特征', '兴趣爱好'},
+        'topics': {'个���特征', '��趣爱好'},
         'category': 'personal_info'
       },
       {
@@ -659,7 +691,7 @@ $context
       _addToCache(item);
     }
 
-    print('[ConversationCache] ✅ 初始缓存加载完成');
+    print('[ConversationCache] ✅ 初���缓存加载完成');
   }
 
   /// 快速响应查询
@@ -738,7 +770,7 @@ $context
     return keywords;
   }
 
-  /// 计算查询与缓存项的相关性
+  /// 计算查询与缓存��的相关性
   double _calculateRelevance(Set<String> queryKeywords, CacheItem cacheItem) {
     if (queryKeywords.isEmpty) return 0.0;
 
@@ -815,7 +847,7 @@ $context
       'entities': quickEntities,
       'intent': 'general_chat',
       'emotion': 'neutral',
-      'focus_summary': '基于对话内容的快速分析',
+      'focus_summary': '基于对话内容的快速分���',
     };
   }
 
@@ -831,17 +863,24 @@ $context
     final focusSummary = analysis['focus_summary'] ?? '';
     final semanticAnalysis = analysis['semantic_analysis'] as Map<String, dynamic>? ?? {};
 
-    // 🔥 新增：提取语义分析结果
+    // 🔥 新增：提��并处理todo信息
+    final todos = analysis['todos'] as List<dynamic>? ?? [];
+    await _processTodos(todos, context);
+
+    // 🔥 新增：提取生活场景
     final lifeScenes = List<String>.from(semanticAnalysis['life_scenes'] ?? []);
+    // 🔥 新增：提取工作内容
     final workContext = List<String>.from(semanticAnalysis['work_context'] ?? []);
+    // 🔥 新增：提取兴趣爱好
     final interests = List<String>.from(semanticAnalysis['interests'] ?? []);
+    // 🔥 新增：提取潜在需求
     final needs = List<String>.from(semanticAnalysis['needs'] ?? []);
 
     // 创建详细的关注点摘要缓存项
     final summaryItem = CacheItem(
       key: 'focus_summary_${DateTime.now().millisecondsSinceEpoch}',
-      content: '用户当前关注: $focusSummary。话题包括: ${topics.join(', ')}。意图: $intent，情绪: $emotion。'
-              '显式实体: ${explicitEntities.join(', ')}，隐式概念: ${implicitEntities.join(', ')}',
+      content: '用户当前关注: $focusSummary。���题包括: ${topics.join(', ')}。意图: $intent，情绪: $emotion。'
+          '显式实体: ${explicitEntities.join(', ')}，隐式概念: ${implicitEntities.join(', ')}',
       priority: CacheItemPriority.high,
       relatedTopics: {...topics, ...explicitEntities, ...implicitEntities}.toSet(),
       createdAt: DateTime.now(),
@@ -866,11 +905,11 @@ $context
       _addToCache(entityItem);
     }
 
-    // 🔥 新增：为隐式实体创建缓存项
+    // 🔥 新增：为隐式实体��建缓存���
     for (final entity in implicitEntities) {
       final entityItem = CacheItem(
         key: 'implicit_entity_${entity}_${DateTime.now().millisecondsSinceEpoch}',
-        content: '从用户对话中推断出 "$entity" 相关概念，这反映了用户的潜在关注领域',
+        content: '从用户对话中推断出 "$entity" 相关概念，这反��了用户的潜在关注领域',
         priority: CacheItemPriority.medium,
         relatedTopics: {entity, ...topics}.toSet(),
         createdAt: DateTime.now(),
@@ -915,7 +954,7 @@ $context
     for (final interest in interests) {
       final interestItem = CacheItem(
         key: 'interest_${interest}_${DateTime.now().millisecondsSinceEpoch}',
-        content: '用户对 "$interest" 表现出兴趣，这是了解用户偏好的重要信息',
+        content: '用户对 "$interest" 表现出兴��，这是了解用户偏好的重要信息',
         priority: CacheItemPriority.medium,
         relatedTopics: {interest, '兴趣爱好', ...topics}.toSet(),
         createdAt: DateTime.now(),
@@ -930,7 +969,7 @@ $context
     for (final need in needs) {
       final needItem = CacheItem(
         key: 'need_${need}_${DateTime.now().millisecondsSinceEpoch}',
-        content: '用户可能需要 "$need" 相关的帮助或信息，这是主动服务的机会',
+        content: '用户���能需要 "$need" 相关���帮助或信息，这是主动服务的机会',
         priority: CacheItemPriority.high,
         relatedTopics: {need, '用户需求', ...topics}.toSet(),
         createdAt: DateTime.now(),
@@ -973,7 +1012,114 @@ $context
     print('[ConversationCache] 📊 当前缓存大小: ${_cache.length}');
     print('[ConversationCache] 🎯 新增实体: 显式${explicitEntities.length}个, 隐式${implicitEntities.length}个');
     print('[ConversationCache] 🏠 生活场景: ${lifeScenes.length}个, 工作内容: ${workContext.length}个');
-    print('[ConversationCache] 💖 兴���: ${interests.length}个, 需求: ${needs.length}个');
+    print('[ConversationCache] 💖 兴趣: ${interests.length}个, 需求: ${needs.length}个');
+    print('[ConversationCache] ✅ Todo处理: 检测到${todos.length}个待办事项');
+  }
+
+  /// 🔥 新增：处理todo任务的防重复机制
+  final Set<String> _processedTodos = {};
+
+  /// 🔥 新增：处理检测到的todo任务
+  Future<void> _processTodos(List<dynamic> todos, String context) async {
+    if (todos.isEmpty) {
+      print('[ConversationCache] ℹ️ 未检测到待办事项');
+      return;
+    }
+
+    print('[ConversationCache] 📝 开始处理${todos.length}个待办事项...');
+
+    final todoEntities = <TodoEntity>[];
+
+    for (final todoData in todos) {
+      try {
+        if (todoData is! Map<String, dynamic>) continue;
+
+        final task = todoData['task']?.toString() ?? '';
+        final details = todoData['details']?.toString() ?? '';
+        final deadlineStr = todoData['deadline']?.toString() ?? '';
+        final priority = todoData['priority']?.toString() ?? 'medium';
+
+        if (task.isEmpty) continue;
+
+        // 防重复检查：使用任务描述的hash作为唯一标识
+        final todoHash = '${task.toLowerCase().replaceAll(RegExp(r'\s+'), '')}_${deadlineStr}';
+        if (_processedTodos.contains(todoHash)) {
+          print('[ConversationCache] ⚠️ 跳过重复任务: $task');
+          continue;
+        }
+
+        // 解析截止时间
+        DateTime? deadline;
+        try {
+          if (deadlineStr.isNotEmpty) {
+            deadline = DateFormat('yyyy-MM-dd HH:mm').parse(deadlineStr);
+          }
+        } catch (e) {
+          print('[ConversationCache] ⚠️ 时间解析失败，使用默认时间: $deadlineStr');
+          // 如果解析失败，设置为24小时后
+          deadline = DateTime.now().add(Duration(hours: 24));
+        }
+
+        // 根据优先级设置状态
+        Status todoStatus = Status.pending;
+
+        // 创建TodoEntity
+        final todoEntity = TodoEntity(
+          task: task,
+          detail: details,
+          deadline: deadline?.millisecondsSinceEpoch,
+          status: todoStatus,
+          createdAt: DateTime.now().millisecondsSinceEpoch,
+        );
+
+        todoEntities.add(todoEntity);
+        _processedTodos.add(todoHash);
+
+        print('[ConversationCache] ✅ 创建待办事项: $task (截止: ${deadline?.toString() ?? "未设置"})');
+
+      } catch (e) {
+        print('[ConversationCache] ❌ 处理待办事项失败: $e');
+      }
+    }
+
+    // 批量保存到数据库
+    if (todoEntities.isNotEmpty) {
+      try {
+        ObjectBoxService().createTodos(todoEntities);
+        print('[ConversationCache] 💾 已保存${todoEntities.length}个待办事项到数据库');
+
+        // 为每个创建的todo添加缓存项
+        for (final todo in todoEntities) {
+          final todoItem = CacheItem(
+            key: 'todo_${todo.task}_${DateTime.now().millisecondsSinceEpoch}',
+            content: '创建了待办事项: "${todo.task}"。详情: ${todo.detail}。截止时间: ${todo.deadline != null ? DateFormat('yyyy-MM-dd HH:mm').format(DateTime.fromMillisecondsSinceEpoch(todo.deadline!)) : "未设置"}',
+            priority: CacheItemPriority.high,
+            relatedTopics: {'待办事项', 'todo', todo.task!}.toSet(),
+            createdAt: DateTime.now(),
+            relevanceScore: 0.9,
+            category: 'todo_management',
+            data: {
+              'todo_id': todo.id,
+              'task': todo.task,
+              'details': todo.detail,
+              'deadline': todo.deadline,
+              'status': todo.status.toString(),
+              'source_context': context,
+            },
+          );
+          _addToCache(todoItem);
+        }
+
+      } catch (e) {
+        print('[ConversationCache] ❌ 保存待办事项到数据库失败: $e');
+      }
+    }
+
+    // 清理旧的处理记录，防止内存泄漏
+    if (_processedTodos.length > 200) {
+      _processedTodos.clear();
+      print('[ConversationCache] 🧹 清理待办事项处理记录');
+    }
   }
 
   /// 获取当前个人关注总结
@@ -1015,11 +1161,11 @@ $context
     final focusContexts = _cache.values
         .where((item) => item.category == 'conversation_grasp')
         .map((item) => {
-          'description': item.content,
-          'type': 'conversation_analysis',
-          'intensity': item.relevanceScore,
-          'keywords': item.relatedTopics.toList(),
-        })
+      'description': item.content,
+      'type': 'conversation_analysis',
+      'intensity': item.relevanceScore,
+      'keywords': item.relatedTopics.toList(),
+    })
         .toList();
 
     return {
@@ -1263,3 +1409,4 @@ class UserPersonalContext {
     };
   }
 }
+

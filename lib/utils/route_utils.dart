@@ -8,6 +8,8 @@ import 'package:app/views/meeting/meeting_detail_screen.dart';
 import 'package:app/views/meeting/meeting_list_screen.dart';
 import 'package:app/views/setting_screen.dart';
 import 'package:app/views/todo/todo_list_screen.dart';
+import 'package:app/views/todo_screen.dart';
+import 'package:app/models/todo_entity.dart'; // 添加Status枚举的导入
 import 'package:app/views/user_screen.dart';
 import 'package:app/views/entry/welcome_screen.dart';
 import 'package:app/views/knowledge_graph_page.dart';
@@ -131,7 +133,12 @@ class RouteUtils {
       path: RouteName.summary_list,
       name: RouteName.summary_list,
       builder: (_, state) => const SummaryListScreen(),
-    )
+    ),
+    GoRoute(
+      path: RouteName.todo,
+      name: RouteName.todo,
+      builder: (_, state) => const TodoScreen(status: Status.all),
+    ),
   ];
 }
 
@@ -166,4 +173,7 @@ class RouteName {
 
   /// summary
   static const String summary_list = '/summary_list';
+
+  /// todo
+  static const String todo = '/todo';
 }

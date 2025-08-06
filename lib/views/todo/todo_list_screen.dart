@@ -350,7 +350,7 @@ class _TodoDetailSheetState extends State<TodoDetailSheet> {
       widget.model.detail = _noteController.text;
     });
 
-    ObjectBoxService().updateTodo(widget.model.id, widget.model.title, widget.model.detail,
+    ObjectBoxService().updateTodoContent(widget.model.id, widget.model.title, widget.model.detail,
         widget.model.deadline?.toDateTime()?.millisecondsSinceEpoch);
 
     widget.onUpdate();

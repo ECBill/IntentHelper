@@ -386,6 +386,23 @@ class ObjectBoxService {
     return todoBox.query(TodoEntity_.task.equals(keyword).or(TodoEntity_.detail.equals(keyword))).build().find();
   }
 
+  /// 更新Todo任务
+  Future<void> updateTodo(TodoEntity todo) async {
+    todoBox.put(todo);
+  }
+
+  /// 删除Todo任务
+  Future<void> deleteTodo(int todoId) async {
+    todoBox.remove(todoId);
+  }
+
+  /// 批量删除Todo任务（根据TodoEntity列表）
+  Future<void> deleteTodoEntities(List<TodoEntity> todos) async {
+    for (TodoEntity todo in todos) {
+      todoBox.remove(todo.id);
+    }
+  }
+
   TodoEntity? getLastTodo() {
     return todoBox.isEmpty() ? null : todoBox.getAll().last;
   }
@@ -404,7 +421,7 @@ class ObjectBoxService {
     });
   }
 
-  Future<void> updateTodo(int id, String content, String? detail, int? deadline) async {
+  Future<void> updateTodoContent(int id, String content, String? detail, int? deadline) async {
     TodoEntity? todo = todoBox.get(id);
     if (todo != null) {
       todo.task = content;
@@ -447,12 +464,6 @@ class ObjectBoxService {
 
   Future<void> deleteAllTodos() async {
     todoBox.removeAll();
-  }
-
-  Future<void> deleteTodos(List<TodoEntity> todos) async {
-    for (TodoEntity todo in todos) {
-      todoBox.remove(todo.id);
-    }
   }
 
   // ========== 知识图谱相关操作 ==========

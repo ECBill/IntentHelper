@@ -165,6 +165,10 @@ class _SettingScreenState extends State<SettingScreen> {
     context.pushNamed(RouteName.summary_list);
   }
 
+  void _onClickTodo() {
+    context.pushNamed(RouteName.todo);
+  }
+
   @override
   Widget build(BuildContext context) {
     final themeNotifier = Provider.of<ThemeNotifier>(context);
@@ -254,6 +258,12 @@ class _SettingScreenState extends State<SettingScreen> {
                 title: 'Summary List',
                 subtitle: 'View and manage your summaries',
                 onTap: _onClickSummaryList,
+              ),
+              SettingListTile(
+                leading: AssetsUtil.icon_set_up, // 临时使用现有图标
+                title: 'Todo List',
+                subtitle: 'View and manage your tasks',
+                onTap: _onClickTodo,
               ),
             ],
           ),
