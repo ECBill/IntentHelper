@@ -34,6 +34,7 @@ class _SettingScreenState extends State<SettingScreen> {
   int? remainQuota;
   int? totalQuota;
   int? expiredTime;
+  String? llmToken;
 
   @override
   void dispose() {
@@ -72,6 +73,8 @@ class _SettingScreenState extends State<SettingScreen> {
         totalQuota = (tokenData['remain_quota'] + tokenData['used_quota']) ~/ 5000;
         expiredTime = tokenData['expired_time'];
         SPUtil.setInt(SPUtil.sp_key_member_expiredTime, expiredTime!);
+        // 只获取token中的key值
+        llmToken = tokenData['key'] ?? tokenData['llm_token'] ?? tokenData['api_key'];
       });
     } catch (e) {
       dev.log("Error fetching quota: $e");
@@ -158,6 +161,10 @@ class _SettingScreenState extends State<SettingScreen> {
     context.pushNamed(RouteName.cache_debug);
   }
 
+  void _onClickSummaryList() {
+    context.pushNamed(RouteName.summary_list);
+  }
+
   @override
   Widget build(BuildContext context) {
     final themeNotifier = Provider.of<ThemeNotifier>(context);
@@ -185,6 +192,7 @@ class _SettingScreenState extends State<SettingScreen> {
             remainQuota: remainQuota ?? 0,
             totalQuota: totalQuota ?? 1,
             expiredTime: expiredTime ?? 0,
+            llmToken: llmToken,
           ),
           SizedBox(height: 12.sp),
           SectionListView(
@@ -236,10 +244,16 @@ class _SettingScreenState extends State<SettingScreen> {
                 onTap: _onClickHeadphoneUpgrade,
               ),
               SettingListTile(
-                leading: AssetsUtil.icon_feedback, // 临时使用现有图标
+                leading: AssetsUtil.icon_feedback, // ���时使用现有图标
                 title: 'Cache Debug',
                 subtitle: 'Debugging tools for cache',
                 onTap: _onClickCacheDebug,
+              ),
+              SettingListTile(
+                leading: AssetsUtil.icon_feedback, // 临时使用现有图标
+                title: 'Summary List',
+                subtitle: 'View and manage your summaries',
+                onTap: _onClickSummaryList,
               ),
             ],
           ),
@@ -267,12 +281,14 @@ class MemberWidget extends StatelessWidget {
   final int remainQuota;
   final int totalQuota;
   final int expiredTime;
+  final String? llmToken;
 
   const MemberWidget({
     super.key,
     required this.remainQuota,
     required this.totalQuota,
     required this.expiredTime,
+    this.llmToken,
   });
 
   @override
@@ -343,14 +359,6 @@ class MemberWidget extends StatelessWidget {
                     value: totalQuota != 0 ? remainQuota / totalQuota : 0,
                   ),
                 ),
-                // Text(
-                //   '$remainQuota quota remaining (out of $totalQuota)',
-                //   style: const TextStyle(
-                //     fontWeight: FontWeight.w400,
-                //     fontSize: 12,
-                //     color: Color.fromRGBO(255, 255, 255, 0.6),
-                //   ),
-                // ),
                 Text(
                   'Expires: ${DateFormat('MM/dd/yyyy').format(DateTime.fromMillisecondsSinceEpoch(expiredTime * 1000))}',
                   style: const TextStyle(
@@ -359,6 +367,35 @@ class MemberWidget extends StatelessWidget {
                     color: Color.fromRGBO(255, 255, 255, 0.6),
                   ),
                 ),
+                if (llmToken != null) ...[
+                  SizedBox(height: 8.sp),
+                  Text(
+                    'LLM Token:',
+                    style: const TextStyle(
+                      fontWeight: FontWeight.bold,
+                      fontSize: 12,
+                      color: Colors.white,
+                    ),
+                  ),
+                  SizedBox(height: 4.sp),
+                  Container(
+                    width: double.infinity,
+                    padding: EdgeInsets.all(8.sp),
+                    decoration: BoxDecoration(
+                      color: Colors.black26,
+                      borderRadius: BorderRadius.circular(4.sp),
+                    ),
+                    child: SelectableText(
+                      llmToken!,
+                      style: const TextStyle(
+                        fontWeight: FontWeight.w400,
+                        fontSize: 10,
+                        color: Color.fromRGBO(255, 255, 255, 0.8),
+                        fontFamily: 'monospace',
+                      ),
+                    ),
+                  ),
+                ],
               ],
             ),
           ),

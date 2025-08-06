@@ -7,9 +7,12 @@ import 'package:flutter/material.dart';
 import 'dart:developer' as dev;
 import 'package:flutter/services.dart';
 import 'package:flutter_foreground_task/flutter_foreground_task.dart';
+import 'package:intl/intl.dart';
 import '../constants/voice_constants.dart';
 import '../models/record_entity.dart';
+import '../models/summary_entity.dart';
 import '../services/chat_manager.dart';
+import '../services/summary.dart';
 import 'package:uuid/uuid.dart';
 import '../services/objectbox_service.dart';
 
@@ -47,6 +50,89 @@ class ChatController extends ChangeNotifier {
     // ✅ 先移除可能存在的旧回调，然后添加新回调，避免重复注册
     FlutterForegroundTask.removeTaskDataCallback(_onReceiveTaskData);
     FlutterForegroundTask.addTaskDataCallback(_onReceiveTaskData);
+
+    // 🔥 新增：注册摘要生成回调
+    _setupSummaryCallback();
+  }
+
+  // 🔥 新增：设置摘要回调函数
+  void _setupSummaryCallback() {
+    DialogueSummary.onSummaryGenerated = _handleSummaryGenerated;
+    print('[ChatController] 📋 摘要回调已注册');
+  }
+
+  // 🔥 新增：处理摘要生成完成的回调
+  void _handleSummaryGenerated(List<SummaryEntity> summaries) {
+    print('[ChatController] 📋 收到摘要生成完成通知，摘要数量: ${summaries.length}');
+
+    if (summaries.isEmpty) return;
+
+    try {
+      // 构建摘要显示内容
+      String summaryContent = _formatSummaryForDisplay(summaries);
+
+      // 在聊天框中插入系统摘要消息
+      insertNewMessage({
+        'id': const Uuid().v4(),
+        'text': summaryContent,
+        'isUser': 'system', // 使用 'system' 角色标识这是系统生成的摘要
+      });
+
+      print('[ChatController] ✅ 摘要消息已插入聊天��');
+
+      // 自���滚动到底部显示新消息
+      firstScrollToBottom();
+
+    } catch (e) {
+      print('[ChatController] ❌ 处理摘要显示时出错: $e');
+    }
+  }
+
+  // 🔥 新增：格式化摘要内容用于显示
+  String _formatSummaryForDisplay(List<SummaryEntity> summaries) {
+    StringBuffer buffer = StringBuffer();
+    buffer.writeln('📋 **对话总结**');
+    buffer.writeln('');
+
+    for (int i = 0; i < summaries.length; i++) {
+      SummaryEntity summary = summaries[i];
+
+      // 格式化时间
+      String startTimeStr = DateFormat('HH:mm').format(
+        DateTime.fromMillisecondsSinceEpoch(summary.startTime)
+      );
+      String endTimeStr = DateFormat('HH:mm').format(
+        DateTime.fromMillisecondsSinceEpoch(summary.endTime)
+      );
+
+      buffer.writeln('**${i + 1}. ${summary.subject}** (${startTimeStr}-${endTimeStr})');
+      buffer.writeln(summary.content);
+
+      if (i < summaries.length - 1) {
+        buffer.writeln('');
+      }
+    }
+
+    return buffer.toString();
+  }
+
+  // 🔥 新增：手动触发摘要生成的方法
+  Future<void> triggerSummaryGeneration({int? startTime}) async {
+    try {
+      print('[ChatController] 🚀 手动触发摘要生成...');
+      await DialogueSummary.start(
+        startTime: startTime,
+        onSummaryCallback: _handleSummaryGenerated
+      );
+    } catch (e) {
+      print('[ChatController] ❌ 摘要生成失败: $e');
+      // 显示错误消息
+      insertNewMessage({
+        'id': const Uuid().v4(),
+        'text': '❌ 摘要生成失败，请稍后再试',
+        'isUser': 'system',
+      });
+    }
   }
 
   Future<void> loadMoreMessages({bool reset = false}) async {
@@ -189,7 +275,7 @@ class ChatController extends ChangeNotifier {
           if (responseId == null) {
             responseId = const Uuid().v4();
             userToResponseMap[newMessages[userIndex]['id']] = responseId;
-            // ✅ 使用 insertNewMessage 而不是直接插入
+            // ✅ 使用 insertNewMessage 而不是直���插入
             insertNewMessage({
               'id': responseId,
               'text': '',

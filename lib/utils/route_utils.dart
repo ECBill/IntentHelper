@@ -13,6 +13,7 @@ import 'package:app/views/entry/welcome_screen.dart';
 import 'package:app/views/knowledge_graph_page.dart';
 import 'package:app/views/kg_test_page.dart';
 import 'package:app/views/cache_debug_page.dart';
+import 'package:app/views/summary_list_screen.dart';
 import 'package:go_router/go_router.dart';
 import '../views/entry/loading_screen.dart';
 import 'package:app/views/help_feedback/help_feedback_screen.dart';
@@ -125,6 +126,11 @@ class RouteUtils {
       path: RouteName.cache_debug,
       name: RouteName.cache_debug,
       builder: (_, state) => const CacheDebugPage(),
+    ),
+    GoRoute(
+      path: RouteName.summary_list,
+      name: RouteName.summary_list,
+      builder: (_, state) => const SummaryListScreen(),
     )
   ];
 }
@@ -157,4 +163,7 @@ class RouteName {
 
   /// cache debug
   static const String cache_debug = '/cache_debug';
+
+  /// summary
+  static const String summary_list = '/summary_list';
 }

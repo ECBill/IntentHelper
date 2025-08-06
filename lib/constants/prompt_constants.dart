@@ -75,83 +75,76 @@ const Map<String, Object> responseSchemaOfChat = {
 };
 
 const String systemPromptOfSummary = """
-  You excel at identifying themes in conversations and generating concise summaries. 
-  Based on a dialogue between the user and their assistant Buddie, please identify and summarize all main themes, grouping relevant exchanges under the same theme when possible. 
-  Specify the time range for each theme, and avoid creating excessive theme divisions.\n
-  Note:\n
-    1. Limit the themes to the following four categories: Study, Life, Work, Entertainment.\n
-    2. Each theme may include several distinct summaries, potentially spanning multiple exchanges. Aim to keep time ranges as consistent as possible.\n
-  Please output the result in JSON format, as shown below:\n
-  {
-    "output": [
-      {
-        "subject": "Study", 
-        "start_time": "2024-10-15 13:00", 
-        "end_time": "2024-10-15 15:30", 
-        "abstract": "The user studied graph neural networks and Graph RAG, discussing algorithmic improvements and optimizations in detail."
-      }, 
-      {
-        "subject": "Study", 
-        "start_time": "2024-10-15 23:30", 
-        "end_time": "2024-10-15 23:59", 
-        "abstract": "The user and Buddie discussed recent research progress."
-      }, 
-      {
-        "subject": "Work", 
-        "start_time": "2024-10-15 16:00", 
-        "end_time": "2024-10-15 17:00", 
-        "abstract": "The user and Buddie discussed Android code development, covering the deployment and retrieval strategies of the ObjectBox vector database."
-      }, 
-      ...
-    ]
-  }\n
-  Note: When outputting JSON, please avoid using the ```json and ``` markdown syntax. Only output the pure JSON content.
-""";
+你是一位优秀的对话总结专家，擅长从用户与AI助手Buddie的对话中提炼出有价值的信息和洞察。
+你的任务是将对话整理成易于回顾的总结，帮助用户快速回忆起聊天内容并发现其中的价值。
+
+请根据以下要求进行总结：
+1. 为每段对话起一个吸引人的标题，能让用户一眼就想起当时的内容
+2. 重点关注对话中的启发、新知识、建议和行动计划
+3. 分析用户可能感兴趣的后续行动或思考方向
+4. 使用温暖、亲切的语调，让总结读起来有趣且有用
+
+输出格式（纯JSON，不要markdown标记）：
+{
+  "output": [
+    {
+      "subject": "💡 探索了图神经网络的奥秘", 
+      "start_time": "2024-10-15 13:00", 
+      "end_time": "2024-10-15 15:30", 
+      "abstract": "今天深入学习了图神经网络和Graph RAG技术。你对算法优化很感兴趣，特别是在处理大规模图数据时的效率问题。💭 值得后续思考：可以尝试在自己的项目中应用这些技术，或者找一些开源项目练手。这个领域发展很快，建议持续关注最新研究动态。"
+    },
+    {
+      "subject": "🔧 Android开发技巧分享",
+      "start_time": "2024-10-15 16:00", 
+      "end_time": "2024-10-15 17:00", 
+      "abstract": "讨论了ObjectBox向量数据库的部署策略，你提到了一些实际开发中遇到的问题。从对话中看出你对数据库优化很有想法。🚀 建议尝试：可以写一篇技术博客分享这些经验，或者在团队内部做个技术分享，说不定能帮助到其他同事。"
+    }
+  ]
+}
+
+注意事项：
+- 标题要生动有趣，使用合适的emoji
+- 重点突出用户的思考和收获
+- 提供具体可行的后续建议
+- 保持积极正面的语调""";
 
 const String systemPromptOfSummaryReflection = """
-  You are a seasoned and meticulous literature professor tasked with reviewing a student's assignment. 
-  The assignment involves analyzing a conversation between a user and their assistant Buddie, categorizing it into relevant themes, and generating summaries for each theme. 
-  The themes are limited to four categories: Study, Life, Work, and Entertainment. 
-  Importantly, the categorization should take into account the overall context, ensuring that each theme accurately reflects the primary content of the conversation.\n\n
-  The assignment will be evaluated on several criteria:\n
-    1. Theme Appropriateness: Are the themes categorized appropriately, with no major omissions?\n
-    2. Time Period Accuracy: Are the time periods associated with each theme accurately represented?\n
-    3. Summary Quality: For each theme, are the summaries thorough, without unnecessary repetition, omissions, fragmentation, or excessive generalization?\n
-    4. Avoidance of Over-Classification: Is there any instance of excessive categorization, particularly when contextual information indicates that content should belong to a single theme?\n
-  Additional evaluation standards may be applied at your discretion.\n\n
-  Please provide constructive feedback based on these criteria. Note: Avoid using JSON format for the feedback!
-""";
+你是一位经验丰富的内容编辑，正在审阅一份对话总结。
+你的任务是确保总结质量，让它既准确又有吸引力。
+
+评估标准：
+1. 标题是否吸引人且准确反映内容
+2. 总结是否捕捉了对话的核心价值和启发
+3. 是否提供了有意义的后续行动建议
+4. 语言是否温暖亲切，容易理解
+5. 时间范围是否准确
+6. 是否遗漏了重要的讨论点
+
+请提供具体的改进建议，特别关注如何让总结更有价值和吸引力。
+不要使用JSON格式回复！""";
 
 const String systemPromptOfNewSummary = """
-  Below are several themes extracted by another person based on a conversation, along with guidance provided by an experienced professor. 
-  Please review the original conversation and the professor's guidance, then refine and enhance the extracted themes and summaries.\n
-  Ensure that each theme is selected from the following categories only: Study, Life, Work, Entertainment. 
-  Use these themes as appropriate, and present the revised summaries in JSON format, for example:\n
-  {
-    "output": [
-      {
-        "subject": "Study", 
-        "start_time": "2024-10-15 13:00", 
-        "end_time": "2024-10-15 15:30", 
-        "abstract": "The user studied graph neural networks and Graph RAG, discussing algorithmic improvements and optimizations in detail."
-      }, 
-      {
-        "subject": "Study", 
-        "start_time": "2024-10-15 23:30", 
-        "end_time": "2024-10-15 23:59", 
-        "abstract": "The user and Buddie discussed recent research progress."
-      }, 
-      {
-        "subject": "Work", 
-        "start_time": "2024-10-15 16:00", 
-        "end_time": "2024-10-15 17:00", 
-        "abstract": "The user and Buddie discussed Android code development, covering the deployment and retrieval strategies of the ObjectBox vector database."
-      }, 
-      ...
-    ]
-  }\n
-  Note: When outputting JSON, please avoid using the ```json and ``` markdown syntax. Only output the pure JSON content.
-""";
+基于原始对话和编辑的反馈建议，请生成一个改进版的对话总结。
+确保总结既准确又有吸引力，能够帮助用户快速回忆起对话内容并发现其中的价值。
+
+要求：
+- 使用生动有趣的中文标题，配合合适的emoji
+- 重点突出用户的思考、收获和启发
+- 提供具体可行的后续行动建议
+- 保持温暖亲切的语调
+- 确保时间范围准确
+
+输出格式（纯JSON，不要markdown标记）：
+{
+  "output": [
+    {
+      "subject": "标题", 
+      "start_time": "yyyy-MM-dd HH:mm", 
+      "end_time": "yyyy-MM-dd HH:mm", 
+      "abstract": "总结内容"
+    }
+  ]
+}""";
 
 const String systemPromptOfHelp = """
   Please respond based on the context and history of the current chat session. Your answers should directly address the questions or requirements provided.

@@ -23,10 +23,16 @@ class StreamingAsrService {
   // 优化音频缓冲区管理 - 使用更高效的缓冲区
   Float32List _audioBuffer = Float32List(0);
   int _bufferLength = 0;
-  static const int _optimalChunkSize = 1600; // 降低到100ms，减少延迟
-  static const int _minChunkSize = 800;  // 50ms 最小处理单位
+  static const int _optimalChunkSize = 800; // 🔧 FIX: 降低到50ms，加快初始响应
+  static const int _minChunkSize = 400;  // 🔧 FIX: 25ms 最小处理单位，更快启动
   static const double _sampleRate = 16000.0;
   static const int _maxBufferSize = 16000; // 1秒最大缓冲
+
+  // 🔧 FIX: 添加即时处理模式
+  bool _enableInstantProcessing = true; // 启用即时处理，不等缓冲区填满
+  int _processedSamples = 0; // 跟踪已处理的样本数
+  int _totalAudioReceived = 0; // 🔧 NEW: 跟踪总接收的音频数据量
+  DateTime _startTime = DateTime.now(); // 🔧 NEW: 记录启动时间
 
   // 音频质量统计 - 简化计算
   double _audioLevel = 0.0;
@@ -73,6 +79,12 @@ class StreamingAsrService {
       // 预分配缓冲区
       _audioBuffer = Float32List(_maxBufferSize);
       _bufferLength = 0;
+
+      // 🔧 FIX: 重置即时处理模式状态
+      _enableInstantProcessing = true;
+      _processedSamples = 0;
+      _totalAudioReceived = 0;
+      _startTime = DateTime.now();
 
       _isInitialized = true;
       print('[StreamingAsrService] 🎉 Optimized streaming ASR initialized successfully');
@@ -211,7 +223,7 @@ class StreamingAsrService {
     if (correctedText != originalText) {
       _totalCorrections++;
       if (isFinal) {
-        print('[StreamingAsrService] 🔧 最终纠错: "$originalText" → "$correctedText"');
+        print('[StreamingAsrService] �� 最���纠错: "$originalText" → "$correctedText"');
       }
     }
 
@@ -252,25 +264,49 @@ class StreamingAsrService {
       // 轻量级预处理
       final processedAudio = _preprocessAudioLight(audioData);
 
+      // 🔧 FIX: 跟踪总接收的音频数据
+      _totalAudioReceived += processedAudio.length;
+
       // 高效添加到缓冲区
       _addToBuffer(processedAudio);
 
       String result = '';
 
+      // 🔧 FIX: 改进的即时处理模式切换逻辑
+      int targetChunkSize = _optimalChunkSize;
+      bool shouldSwitchToNormal = false;
+
+      if (_enableInstantProcessing) {
+        // 多条件判断是否应该��换到正常模式：
+        // 1. 已接收足够的音频数据 (1秒)
+        // 2. 或者运行时间超过3秒
+        // 3. 或者已经有识别结果输出
+        final elapsedMs = DateTime.now().difference(_startTime).inMilliseconds;
+
+        if (_totalAudioReceived >= 16000 || // 1秒的音频数据
+            elapsedMs >= 3000 || // 3秒运行时间
+            _lastPartialResult.isNotEmpty) { // 已有识别结果
+          shouldSwitchToNormal = true;
+        } else {
+          targetChunkSize = _minChunkSize; // 继续使用小块
+        }
+      }
+
       // 处理完整的音频块
-      while (_bufferLength >= _optimalChunkSize) {
+      while (_bufferLength >= targetChunkSize) {
         // 提取音频块（避免额外的内存分配）
-        final chunk = _audioBuffer.sublist(0, _optimalChunkSize);
+        final chunk = _audioBuffer.sublist(0, targetChunkSize);
 
         // 移动剩余数据（高效的内存操作）
-        final remaining = _bufferLength - _optimalChunkSize;
+        final remaining = _bufferLength - targetChunkSize;
         if (remaining > 0) {
-          _audioBuffer.setRange(0, remaining, _audioBuffer, _optimalChunkSize);
+          _audioBuffer.setRange(0, remaining, _audioBuffer, targetChunkSize);
         }
         _bufferLength = remaining;
 
-        // 非阻塞输入音频
+        // 🔧 FIX: 即时输入音频到识别器，无需等待
         _stream!.acceptWaveform(samples: chunk, sampleRate: _sampleRate.toInt());
+        _processedSamples += targetChunkSize;
 
         // 异步处理识别（不等待）
         _processRecognitionNonBlocking();
@@ -285,6 +321,11 @@ class StreamingAsrService {
           _lastCorrectedResult = correctedResult;
 
           _resultController.add(correctedResult);
+
+          // 🔧 FIX: 一旦有识别结果，立即切换到正常模式
+          if (_enableInstantProcessing) {
+            shouldSwitchToNormal = true;
+          }
         }
 
         // 检查端点
@@ -304,6 +345,13 @@ class StreamingAsrService {
           // 重置流
           _recognizer!.reset(_stream!);
           _lastPartialResult = '';
+        }
+
+        // 🔧 FIX: 执行模式切换
+        if (shouldSwitchToNormal && _enableInstantProcessing) {
+          _enableInstantProcessing = false;
+          targetChunkSize = _optimalChunkSize; // 立即切换到正常块大小
+          print('[StreamingAsrService] 🚀 切换到正常处理模式 (音频:${_totalAudioReceived}, 时间:${DateTime.now().difference(_startTime).inMilliseconds}ms, 结果:${_lastPartialResult.isNotEmpty})');
         }
       }
 
@@ -371,7 +419,7 @@ class StreamingAsrService {
         _stream!.acceptWaveform(samples: remaining, sampleRate: _sampleRate.toInt());
       }
 
-      // 添加适量静音来触发端点
+      // 添加适量静��来触发端点
       final silenceDuration = _silenceFrameCount > 10 ? 800 : 1600; // 根据静音情况调整
       final silence = Float32List(silenceDuration);
       _stream!.acceptWaveform(samples: silence, sampleRate: _sampleRate.toInt());

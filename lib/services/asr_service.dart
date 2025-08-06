@@ -20,6 +20,7 @@ import 'package:app/utils/text_utils.dart';
 import 'package:flutter/foundation.dart';
 import 'package:flutter/services.dart';
 import 'package:flutter_foreground_task/flutter_foreground_task.dart';
+import 'package:intl/intl.dart';
 import 'package:record/record.dart';
 import 'package:sherpa_onnx/sherpa_onnx.dart' as sherpa_onnx;
 import 'package:flutter_tts/flutter_tts.dart';
@@ -29,6 +30,7 @@ import 'package:linalg/linalg.dart';
 import '../constants/voice_constants.dart';
 import '../constants/record_constants.dart';
 import '../models/record_entity.dart';
+import '../models/summary_entity.dart';
 import '../models/speaker_entity.dart';
 import '../services/ble_service.dart';
 import '../services/objectbox_service.dart';
@@ -142,7 +144,7 @@ class RecordServiceHandler extends TaskHandler {
       _initBle();
       print('[onStart] ✅ BLE initialized');
 
-      print('[onStart] ☁������� Initializing cloud services...');
+      print('[onStart] ☁��������� Initializing cloud services...');
       await _cloudAsr.init();
       await _cloudTts.init();
       print('[onStart] ✅ Cloud services initialized');
@@ -560,7 +562,7 @@ class RecordServiceHandler extends TaskHandler {
     }
   }
 
-  // 处理音频数据（VAD、ASR、声纹识别等主流程）
+  // 处理音频数据���VAD、ASR、声纹识别等主流程）
   void _processAudioData(data, {String category = RecordEntity.categoryDefault}) async {
     // print('[_processAudioData] 🎤 Received audio data: ${data.length} bytes');
 
@@ -659,7 +661,7 @@ class RecordServiceHandler extends TaskHandler {
       final embedding = getSpeakerEmbedding(samples);
       print('[_processAudioData] ✅ Speaker embedding extracted: ${embedding.length}');
 
-      // 修复声纹录制逻辑：只有在有文本时才进行声纹验证
+      // 修复声纹录制��辑：只有在有文本时才进行声纹验证
       if (_isNeedVoiceprintInit) {
         print('[_processAudioData] 🗣️ VOICEPRINT MODE: _isNeedVoiceprintInit = true');
         if (text.trim().isNotEmpty) {
@@ -671,14 +673,20 @@ class RecordServiceHandler extends TaskHandler {
         }
       } else {
         print('[_processAudioData] 👤 Normal mode: identifying speaker...');
-        // 检查声纹质量
-        if (!_isEmbeddingQualityGood(embedding)) {
-          print('[_processAudioData] ⚠️ 声纹质量不佳，跳过识别');
-          currentSpeaker = 'others';
-        } else {
-          // 使用改进的说话人识别
-          currentSpeaker = _identifySpeaker(embedding);
-          print('[_processAudioData] 🎯 Speaker identified as: $currentSpeaker');
+        // 🔧 FIX: 简化声纹识别逻辑，避免阻塞ASR
+        try {
+          // 检查声纹质量
+          if (!_isEmbeddingQualityGood(embedding)) {
+            print('[_processAudioData] ⚠️ 声纹质量不佳，默认为user');
+            currentSpeaker = 'user'; // 默认为用户，避免阻塞
+          } else {
+            // 使用改进的说话人识别，但不阻塞ASR
+            currentSpeaker = _identifySpeaker(embedding);
+            print('[_processAudioData] 🎯 Speaker identified as: $currentSpeaker');
+          }
+        } catch (speakerError) {
+          print('[_processAudioData] ⚠️ Speaker identification failed: $speakerError, defaulting to user');
+          currentSpeaker = 'user'; // 识别失败时默认为用户
         }
       }
     }
@@ -853,7 +861,7 @@ class RecordServiceHandler extends TaskHandler {
       try {
         // 成功匹配，进入下一步
         currentStep++;
-        print('[_initVoiceprint] ✅ 步骤 ${currentStep-1} 完成，进入步骤 $currentStep');
+        print('[_initVoiceprint] ✅ 步骤 ${currentStep-1} 完成�����进入步骤 $currentStep');
 
         // 清空旧的用户声纹
         final existingNames = _manager!.allSpeakerNames.toList();
@@ -990,7 +998,7 @@ class RecordServiceHandler extends TaskHandler {
   String _identifySpeaker(Float32List embedding) {
     print('[_identifySpeaker] 🔍 开始说话人识别...');
 
-    // 检查是否有已注册的用户声纹
+    // 检查是否有��注册的用户声纹
     final userSpeakers = _objectBoxService.getUserSpeaker();
     if (userSpeakers == null || userSpeakers.isEmpty) {
       print('[_identifySpeaker] ⚠️ 没有注册的用户声纹，返回 others');
@@ -1012,7 +1020,7 @@ class RecordServiceHandler extends TaskHandler {
     final userEmbedding = Float32List.fromList(mainUser.embedding!);
     final similarity = _improvedCosineSimilarity(embedding, userEmbedding);
 
-    print('[_identifySpeaker] 📊 与主用户相似度: $similarity');
+    print('[_identifySpeaker] 📊 与主用户相��度: $similarity');
 
     // 动态阈值调整 - 根据历史数据调整
     double threshold = _calculateDynamicThreshold();
@@ -1070,7 +1078,7 @@ class RecordServiceHandler extends TaskHandler {
       return 0.65; // 默认阈值
     }
 
-    // 统计用户和其他人的记录比例
+    // 统计用户和其他人的��录比例
     int userCount = recentRecords.where((r) => r.role == 'user').length;
     int othersCount = recentRecords.where((r) => r.role == 'others').length;
 
@@ -1144,6 +1152,7 @@ class RecordServiceHandler extends TaskHandler {
       print('[自动总结] 超过最大字数，强制分段总结...');
       DialogueSummary.start(
         startTime: _currentDialogueStartTime,
+        onSummaryCallback: _handleSummaryGenerated,
       );
       _currentDialogueCharCount = 0;
       _lastSpeechTimestamp = 0;
@@ -1157,6 +1166,7 @@ class RecordServiceHandler extends TaskHandler {
       print('[自动总结] 满足条件，开始自动整理对话内容...');
       DialogueSummary.start(
         startTime: _currentDialogueStartTime,
+        onSummaryCallback: _handleSummaryGenerated,
       );
       _currentDialogueCharCount = 0;
       _lastSpeechTimestamp = 0;
@@ -1164,6 +1174,59 @@ class RecordServiceHandler extends TaskHandler {
     } else {
       print('[自动总结] 未满足自动总结条件');
     }
+  }
+
+  // 🔥 新增：处理摘要生成完成的回调
+  void _handleSummaryGenerated(List<SummaryEntity> summaries) {
+    print('[ASR] 📋 收到摘要生成完成通知，摘要数量: ${summaries.length}');
+
+    if (summaries.isEmpty) return;
+
+    try {
+      // 构建摘要显示内容
+      String summaryContent = _formatSummaryForDisplay(summaries);
+
+      // 通过FlutterForegroundTask发送摘要消息到主界面
+      FlutterForegroundTask.sendDataToMain({
+        'text': summaryContent,
+        'isEndpoint': true,
+        'speaker': 'system',
+        'isSummary': true, // 标识这是摘要消息
+      });
+
+      print('[ASR] ✅ 摘要消息已发送到主界面');
+
+    } catch (e) {
+      print('[ASR] ❌ 处理摘要显示时出错: $e');
+    }
+  }
+
+  // 🔥 新增：格式化摘要内容用于显示
+  String _formatSummaryForDisplay(List<SummaryEntity> summaries) {
+    StringBuffer buffer = StringBuffer();
+    buffer.writeln('📋 **对话总结**');
+    buffer.writeln('');
+
+    for (int i = 0; i < summaries.length; i++) {
+      SummaryEntity summary = summaries[i];
+
+      // 格式化时间
+      String startTimeStr = DateFormat('HH:mm').format(
+        DateTime.fromMillisecondsSinceEpoch(summary.startTime)
+      );
+      String endTimeStr = DateFormat('HH:mm').format(
+        DateTime.fromMillisecondsSinceEpoch(summary.endTime)
+      );
+
+      buffer.writeln('**${i + 1}. ${summary.subject}** (${startTimeStr}-${endTimeStr})');
+      buffer.writeln(summary.content);
+
+      if (i < summaries.length - 1) {
+        buffer.writeln('');
+      }
+    }
+
+    return buffer.toString();
   }
 }
 

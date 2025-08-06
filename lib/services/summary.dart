@@ -8,15 +8,23 @@ import 'package:intl/intl.dart';
 import 'package:app/services/knowledge_graph_service.dart';
 
 class DialogueSummary {
+  // 添加回调函数类型定义
+  static Function(List<SummaryEntity>)? onSummaryGenerated;
+
   // MainProcess, start the summarization process
-  static Future<void> start({int? startTime}) async {
+  static Future<void> start({int? startTime, Function(List<SummaryEntity>)? onSummaryCallback}) async {
     try {
+      // 设置回调函数
+      if (onSummaryCallback != null) {
+        onSummaryGenerated = onSummaryCallback;
+      }
+
       int? startSummaryTime = startTime;
       int? endTime = ObjectBoxService().getLastRecord()?.createdAt;
       print('[DialogueSummary] start called, startSummaryTime=$startSummaryTime, endTime=$endTime');
 
       if (endTime == null || (endTime - startSummaryTime! < 1 * 60 * 1000)) {
-        print('[DialogueSummary] return: 没有新对话或对话过短');
+        print('[DialogueSummary] return: 没有新对话�����对话过短');
         return;
       }
 
@@ -79,6 +87,22 @@ class DialogueSummary {
         // Insert the summary entities into the ObjectBox database
         await ObjectBoxService().insertSummaries(summaryEntities);
         print('[DialogueSummary] 摘要已写入数据库，数量: ${summaryEntities.length}');
+
+        // 🔥 新增：触发摘要生成完成的回调，在聊天框中显示摘要
+        print('[DialogueSummary] 🔍 检查回调函数状态: onSummaryGenerated=${onSummaryGenerated != null ? "已设置" : "未设置"}');
+        print('[DialogueSummary] 🔍 检查摘要实体数量: ${summaryEntities.length}');
+
+        if (onSummaryGenerated != null && summaryEntities.isNotEmpty) {
+          print('[DialogueSummary] 🎯 触发摘要显示回调，摘要数量: ${summaryEntities.length}');
+          try {
+            onSummaryGenerated!(summaryEntities);
+            print('[DialogueSummary] ✅ 摘要回调执行成功');
+          } catch (e) {
+            print('[DialogueSummary] ❌ 摘要回调执行失败: $e');
+          }
+        } else {
+          print('[DialogueSummary] ⚠️ 摘要回调未执行 - onSummaryGenerated: ${onSummaryGenerated != null}, summaryEntities.isNotEmpty: ${summaryEntities.isNotEmpty}');
+        }
       } else {
         print('[DialogueSummary] summary为null，未生成摘要');
       }
@@ -126,7 +150,7 @@ class DialogueSummary {
 
       // ========== 知识图谱处理 ==========
       // 在生成摘要后，利用已有的对话历史数据进行知识图谱事件提取
-      print("[DialogueSummary] 🔗 开始执行自动知识图谱事件提取...");
+      print("[DialogueSummary] 🔗 开始执行自动知识图��事件提取...");
       try {
         print('[DialogueSummary] 调用 KnowledgeGraphService.processEventsFromConversation, chatHistory 长度: ${chatHistory.length}, contextId: ${DateTime.now().millisecondsSinceEpoch.toString()}');
         await KnowledgeGraphService.processEventsFromConversation(chatHistory, contextId: DateTime.now().millisecondsSinceEpoch.toString());
