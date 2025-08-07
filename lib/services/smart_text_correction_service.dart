@@ -362,7 +362,7 @@ class SmartTextCorrectionService {
           'Authorization': 'Bearer $_apiKey',
         },
         body: json.encode({
-          'model': 'gpt-3.5-turbo', // 轻量级模型
+          'model': 'gpt-4o-mini', // 轻量级模型
           'messages': [
             {
               'role': 'system',

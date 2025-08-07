@@ -91,7 +91,7 @@ class DialogueSummary {
         // 🔥 新增：触发摘要生成完成的回调，在聊天框中显示摘要
         print('[DialogueSummary] 🔍 检查回调函数状态: onSummaryGenerated=${onSummaryGenerated != null ? "已设置" : "未设置"}');
         print('[DialogueSummary] 🔍 检查摘要实体数量: ${summaryEntities.length}');
-
+        
         if (onSummaryGenerated != null && summaryEntities.isNotEmpty) {
           print('[DialogueSummary] 🎯 触发摘要显示回调，摘要数量: ${summaryEntities.length}');
           try {

@@ -64,13 +64,13 @@ class ChatController extends ChangeNotifier {
   // 🔥 新增：处理摘要生成完成的回调
   void _handleSummaryGenerated(List<SummaryEntity> summaries) {
     print('[ChatController] 📋 收到摘要生成完成通知，摘要数量: ${summaries.length}');
-
+    
     if (summaries.isEmpty) return;
 
     try {
       // 构建摘要显示内容
       String summaryContent = _formatSummaryForDisplay(summaries);
-
+      
       // 在聊天框中插入系统摘要消息
       insertNewMessage({
         'id': const Uuid().v4(),
@@ -79,10 +79,10 @@ class ChatController extends ChangeNotifier {
       });
 
       print('[ChatController] ✅ 摘要消息已插入聊天��');
-
+      
       // 自���滚动到底部显示新消息
       firstScrollToBottom();
-
+      
     } catch (e) {
       print('[ChatController] ❌ 处理摘要显示时出错: $e');
     }
@@ -93,10 +93,10 @@ class ChatController extends ChangeNotifier {
     StringBuffer buffer = StringBuffer();
     buffer.writeln('📋 **对话总结**');
     buffer.writeln('');
-
+    
     for (int i = 0; i < summaries.length; i++) {
       SummaryEntity summary = summaries[i];
-
+      
       // 格式化时间
       String startTimeStr = DateFormat('HH:mm').format(
         DateTime.fromMillisecondsSinceEpoch(summary.startTime)
@@ -104,15 +104,15 @@ class ChatController extends ChangeNotifier {
       String endTimeStr = DateFormat('HH:mm').format(
         DateTime.fromMillisecondsSinceEpoch(summary.endTime)
       );
-
+      
       buffer.writeln('**${i + 1}. ${summary.subject}** (${startTimeStr}-${endTimeStr})');
       buffer.writeln(summary.content);
-
+      
       if (i < summaries.length - 1) {
         buffer.writeln('');
       }
     }
-
+    
     return buffer.toString();
   }
 
@@ -121,7 +121,7 @@ class ChatController extends ChangeNotifier {
     try {
       print('[ChatController] 🚀 手动触发摘要生成...');
       await DialogueSummary.start(
-        startTime: startTime,
+        startTime: startTime, 
         onSummaryCallback: _handleSummaryGenerated
       );
     } catch (e) {

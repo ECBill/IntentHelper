@@ -6,7 +6,7 @@ void main() async {
   final url = Uri.parse('https://one-api.bud.inc/v1/chat/completions');
   final headers = {
     'Content-Type': 'application/json',
-    'Authorization': 'Bearer wVbCttDJzWZYQQnw0103639b2b434a05A45987Df763bA0B5' // 替换为你的API KEY
+    'Authorization': 'Bearer XrSwOjZhHWH9qjCrBb7970CdF3A14c1e88DdA3F9516627B4' // 替换为你的API KEY
   };
   final now = DateTime.now();
   final timeContext = "${now.year}年${now.month.toString().padLeft(2, '0')}月${now.day.toString().padLeft(2, '0')}日";

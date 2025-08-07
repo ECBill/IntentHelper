@@ -59,7 +59,7 @@ class CacheItem {
     final priorityFactor = priority.value.toDouble();
     final relevanceFactor = relevanceScore;
 
-    // 综合权重算法：优先级 + 相关性 + 访问频率 - 时间衰减
+    // ���合权重算法：优先级 + 相关性 + 访问频率 - 时间衰减
     return (priorityFactor * 2.0 + relevanceFactor + accessFactor * 0.5) / (timeFactor + 1.0);
   }
 }
@@ -101,7 +101,7 @@ class ConversationFocusDetector {
       shouldUpdate = true;
     }
 
-    // 3. 降低更新门槛 - 只要有实质内容就分析
+    // 3. 降低更新门槛 - 只要��实质内容就分析
     if (newText.trim().length > 5 && _messagesSinceLastUpdate >= 1) {
       print('[FocusDetector] 📈 内容足够，触发分析');
       shouldUpdate = true;
@@ -329,7 +329,7 @@ class ConversationCache {
     final timeFormatter = DateFormat('yyyy-MM-dd HH:mm:ss');
     final formattedTime = timeFormatter.format(currentTime);
 
-    _llm = await LLM.create('gpt-3.5-turbo',
+    _llm = await LLM.create('gpt-4o-mini',
         systemPrompt: '''你是一个专业的对话分析专家，擅长精细化实体识别、语义分析和待办事项检测。
 
 当前时间：$formattedTime
@@ -375,13 +375,13 @@ class ConversationCache {
   "implicit_entities": ["推断出的概念1", "概念2"],
   "topics": ["主要话题1", "话题2"],
   "intent": "用户意图",
-  "emotion": "情��������",
+  "emotion": "情绪状态",
   "focus_summary": "详细的关注点总结",
   "semantic_analysis": {
     "life_scenes": ["生活场景"],
     "work_context": ["工作相关"],
     "interests": ["兴趣相关"],
-    "needs": ["可能的���求"]
+    "needs": ["可能的需求"]
   },
   "todos": [
     {
@@ -461,7 +461,7 @@ class ConversationCache {
 
   /// 处理背景对话（实时监听）
   Future<void> processBackgroundConversation(String conversationText) async {
-    print('[ConversationCache] 🚀 开始处理背景对话');
+    print('[ConversationCache] 🚀 开��处理背景对话');
     print('[ConversationCache] 📝 输入文本: "${conversationText.substring(0, conversationText.length > 100 ? 100 : conversationText.length)}..."');
     print('[ConversationCache] 📏 文本长度: ${conversationText.length}');
 
@@ -549,7 +549,7 @@ class ConversationCache {
 
     } catch (e) {
       print('[ConversationCache] ❌ 分析和更新缓存失败: $e');
-      // 添加基本的分析结果，确保有内容
+      // 添加基��的分析结果，确保有内容
       final context = _focusDetector.getRecentContext();
       final fallbackAnalysis = _createFallbackAnalysis(context);
       _focusDetector.updateCurrentFocus(fallbackAnalysis);
@@ -595,7 +595,7 @@ $context
 
       final kgCacheItem = CacheItem(
         key: 'kg_node_${node.id}_${DateTime.now().millisecondsSinceEpoch}',
-        content: '知识图谱节点: ${node.name} (${node.type})。相关性: ${relevanceData.reason}',
+        content: '知���图谱节点: ${node.name} (${node.type})。相关性: ${relevanceData.reason}',
         priority: _determineKGPriority(relevanceData.score),
         relatedTopics: _extractTopicsFromKGAnalysis(kgResult.analysis),
         createdAt: DateTime.now(),
@@ -890,7 +890,7 @@ $context
     );
     _addToCache(summaryItem);
 
-    // 🔥 新增：为显式实体创建缓存项
+    // 🔥 新增：为显式实体创建缓���项
     for (final entity in explicitEntities) {
       final entityItem = CacheItem(
         key: 'explicit_entity_${entity}_${DateTime.now().millisecondsSinceEpoch}',

@@ -85,7 +85,7 @@ class StreamingAsrService {
       _processedSamples = 0;
       _totalAudioReceived = 0;
       _startTime = DateTime.now();
-
+      
       _isInitialized = true;
       print('[StreamingAsrService] 🎉 Optimized streaming ASR initialized successfully');
 
@@ -275,14 +275,14 @@ class StreamingAsrService {
       // 🔧 FIX: 改进的即时处理模式切换逻辑
       int targetChunkSize = _optimalChunkSize;
       bool shouldSwitchToNormal = false;
-
+      
       if (_enableInstantProcessing) {
         // 多条件判断是否应该��换到正常模式：
         // 1. 已接收足够的音频数据 (1秒)
         // 2. 或者运行时间超过3秒
         // 3. 或者已经有识别结果输出
         final elapsedMs = DateTime.now().difference(_startTime).inMilliseconds;
-
+        
         if (_totalAudioReceived >= 16000 || // 1秒的音频数据
             elapsedMs >= 3000 || // 3秒运行时间
             _lastPartialResult.isNotEmpty) { // 已有识别结果
@@ -321,7 +321,7 @@ class StreamingAsrService {
           _lastCorrectedResult = correctedResult;
 
           _resultController.add(correctedResult);
-
+          
           // 🔧 FIX: 一旦有识别结果，立即切换到正常模式
           if (_enableInstantProcessing) {
             shouldSwitchToNormal = true;

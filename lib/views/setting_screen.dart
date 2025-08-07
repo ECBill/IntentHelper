@@ -10,6 +10,7 @@ import 'package:app/views/ui/bud_card.dart';
 import 'package:app/views/ui/bud_icon.dart';
 import 'package:app/views/ui/bud_switch.dart';
 import 'package:app/views/ui/layout/bud_scaffold.dart';
+import 'package:app/views/human_understanding_dashboard.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_screenutil/flutter_screenutil.dart';
 import 'package:get/get.dart';
@@ -169,6 +170,15 @@ class _SettingScreenState extends State<SettingScreen> {
     context.pushNamed(RouteName.todo);
   }
 
+  /// 点击人类理解系统入口
+  void _onClickHumanUnderstanding() {
+    Navigator.of(context).push(
+      MaterialPageRoute(
+        builder: (context) => const HumanUnderstandingDashboard(),
+      ),
+    );
+  }
+
   @override
   Widget build(BuildContext context) {
     final themeNotifier = Provider.of<ThemeNotifier>(context);
@@ -264,6 +274,12 @@ class _SettingScreenState extends State<SettingScreen> {
                 title: 'Todo List',
                 subtitle: 'View and manage your tasks',
                 onTap: _onClickTodo,
+              ),
+              SettingListTile(
+                leading: AssetsUtil.icon_about, // 临时使用现有图标
+                title: 'Human Understanding',
+                subtitle: 'Advanced AI understanding system',
+                onTap: _onClickHumanUnderstanding,
               ),
             ],
           ),

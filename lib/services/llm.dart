@@ -10,7 +10,7 @@ class LLM {
   late String systemPrompt;
 
   static final String defaultBaseUrl = 'https://one-api.bud.inc/v1/chat/completions';
-  static const String localApiKey = 'wVbCttDJzWZYQQnw0103639b2b434a05A45987Df763bA0B5';
+  static const String localApiKey = 'XrSwOjZhHWH9qjCrBb7970CdF3A14c1e88DdA3F9516627B4';
 
   LLM._(this.modelName, this.apiKey, this.baseUrl, this.systemPrompt);
 
