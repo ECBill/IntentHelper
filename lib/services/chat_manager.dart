@@ -1,22 +1,21 @@
 import 'dart:async';
 import 'dart:convert';
 
-import 'package:app/services/smart_kg_service.dart';
 import 'package:app/services/enhanced_kg_service.dart';
 import 'package:app/services/conversation_cache.dart';
-import 'package:app/models/graph_models.dart';
+import 'package:app/services/personalized_understanding_service.dart';
 import 'package:intl/intl.dart';
 
 import '../models/chat_session.dart';
 import '../models/record_entity.dart';
 import '../services/llm.dart';
 import '../services/objectbox_service.dart';
-import '../services/knowledge_graph_service.dart';
 
 class ChatManager {
   final ChatSession chatSession = ChatSession();
   late LLM _llm;
   late EnhancedKGService _enhancedKGService;
+  late PersonalizedUnderstandingService _personalizedService; // 🔥 新增：个性化理解服务
   late ConversationCache _conversationCache;
 
   ChatManager();
@@ -26,13 +25,18 @@ class ChatManager {
     _llm = await LLM.create(selectedModel, systemPrompt: systemPrompt);
     _enhancedKGService = EnhancedKGService();
     _conversationCache = ConversationCache();
+    _personalizedService = PersonalizedUnderstandingService(); // 初始化个性化理解服务
 
     // 初始化缓存系统
     print('[ChatManager] 🔄 初始化对话缓存系统...');
     await _conversationCache.initialize();
 
+    // 🔥 新增：初始化个性化理解服务
+    print('[ChatManager] 🧠 初��化个性化理解服务...');
+    await _personalizedService.initialize();
+
     List<RecordEntity>? recentRecords = ObjectBoxService().getTermRecords();
-    print('[ChatManager] 📚 加载最近对话记录: ${recentRecords?.length ?? 0} 条');
+    print('[ChatManager] 📚 加载最近对话记��: ${recentRecords?.length ?? 0} 条');
 
     recentRecords?.forEach((RecordEntity recordEntity) {
       String formattedTime = DateFormat('yyyy-MM-dd HH:mm').format(DateTime.fromMillisecondsSinceEpoch(recordEntity.createdAt!));
@@ -62,7 +66,8 @@ class ChatManager {
     var content = "";
     var jsonObj = {};
 
-    var userInputWithKG = await buildInputWithKG(text);
+    // 🔥 修复：使用智能选择的输入构建方法
+    var userInputWithKG = await buildOptimalInput(text);
     var messages = [{"role": "user", "content": userInputWithKG}];
 
     final responseStream = _llm.createStreamingRequest(messages: messages);
@@ -104,7 +109,7 @@ class ChatManager {
 
     // 🔥 关键修复：处理助手回复，也添加到缓存系统
     if (content.trim().isNotEmpty) {
-      print('[ChatManager] 🤖 处理助手回��缓存: "${content.substring(0, content.length > 30 ? 30 : content.length)}..."');
+      print('[ChatManager] 🤖 处理助手回复缓存: "${content.substring(0, content.length > 30 ? 30 : content.length)}..."');
       await _conversationCache.processBackgroundConversation(content);
     }
 
@@ -116,15 +121,16 @@ class ChatManager {
     print('[ChatManager] 🚀 处理非流式请求: "${text.substring(0, text.length > 50 ? 50 : text.length)}..."');
 
     // 🔥 关键修复：处理用户输入
-    print('[ChatManager] 📝 ��发对话缓存分析...');
+    print('[ChatManager] 📝 触发对话缓存分析...');
     await _conversationCache.processBackgroundConversation(text);
 
-    final content = await buildInputWithKG(text);
+    // 🔥 修复：使用智能选择的输入构建方法
+    final content = await buildOptimalInput(text);
     final response = await _llm.createRequest(content: content);
 
     // 🔥 关键修复：处理助手回复
     if (response.trim().isNotEmpty) {
-      print('[ChatManager] 🤖 处理��手回复缓存: "${response.substring(0, response.length > 30 ? 30 : response.length)}..."');
+      print('[ChatManager] 🤖 处理助手回复缓存: "${response.substring(0, response.length > 30 ? 30 : response.length)}..."');
       await _conversationCache.processBackgroundConversation(response);
     }
 
@@ -139,7 +145,7 @@ class ChatManager {
 
   // 智能版本：构建个性化输入，注入知识图谱信息
   Future<String> buildInputWithKG(String userInput) async {
-    // 修复：获取ChatSession对象而不是String
+    // 修复��获取ChatSession对象而不是String
     final chatSessionObj = chatSession; // 使用类的chatSession属性
     DateTime now = DateTime.now();
 
@@ -278,57 +284,325 @@ $kgInfo
     }
   }
 
-  // 获取当前用户个人信息关注点摘要
+  // 🔥 新增：基于人类理解系统的LLM输入构建方法
+  /// 使用人类理解系统构建个性化的LLM输入
+  /// 这是基于语义理解的新方法，比传统知识图谱方法更准确
+  Future<String> buildInputWithSemanticUnderstanding(String userInput) async {
+    print('[ChatManager] 🧠 使用人类理解系统构建个性化输入...');
+
+    try {
+      // 提取用户输入中的关键词
+      final keywords = _extractKeywords(userInput);
+
+      // 从个性化理解服务获取结构化的LLM输入
+      final llmInput = await _personalizedService.buildLLMInput(
+        userInput: userInput,
+        contextKeywords: keywords,
+        includeDetailedHistory: false, // 默认不包含详细历史，提高响应速度
+      );
+
+      // 构建最终的LLM提示
+      final contextualPrompt = _buildContextualPrompt(userInput, llmInput);
+
+      print('[ChatManager] ✅ 基于语义理解的个性化输入构建完成');
+      return contextualPrompt;
+
+    } catch (e) {
+      print('[ChatManager] ❌ 语义理解输入构建失败: $e');
+      // 降级到基础输入
+      return _buildBasicInput(userInput);
+    }
+  }
+
+  // 🔥 新增：智能选择最佳输入构建方法
+  /// 智能选择使用哪种方法构建LLM输入
+  /// 优先使用语义理解，失败时降级到知识图谱缓存
+  Future<String> buildOptimalInput(String userInput) async {
+    print('[ChatManager] 🎯 智能选择最佳输入构建方法...');
+
+    try {
+      // 首先尝试使用人类理解系统
+      final semanticInput = await buildInputWithSemanticUnderstanding(userInput);
+      if (semanticInput.isNotEmpty && !semanticInput.contains('基础输入')) {
+        print('[ChatManager] ✅ 使用语义理解系统构建输入');
+        return semanticInput;
+      }
+    } catch (e) {
+      print('[ChatManager] ⚠️ 语义理解系统构建失败，降级到知识图谱: $e');
+    }
+
+    try {
+      // 降级到知识图谱缓存方法
+      final kgInput = await buildInputWithKG(userInput);
+      print('[ChatManager] ✅ 使用知识图谱缓存构建输���');
+      return kgInput;
+    } catch (e) {
+      print('[ChatManager] ⚠️ 知识图谱方法也失败，使用基础输入: $e');
+      return _buildBasicInput(userInput);
+    }
+  }
+
+  // 🔥 新增：获取个性化对话建议
+  /// 基于人类理解系统获取对话建议
+  Future<Map<String, dynamic>> getPersonalizedConversationSuggestions() async {
+    try {
+      final personalizedContext = await _personalizedService.generatePersonalizedContext();
+
+      return {
+        'suggestions': personalizedContext.contextualRecommendations,
+        'current_state': personalizedContext.currentSemanticState,
+        'user_profile': personalizedContext.longTermProfile,
+        'generated_at': personalizedContext.generatedAt.toIso8601String(),
+      };
+    } catch (e) {
+      print('[ChatManager] ❌ 获取个性化建议失败: $e');
+      return {};
+    }
+  }
+
+  // 🔥 新增：获取用户当前理解状态
+  /// 获取人类理解系统对用户的当前理解状态
+  Map<String, dynamic> getCurrentUnderstandingState() {
+    try {
+      return _personalizedService.getDebugInfo();
+    } catch (e) {
+      print('[ChatManager] ❌ 获取理解状态失败: $e');
+      return {};
+    }
+  }
+
+  // 🔥 新增：主动生成对话响应
+  /// 基于用户状态主动生成有价值的对话内容
+  Future<String> generateProactiveResponse() async {
+    try {
+      print('[ChatManager] 🤖 生成主动对话响应...');
+
+      // 获取个性化上下文
+      final personalizedContext = await _personalizedService.generatePersonalizedContext();
+
+      // 构建主动响应的LLM输入
+      final proactivePrompt = _buildProactivePrompt(personalizedContext);
+
+      // 调用LLM生成主动响应
+      final response = await _llm.createRequest(content: proactivePrompt);
+
+      print('[ChatManager] ✅ 主动响应生成完成');
+      return response;
+
+    } catch (e) {
+      print('[ChatManager] ❌ 生成主动响应失败: $e');
+      return '我正在学习更好地理解你，有什么我可以帮助你的吗？';
+    }
+  }
+
+  // 🔥 新增：辅助方法 - 提取关键词
+  List<String> _extractKeywords(String input) {
+    final keywords = <String>[];
+    final content = input.toLowerCase();
+
+    // 技术相关关键词
+    if (content.contains('flutter')) keywords.add('flutter');
+    if (content.contains('编程') || content.contains('代码')) keywords.add('编程');
+    if (content.contains('学习')) keywords.add('学习');
+    if (content.contains('项目')) keywords.add('项目');
+    if (content.contains('工作')) keywords.add('工作');
+    if (content.contains('问题')) keywords.add('问题');
+    if (content.contains('计划') || content.contains('规划')) keywords.add('规划');
+
+    return keywords;
+  }
+
+  // 🔥 新增：构建上下文化提示
+  String _buildContextualPrompt(String userInput, Map<String, dynamic> llmInput) {
+    final currentState = llmInput['user_current_state'] as Map<String, dynamic>? ?? {};
+    final profileSummary = llmInput['user_profile_summary'] as Map<String, dynamic>? ?? {};
+    final suggestions = llmInput['contextual_suggestions'] as Map<String, dynamic>? ?? {};
+    final guidelines = llmInput['conversation_guidelines'] as Map<String, dynamic>? ?? {};
+
+    final contextHistory = chatSession.chatHistory.items.take(5).map((chat) {
+      return "${chat.role}: ${chat.txt}";
+    }).join('\n');
+
+    final timeContext = DateFormat('yyyy年MM月dd日 HH:mm').format(DateTime.now());
+
+    return """
+## 用户输入
+$userInput
+
+## 对话历史
+$contextHistory
+
+## 当前时间
+$timeContext
+
+## 用户当前状态
+焦点水平: ${currentState['focus_level'] ?? '中等'}
+主要意图: ${(currentState['primary_intents'] as List?)?.join('、') ?? '无明确意图'}
+认知容量: ${(currentState['cognitive_capacity'] as Map?)?['load_level'] ?? '正常'}
+当前话题: ${(currentState['current_topics'] as List?)?.join('、') ?? '无特定话题'}
+
+## 用户档案概览
+专业领域: ${(profileSummary['expertise_areas'] as List?)?.join('、') ?? '待了解'}
+互动风格: ${profileSummary['interaction_style'] ?? '平衡型'}
+偏好话题: ${(profileSummary['preferred_topics'] as List?)?.join('、') ?? '多样化'}
+目标导向: ${profileSummary['goal_orientation'] ?? '中等'}
+
+## 个性化建议
+${_formatSuggestions(suggestions)}
+
+## 对话指导原则
+交流风格: ${guidelines['communication_style'] ?? '平衡'}
+回复长度: ${guidelines['response_length'] ?? '适中'}
+个性化程度: ${guidelines['personalization_level'] ?? '中等'}
+
+请基于以上个性化信息，用自然、贴切的方式回答用户问题。要体现出对用户状态和偏好的理解，但不要明显暴露这些分析信息。
+""";
+  }
+
+  // 🔥 新增：构建基础输入（降级方案）
+  String _buildBasicInput(String userInput) {
+    final contextHistory = chatSession.chatHistory.items.take(5).map((chat) {
+      return "${chat.role}: ${chat.txt}";
+    }).join('\n');
+
+    final timeContext = DateFormat('yyyy年MM月dd日 HH:mm').format(DateTime.now());
+
+    return """
+用户输入：$userInput
+
+对话历史：
+$contextHistory
+
+时间：$timeContext
+
+请基于以上信息回答用户的问题。
+""";
+  }
+
+  // 🔥 新增：构建主动响应提示
+  String _buildProactivePrompt(personalizedContext) {
+    final currentState = personalizedContext.currentSemanticState;
+    final recommendations = personalizedContext.contextualRecommendations;
+
+    return """
+## 用户状态分析
+${_formatCurrentState(currentState)}
+
+## 个性化建议
+${_formatRecommendations(recommendations)}
+
+## 任务指令
+基于用户���前状态和个性��建议，生成一条主动的、有价值的对话内容。要求：
+1. 自然、不突兀，像朋友间的关心
+2. 具体、实用，能够帮助用户
+3. 简洁明了，不超过100字
+4. 体现个性化理解，但不明显暴露分析过程
+
+请生成一条主动对话：
+""";
+  }
+
+  // 🔥 新增：格式化当前状态
+  String _formatCurrentState(Map<String, dynamic> currentState) {
+    final cognitiveState = currentState['cognitive_state'] as Map<String, dynamic>? ?? {};
+    final activeIntents = currentState['active_intents'] as Map<String, dynamic>? ?? {};
+
+    return """
+认知状态: ${cognitiveState['load_level'] ?? '正常'}
+活跃意图数量: ${activeIntents['count'] ?? 0}
+主要关注领域: ${(activeIntents['categories'] as Map?)?.keys.join('、') ?? '无'}
+""";
+  }
+
+  // 🔥 新增：格式化建议
+  String _formatSuggestions(Map<String, dynamic> suggestions) {
+    final buffer = StringBuffer();
+
+    suggestions.forEach((key, value) {
+      if (value is String && value.isNotEmpty) {
+        buffer.writeln('- $value');
+      }
+    });
+
+    return buffer.toString().isEmpty ? '暂无特殊建议' : buffer.toString();
+  }
+
+  // 🔥 新增：格式化推荐
+  String _formatRecommendations(Map<String, dynamic> recommendations) {
+    final buffer = StringBuffer();
+
+    final immediateActions = recommendations['immediate_actions'] as Map<String, dynamic>? ?? {};
+    final optimizationOpportunities = recommendations['optimization_opportunities'] as Map<String, dynamic>? ?? {};
+
+    if (immediateActions.isNotEmpty) {
+      buffer.writeln('立即行动建议:');
+      immediateActions.values.forEach((action) {
+        if (action is String) buffer.writeln('- $action');
+      });
+    }
+
+    if (optimizationOpportunities.isNotEmpty) {
+      buffer.writeln('优化机会:');
+      optimizationOpportunities.values.forEach((opportunity) {
+        if (opportunity is String) buffer.writeln('- $opportunity');
+      });
+    }
+
+    return buffer.toString().isEmpty ? '继续保持当前状态' : buffer.toString();
+  }
+
+  // 🔥 新增：添加缺失的方法
+  /// 获取当前用户个人信息关注点摘要
   List<String> getCurrentPersonalFocusSummary() {
     return _conversationCache.getCurrentPersonalFocusSummary();
   }
 
-  // 获取相关的个人信息用于生成
+  /// 获取相关的个人信息用于生成
   Map<String, dynamic> getRelevantPersonalInfoForGeneration() {
     return _conversationCache.getRelevantPersonalInfoForGeneration();
   }
 
-  // 获取缓存性能统计
+  /// 获取缓存性能统计
   Map<String, dynamic> getCachePerformance() {
     return _conversationCache.getCacheStats();
   }
 
-  // 获取所有缓存项
+  /// 获取所有缓存项
   List<CacheItem> getAllCacheItems() {
     return _conversationCache.getAllCacheItems();
   }
 
-  // 按分类获取缓存项
+  /// 按分类获取缓存项
   List<CacheItem> getCacheItemsByCategory(String category) {
     return _conversationCache.getCacheItemsByCategory(category);
   }
 
-  // 获取最近的对话摘要
+  /// 获取最近的对话摘要
   List<ConversationSummary> getRecentSummaries({int limit = 10}) {
     return _conversationCache.getRecentSummaries(limit: limit);
   }
 
-  // 获取当前对话上下文
+  /// 获取当前对话上下文
   ConversationContext? getCurrentConversationContext() {
     return _conversationCache.getCurrentConversationContext();
   }
 
-  // 获取用户个人上下文
+  /// 获取用户个人上下文
   UserPersonalContext? getUserPersonalContext() {
     return _conversationCache.getUserPersonalContext();
   }
 
-  // 获取主动交互建议
+  /// 获取主动交互建议
   Map<String, dynamic> getProactiveInteractionSuggestions() {
     return _conversationCache.getProactiveInteractionSuggestions();
   }
 
-  // 获取缓存项详细信息
+  /// 获取缓存项详细信息
   Map<String, dynamic> getCacheItemDetails(String key) {
     return _conversationCache.getCacheItemDetails(key);
   }
 
-  // 清空缓存
+  /// 清空缓存
   void clearCache() {
     _conversationCache.clearCache();
   }
