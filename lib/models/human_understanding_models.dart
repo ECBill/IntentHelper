@@ -23,12 +23,12 @@ class Intent {
   DateTime createdAt;
   DateTime lastUpdated;
   DateTime? completedAt;
-
+  
   // 意图上下文
   List<String> triggerPhrases; // 触发短语
   List<String> relatedEntities; // 相关实体
   Map<String, dynamic> context; // 上下文信息
-
+  
   // 生命周期轨迹
   List<IntentStateTransition> stateHistory;
 
@@ -58,8 +58,8 @@ class Intent {
     stateHistory = [...stateHistory, transition];
     state = newState;
     lastUpdated = DateTime.now();
-
-    if (newState == IntentLifecycleState.completed ||
+    
+    if (newState == IntentLifecycleState.completed || 
         newState == IntentLifecycleState.abandoned) {
       completedAt = DateTime.now();
     }
@@ -124,13 +124,13 @@ class ConversationTopic {
   double relevanceScore; // 当前相关性分数
   DateTime createdAt;
   DateTime lastMentioned;
-
+  
   // 主题内容
   List<String> keywords; // 关键词
   List<String> entities; // 相关实体
   List<String> relatedIntentIds; // 关联意图ID
   Map<String, dynamic> context; // 主题上下文
-
+  
   // 主题演进
   List<TopicEvolution> evolutionHistory;
 
@@ -222,7 +222,7 @@ class CausalRelation {
   CausalRelationType type;
   double confidence; // 置信度
   DateTime extractedAt;
-
+  
   // 上下文
   String sourceText; // 来源文本
   List<String> involvedEntities; // 涉及的实体
@@ -264,7 +264,7 @@ class SemanticTriple {
   String object;    // 宾语
   double confidence; // 置信度
   DateTime createdAt;
-
+  
   // 元数据
   String sourceContext; // 来源上下文
   List<String> supportingEvidence; // 支持证据
@@ -311,17 +311,17 @@ class CognitiveLoadAssessment {
   final DateTime timestamp;
   CognitiveLoadLevel level;
   double score; // 0-1 负载分数
-
+  
   // 负载因子
   Map<String, double> factors; // 各类因子的贡献分数
-
+  
   // 详细指标
   int activeIntentCount;     // 活跃意图数量
   int activeTopicCount;      // 活跃主题数量
   double emotionalIntensity; // 情绪强度
   double topicSwitchRate;    // 话题切换频率
   double complexityScore;    // 语言复杂度
-
+  
   String recommendation; // 建议
 
   CognitiveLoadAssessment({

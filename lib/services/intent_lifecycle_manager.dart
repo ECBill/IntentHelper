@@ -66,8 +66,30 @@ class IntentLifecycleManager {
 
   /// 提取新意图
   Future<List<Intent>> _extractNewIntents(SemanticAnalysisInput analysis) async {
+    // 🔥 修复：首先尝试LLM提取，失败则使用规则提取
+    try {
+      final llmIntents = await _extractIntentsWithLLM(analysis);
+      if (llmIntents.isNotEmpty) {
+        print('[IntentLifecycleManager] ✅ LLM成功提取 ${llmIntents.length} 个意图');
+        return llmIntents;
+      }
+    } catch (e) {
+      print('[IntentLifecycleManager] ⚠️ LLM提取失败，使用规则提取: $e');
+    }
+
+    // 🔥 备用方案：基于规则的意图提取
+    final ruleBasedIntents = _extractIntentsWithRules(analysis);
+    if (ruleBasedIntents.isNotEmpty) {
+      print('[IntentLifecycleManager] ✅ 规则提取 ${ruleBasedIntents.length} 个意图');
+    }
+
+    return ruleBasedIntents;
+  }
+
+  /// 使用LLM提取意图
+  Future<List<Intent>> _extractIntentsWithLLM(SemanticAnalysisInput analysis) async {
     final intentExtractionPrompt = '''
-你是一个意图识别专家。请从用户的对话中识别具体的意图，重点关注用户想要做什么、计划什么、需要什么。
+你是一个意图识�����专家。请从用户的对话中识别具体的意图，重点关注用户想要做什么、计划什么、需要什么。
 
 【重要原则】：
 1. 只识别明确的、可执行的意图，避免过度解读
@@ -108,64 +130,244 @@ class IntentLifecycleManager {
 当前检测到的情绪：${analysis.emotion}
 ''';
 
-    try {
-      final llm = await LLM.create('gpt-4o-mini', systemPrompt: intentExtractionPrompt);
-      final response = await llm.createRequest(content: analysis.content);
+    final llm = await LLM.create('gpt-4o-mini', systemPrompt: intentExtractionPrompt);
+    final response = await llm.createRequest(content: analysis.content);
 
-      final jsonStart = response.indexOf('[');
-      final jsonEnd = response.lastIndexOf(']');
-      if (jsonStart == -1 || jsonEnd == -1) {
-        return [];
-      }
+    print('[IntentLifecycleManager] 🤖 LLM响应: ${response.substring(0, response.length > 200 ? 200 : response.length)}...');
 
-      final jsonStr = response.substring(jsonStart, jsonEnd + 1);
-      final List<dynamic> intentsData = jsonDecode(jsonStr);
-
-      final newIntents = <Intent>[];
-      for (final intentData in intentsData) {
-        if (intentData is Map) {
-          final intent = Intent(
-            description: intentData['description']?.toString() ?? '',
-            category: intentData['category']?.toString() ?? 'task',
-            confidence: (intentData['confidence'] as num?)?.toDouble() ?? 0.5,
-            triggerPhrases: (intentData['trigger_phrases'] as List?)?.map((e) => e.toString()).toList() ?? [],
-            relatedEntities: (intentData['related_entities'] as List?)?.map((e) => e.toString()).toList() ?? analysis.entities,
-            context: {
-              'urgency': intentData['urgency']?.toString() ?? 'medium',
-              'timeframe': intentData['timeframe']?.toString() ?? 'medium',
-              'source_emotion': analysis.emotion,
-              'source_content': analysis.content,
-              ...((intentData['context'] as Map?) ?? {}),
-            },
-          );
-
-          // 检查是否与现有意图重复
-          if (!_isDuplicateIntent(intent)) {
-            _activeIntents[intent.id] = intent;
-            newIntents.add(intent);
-            _intentUpdatesController.add(intent);
-            print('[IntentLifecycleManager] 🎯 新增意图: ${intent.description}');
-          }
-        }
-      }
-
-      return newIntents;
-
-    } catch (e) {
-      print('[IntentLifecycleManager] ❌ 提取新意图失败: $e');
+    final jsonStart = response.indexOf('[');
+    final jsonEnd = response.lastIndexOf(']');
+    if (jsonStart == -1 || jsonEnd == -1) {
+      print('[IntentLifecycleManager] ⚠️ LLM响应中未找到JSON数组');
       return [];
     }
+
+    final jsonStr = response.substring(jsonStart, jsonEnd + 1);
+    print('[IntentLifecycleManager] 📄 提取的JSON: $jsonStr');
+
+    final List<dynamic> intentsData = jsonDecode(jsonStr);
+
+    final newIntents = <Intent>[];
+    for (final intentData in intentsData) {
+      if (intentData is Map) {
+        final intent = Intent(
+          description: intentData['description']?.toString() ?? '',
+          category: intentData['category']?.toString() ?? 'task',
+          confidence: (intentData['confidence'] as num?)?.toDouble() ?? 0.5,
+          triggerPhrases: (intentData['trigger_phrases'] as List?)?.map((e) => e.toString()).toList() ?? [],
+          relatedEntities: (intentData['related_entities'] as List?)?.map((e) => e.toString()).toList() ?? analysis.entities,
+          context: {
+            'urgency': intentData['urgency']?.toString() ?? 'medium',
+            'timeframe': intentData['timeframe']?.toString() ?? 'medium',
+            'source_emotion': analysis.emotion,
+            'source_content': analysis.content,
+            'extraction_method': 'llm',
+            ...((intentData['context'] as Map?) ?? {}),
+          },
+        );
+
+        // 🔥 修复：放宽重复检查条件
+        if (!_isDuplicateIntent(intent)) {
+          _activeIntents[intent.id] = intent;
+          newIntents.add(intent);
+          _intentUpdatesController.add(intent);
+          print('[IntentLifecycleManager] 🎯 新增意图: ${intent.description}');
+        } else {
+          print('[IntentLifecycleManager] 🔄 跳过重复意图: ${intent.description}');
+        }
+      }
+    }
+
+    return newIntents;
+  }
+
+  /// 🔥 新增：基于规则的意图提取（备用方案）
+  List<Intent> _extractIntentsWithRules(SemanticAnalysisInput analysis) {
+    final content = analysis.content.toLowerCase();
+    final intents = <Intent>[];
+
+    // 学习意图
+    if (content.contains('学习') || content.contains('教程') || content.contains('了解') || content.contains('学会')) {
+      final intent = Intent(
+        description: '学习新知识或技能',
+        category: 'learning',
+        confidence: 0.7,
+        triggerPhrases: ['学习', '教程', '了解'],
+        relatedEntities: analysis.entities,
+        context: {
+          'urgency': 'medium',
+          'timeframe': 'medium',
+          'source_emotion': analysis.emotion,
+          'source_content': analysis.content,
+          'extraction_method': 'rule_based',
+        },
+      );
+      if (!_isDuplicateIntent(intent)) {
+        intents.add(intent);
+      }
+    }
+
+    // 规划意图
+    if (content.contains('计划') || content.contains('规划') || content.contains('准备') || content.contains('安排')) {
+      final intent = Intent(
+        description: '制定计划或安排时间',
+        category: 'planning',
+        confidence: 0.8,
+        triggerPhrases: ['计划', '规划', '准备', '安排'],
+        relatedEntities: analysis.entities,
+        context: {
+          'urgency': 'high',
+          'timeframe': 'short',
+          'source_emotion': analysis.emotion,
+          'source_content': analysis.content,
+          'extraction_method': 'rule_based',
+        },
+      );
+      if (!_isDuplicateIntent(intent)) {
+        intents.add(intent);
+      }
+    }
+
+    // 问题解决意图
+    if (content.contains('问题') || content.contains('bug') || content.contains('错误') || content.contains('修复') || content.contains('优化')) {
+      final intent = Intent(
+        description: '解决技术问题或优化',
+        category: 'problem_solving',
+        confidence: 0.8,
+        triggerPhrases: ['问题', 'bug', '错误', '修复', '优化'],
+        relatedEntities: analysis.entities,
+        context: {
+          'urgency': 'high',
+          'timeframe': 'short',
+          'source_emotion': analysis.emotion,
+          'source_content': analysis.content,
+          'extraction_method': 'rule_based',
+        },
+      );
+      if (!_isDuplicateIntent(intent)) {
+        intents.add(intent);
+      }
+    }
+
+    // 任务执行意图
+    if (content.contains('做') || content.contains('完成') || content.contains('实现') || content.contains('开发')) {
+      final intent = Intent(
+        description: '执行具体任务',
+        category: 'task',
+        confidence: 0.6,
+        triggerPhrases: ['做', '完成', '实现', '开发'],
+        relatedEntities: analysis.entities,
+        context: {
+          'urgency': 'medium',
+          'timeframe': 'medium',
+          'source_emotion': analysis.emotion,
+          'source_content': analysis.content,
+          'extraction_method': 'rule_based',
+        },
+      );
+      if (!_isDuplicateIntent(intent)) {
+        intents.add(intent);
+      }
+    }
+
+    // 沟通意图
+    if (content.contains('讨论') || content.contains('交流') || content.contains('分享') || content.contains('会议')) {
+      final intent = Intent(
+        description: '进行沟通或交流',
+        category: 'communication',
+        confidence: 0.7,
+        triggerPhrases: ['讨论', '交流', '分享', '会议'],
+        relatedEntities: analysis.entities,
+        context: {
+          'urgency': 'medium',
+          'timeframe': 'short',
+          'source_emotion': analysis.emotion,
+          'source_content': analysis.content,
+          'extraction_method': 'rule_based',
+        },
+      );
+      if (!_isDuplicateIntent(intent)) {
+        intents.add(intent);
+      }
+    }
+
+    // 🔥 兜底：如果没有识别到任何意图，创建一个通用意图
+    if (intents.isEmpty && analysis.content.trim().isNotEmpty) {
+      final intent = Intent(
+        description: '基于对话内容的一般性意图',
+        category: 'task',
+        confidence: 0.4,
+        triggerPhrases: [analysis.content.split(' ').first],
+        relatedEntities: analysis.entities,
+        context: {
+          'urgency': 'medium',
+          'timeframe': 'medium',
+          'source_emotion': analysis.emotion,
+          'source_content': analysis.content,
+          'extraction_method': 'fallback',
+        },
+      );
+      intents.add(intent);
+    }
+
+    // 添加到活跃意图列表
+    for (final intent in intents) {
+      _activeIntents[intent.id] = intent;
+      _intentUpdatesController.add(intent);
+      print('[IntentLifecycleManager] 🎯 规则提取意图: ${intent.description}');
+    }
+
+    return intents;
   }
 
   /// 检查是否为重复意图
   bool _isDuplicateIntent(Intent newIntent) {
+    // 🔥 修复：放宽重复检查条件，避免误判
     return _activeIntents.values.any((existing) {
-      // 简单的相似性检查
+      // 检查描述相似性
       final descSimilarity = _calculateSimilarity(existing.description, newIntent.description);
+      
+      // 检查类别是否相同
       final categorySame = existing.category == newIntent.category;
-
-      return descSimilarity > 0.7 && categorySame;
+      
+      // 检查关键词重叠
+      final keywordOverlap = _calculateKeywordOverlap(existing, newIntent);
+      
+      // 🔥 修复：提高阈值，只有非常相似的才认为是重复
+      // 原来是 0.7，现在改为 0.85，并且需要多个条件同时满足
+      final isHighSimilarity = descSimilarity > 0.85;
+      final isSignificantOverlap = keywordOverlap > 0.8;
+      
+      // 只有在描述高度相似、类别相同且关键词大量重叠时才认为重复
+      final isDuplicate = isHighSimilarity && categorySame && isSignificantOverlap;
+      
+      if (isDuplicate) {
+        print('[IntentLifecycleManager] 🔍 重复检查: "${newIntent.description}" vs "${existing.description}"');
+        print('[IntentLifecycleManager] 📊 相似度: ${(descSimilarity * 100).toInt()}%, 关键词重叠: ${(keywordOverlap * 100).toInt()}%');
+      }
+      
+      return isDuplicate;
     });
+  }
+
+  /// 🔥 新增：计算关键词重叠率
+  double _calculateKeywordOverlap(Intent existing, Intent newIntent) {
+    final existingKeywords = <String>{};
+    existingKeywords.addAll(existing.triggerPhrases);
+    existingKeywords.addAll(existing.relatedEntities);
+    existingKeywords.addAll(existing.description.toLowerCase().split(' '));
+    
+    final newKeywords = <String>{};
+    newKeywords.addAll(newIntent.triggerPhrases);
+    newKeywords.addAll(newIntent.relatedEntities);
+    newKeywords.addAll(newIntent.description.toLowerCase().split(' '));
+    
+    if (existingKeywords.isEmpty || newKeywords.isEmpty) return 0.0;
+    
+    final intersection = existingKeywords.intersection(newKeywords);
+    final union = existingKeywords.union(newKeywords);
+    
+    return intersection.length / union.length;
   }
 
   /// 简单的字符串相似性计算

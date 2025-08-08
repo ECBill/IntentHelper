@@ -102,7 +102,7 @@ class _HumanUnderstandingDashboardState extends State<HumanUnderstandingDashboar
   Widget build(BuildContext context) {
     return Scaffold(
       appBar: AppBar(
-        title: Text('人类理解系统', style: TextStyle(fontSize: 18.sp)),
+        title: Text('类人意图理解系统', style: TextStyle(fontSize: 18.sp)),
         backgroundColor: Theme.of(context).primaryColor,
         foregroundColor: Colors.white,
         actions: [

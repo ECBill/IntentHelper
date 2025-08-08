@@ -68,6 +68,7 @@ class _SettingScreenState extends State<SettingScreen> {
     try {
       final authController = Get.put(MyAuthController());
       final tokenData = await authController.fetchLlmToken();
+      print("[tokenData] token信息为：$tokenData");
       setState(() {
         remainQuota = tokenData['remain_quota'] ~/ 5000;
         SPUtil.setInt(SPUtil.sp_key_member_remain_quota, remainQuota!);

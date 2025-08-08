@@ -108,7 +108,7 @@ class HumanUnderstandingSystem {
       if (recentRecords.isEmpty) {
         print('[HumanUnderstandingSystem] ℹ️ 暂无最近对话记录');
         _lastProcessedTimestamp = DateTime.now().millisecondsSinceEpoch;
-
+        
         // 创建一些基础的测试数据来验证系统工作
         await _createInitialTestData();
         return;
@@ -123,13 +123,13 @@ class HumanUnderstandingSystem {
       // 标记这些记录为已处理
       _markRecordsAsProcessed(limitedRecords);
       _updateProcessedTimestamp();
-
+      
       print('[HumanUnderstandingSystem] �� 历史对话异步处理完成');
 
     } catch (e) {
       print('[HumanUnderstandingSystem] ❌ 异步处理历史对话失败: $e');
       _lastProcessedTimestamp = DateTime.now().millisecondsSinceEpoch;
-
+      
       // 如果处理失败，也创建测试数据
       await _createInitialTestData();
     }
