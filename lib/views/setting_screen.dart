@@ -32,11 +32,6 @@ class SettingScreen extends StatefulWidget {
 class _SettingScreenState extends State<SettingScreen> {
   final SettingScreenController _controller = SettingScreenController();
 
-  int? remainQuota;
-  int? totalQuota;
-  int? expiredTime;
-  String? llmToken;
-
   @override
   void dispose() {
     _controller.dispose();
@@ -46,41 +41,6 @@ class _SettingScreenState extends State<SettingScreen> {
   @override
   void initState() {
     super.initState();
-    _initFromLocal();
-  }
-
-  void _initFromLocal() async {
-    int? localRemainQuota = await SPUtil.getInt(SPUtil.sp_key_member_remain_quota);
-    int? localExpiredTime = await SPUtil.getInt(SPUtil.sp_key_member_expiredTime);
-    setState(() {
-      if (localRemainQuota != null) {
-        remainQuota = localRemainQuota;
-      }
-      if (localExpiredTime != null) {
-        expiredTime = localExpiredTime;
-      }
-    });
-
-    _fetchQuota();
-  }
-
-  void _fetchQuota() async {
-    try {
-      final authController = Get.put(MyAuthController());
-      final tokenData = await authController.fetchLlmToken();
-      print("[tokenData] token信息为：$tokenData");
-      setState(() {
-        remainQuota = tokenData['remain_quota'] ~/ 5000;
-        SPUtil.setInt(SPUtil.sp_key_member_remain_quota, remainQuota!);
-        totalQuota = (tokenData['remain_quota'] + tokenData['used_quota']) ~/ 5000;
-        expiredTime = tokenData['expired_time'];
-        SPUtil.setInt(SPUtil.sp_key_member_expiredTime, expiredTime!);
-        // 只获取token中的key值
-        llmToken = tokenData['key'] ?? tokenData['llm_token'] ?? tokenData['api_key'];
-      });
-    } catch (e) {
-      dev.log("Error fetching quota: $e");
-    }
   }
 
   void _onClickUser() {
@@ -203,13 +163,6 @@ class _SettingScreenState extends State<SettingScreen> {
       body: ListView(
         padding: EdgeInsets.all(16.sp),
         children: [
-          MemberWidget(
-            remainQuota: remainQuota ?? 0,
-            totalQuota: totalQuota ?? 1,
-            expiredTime: expiredTime ?? 0,
-            llmToken: llmToken,
-          ),
-          SizedBox(height: 12.sp),
           SectionListView(
             children: [
               SettingListTile(
@@ -265,7 +218,7 @@ class _SettingScreenState extends State<SettingScreen> {
                 onTap: _onClickCacheDebug,
               ),
               SettingListTile(
-                leading: AssetsUtil.icon_feedback, // 临时使用现有图标
+                leading: AssetsUtil.icon_feedback, // 临时��用现有图标
                 title: 'Summary List',
                 subtitle: 'View and manage your summaries',
                 onTap: _onClickSummaryList,
@@ -298,134 +251,6 @@ class _SettingScreenState extends State<SettingScreen> {
               onTap: _onClickHelpAndFeedback,
             ),
           ]),
-        ],
-      ),
-    );
-  }
-}
-
-class MemberWidget extends StatelessWidget {
-  final int remainQuota;
-  final int totalQuota;
-  final int expiredTime;
-  final String? llmToken;
-
-  const MemberWidget({
-    super.key,
-    required this.remainQuota,
-    required this.totalQuota,
-    required this.expiredTime,
-    this.llmToken,
-  });
-
-  @override
-  Widget build(BuildContext context) {
-    final themeNotifier = Provider.of<ThemeNotifier>(context);
-    bool isLightMode = themeNotifier.mode == Mode.light;
-    return BudCard(
-      radius: 8.sp,
-      color: isLightMode ? const Color(0xFFEAEAEA) : const Color(0x33FFFFFF),
-      child: Column(
-        children: [
-          Padding(
-            padding: EdgeInsets.all(12.sp),
-            child: GestureDetector(
-              onTap: () {
-                MembersDialog.show(context);
-              },
-              child: Row(
-                children: [
-                  Expanded(
-                    child: Text(
-                      'Buddie member',
-                      style: TextStyle(
-                        fontWeight: FontWeight.bold,
-                        fontSize: 16,
-                        color: isLightMode
-                            ? const Color.fromRGBO(0, 0, 0, 0.6)
-                            : const Color(0xFF29BBC6),
-                      ),
-                    ),
-                  ),
-                  BudIcon(
-                    icon: AssetsUtil.icon_arrow_forward_2,
-                    size: 14.sp,
-                  ),
-                ],
-              ),
-            ),
-          ),
-          BudCard(
-            radius: 8.sp,
-            color:
-                isLightMode ? const Color(0xFF3D4A4F) : const Color(0xFF0A1F21),
-            padding: EdgeInsets.all(12.sp),
-            child: Column(
-              crossAxisAlignment: CrossAxisAlignment.start,
-              children: [
-                Row(
-                  children: [
-                    const Text(
-                      'Beginner Members',
-                      style: TextStyle(
-                        fontWeight: FontWeight.bold,
-                        fontSize: 14,
-                        color: Colors.white,
-                      ),
-                    ),
-                    SizedBox(width: 3.sp),
-                    BudIcon(
-                      icon: AssetsUtil.icon_star,
-                      size: 12.sp,
-                    ),
-                  ],
-                ),
-                Padding(
-                  padding: const EdgeInsets.symmetric(vertical: 4),
-                  child: MemberLinearProgressIndicator(
-                    value: totalQuota != 0 ? remainQuota / totalQuota : 0,
-                  ),
-                ),
-                Text(
-                  'Expires: ${DateFormat('MM/dd/yyyy').format(DateTime.fromMillisecondsSinceEpoch(expiredTime * 1000))}',
-                  style: const TextStyle(
-                    fontWeight: FontWeight.w400,
-                    fontSize: 12,
-                    color: Color.fromRGBO(255, 255, 255, 0.6),
-                  ),
-                ),
-                if (llmToken != null) ...[
-                  SizedBox(height: 8.sp),
-                  Text(
-                    'LLM Token:',
-                    style: const TextStyle(
-                      fontWeight: FontWeight.bold,
-                      fontSize: 12,
-                      color: Colors.white,
-                    ),
-                  ),
-                  SizedBox(height: 4.sp),
-                  Container(
-                    width: double.infinity,
-                    padding: EdgeInsets.all(8.sp),
-                    decoration: BoxDecoration(
-                      color: Colors.black26,
-                      borderRadius: BorderRadius.circular(4.sp),
-                    ),
-                    child: SelectableText(
-                      llmToken!,
-                      style: const TextStyle(
-                        fontWeight: FontWeight.w400,
-                        fontSize: 10,
-                        color: Color.fromRGBO(255, 255, 255, 0.8),
-                        fontFamily: 'monospace',
-                      ),
-                    ),
-                  ),
-                ],
-              ],
-            ),
-          ),
         ],
       ),
     );

@@ -29,14 +29,13 @@ class _LoadingScreenState extends State<LoadingScreen> {
     await Future.delayed(Duration(seconds: 1));
     final prefs = await SharedPreferences.getInstance();
     final isFirstLaunch = prefs.getBool("isFirstLaunch") ?? true;
-    final isLogin = prefs.getBool("isLogin") ?? false;
+
+    // 直接跳转到主界面或欢迎页面，不再检查登录状态
     if (mounted) {
       context.pushReplacementNamed(
         isFirstLaunch 
         ? RouteName.welcome 
-        : isLogin 
-          ? RouteName.home_chat
-          : RouteName.login, 
+        : RouteName.home_chat, // 直接进入主界面
       extra: _audioController);
     }
   }
