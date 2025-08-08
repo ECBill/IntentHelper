@@ -93,16 +93,13 @@ dependencies:
   google_sign_in: ^5.4.0
   sign_in_with_apple: ^6.1.2
   flutter_html: 3.0.0
+  flutter_dotenv: ^5.1.0
+  fluttertoast: ^8.2.4
 
   # http requests for smart correction
   http: ^1.1.0
 
 dependency_overrides:
-  record_android:
-    git:
-      url: https://github.com/llfbandit/record
-      path: record_android
-  js: ^0.7.1
 
 dev_dependencies:
   flutter_test:
@@ -114,9 +111,7 @@ dev_dependencies:
   # package. See that file for information about deactivating specific lint
   # rules and activating additional ones.
   flutter_lints: ^4.0.0
-  build_runner: ^2.4.13
-  objectbox_generator: any
-  fluttertoast: ^8.2.4
+
 # For information on the generic Dart part of this file, see the
 # following page: https://dart.dev/tools/pub/pubspec
 
@@ -130,23 +125,20 @@ flutter:
 
   # To add assets to your application, add an assets section, like this:
   assets:
+    - .env
     - assets/
-    # - assets/sherpa-onnx-streaming-zipformer-en-2023-06-26-mobile/
-    - assets/sherpa-onnx-whisper-tiny.en/
-    - assets/sherpa-onnx-streaming-paraformer-bilingual-zh-en/
-    - assets/silero_vad.onnx
-    # - assets/sherpa-onnx-vits-zh-ll/
-    # - assets/sherpa-onnx-vits-zh-ll/dict/
-    # - assets/sherpa-onnx-vits-zh-ll/dict/pos_dict/
-    - assets/icons/light/
+    - assets/icons/
     - assets/icons/dark/
+    - assets/icons/light/
+    - assets/images/
     - assets/images/dark/
     - assets/images/light/
-    - assets/images/
+    - assets/videos/
+    - assets/videos/dark/
+    - assets/videos/light/
     - assets/audios/
-    - assets/update_details.json
-  #   - images/a_dot_burr.jpeg
-  #   - images/a_dot_ham.jpeg
+    - assets/sherpa-onnx-streaming-paraformer-bilingual-zh-en/
+    - assets/sherpa-onnx-whisper-tiny.en/
 
   # An image asset can refer to one or more resolution-specific "variants", see
   # https://flutter.dev/to/resolution-aware-images

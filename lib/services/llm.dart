@@ -1,5 +1,6 @@
 import 'dart:async';
 import 'dart:convert';
+import 'package:flutter_dotenv/flutter_dotenv.dart';
 import 'package:http/http.dart' as http;
 import '../constants/prompt_constants.dart';
 
@@ -9,8 +10,11 @@ class LLM {
   late String baseUrl;
   late String systemPrompt;
 
-  static final String defaultBaseUrl = 'https://one-api.bud.inc/v1/chat/completions';
-  static const String localApiKey = 'XrSwOjZhHWH9qjCrBb7970CdF3A14c1e88DdA3F9516627B4';
+  // 使用你的代理服务器
+  static final String defaultBaseUrl = 'https://xiaomi.dns.navy/v1/chat/completions';
+
+  // 从环境变量获取API key，如果没有则使用本地备用key
+  static String get localApiKey => dotenv.env['OPENAI_API_KEY'] ?? '';
 
   LLM._(this.modelName, this.apiKey, this.baseUrl, this.systemPrompt);
 

@@ -65,14 +65,6 @@ Future<void> main() async {
     options: DefaultFirebaseOptions.currentPlatform,
   );
 
-  // 写死 llmToken，不再依赖登录获取
-  const hardcodedLlmToken = 'sk-proj-TdSjd7jjovhDrggwM5DSLZT3BlbkFJjj6i6p5SUIjjw9DSLZT3BlbkFJjj'; // 实际的token
-  FlutterForegroundTask.saveData(key: 'llmToken', value: hardcodedLlmToken);
-
-  // 打印 llmToken 方便开发者获取
-  final llmToken = await FlutterForegroundTask.getData(key: 'llmToken');
-  print('llmToken: ' + (llmToken?.toString() ?? 'null'));
-
   await SentryFlutter.init(
     (options) {
       options.dsn = 'https://476fe26ce43858184b0f5309106671d6@o4507015727874048.ingest.us.sentry.io/4508811095375872';

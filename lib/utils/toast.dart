@@ -1,13 +1,27 @@
 import 'package:flutter/material.dart';
-import 'package:fluttertoast/fluttertoast.dart';
 
-void showMessage(String message) {
-  Fluttertoast.showToast(
-    msg: message,
-    toastLength: Toast.LENGTH_LONG, // 显示时间: SHORT 或 LONG
-    gravity: ToastGravity.CENTER, // 位置: TOP, CENTER, BOTTOM
-    backgroundColor: Colors.black54,
-    textColor: Colors.white,
-    fontSize: 16.0,
-  );
+void showMessage(String message, {BuildContext? context}) {
+  if (context != null) {
+    // 使用SnackBar替代fluttertoast
+    ScaffoldMessenger.of(context).showSnackBar(
+      SnackBar(
+        content: Text(message),
+        duration: const Duration(seconds: 2),
+        backgroundColor: Colors.black87,
+        behavior: SnackBarBehavior.floating,
+        margin: const EdgeInsets.all(16),
+        shape: RoundedRectangleBorder(
+          borderRadius: BorderRadius.circular(8),
+        ),
+      ),
+    );
+  } else {
+    // 如果没有context，打印到控制台作为备选
+    print('Toast: $message');
+  }
+}
+
+// 为了保持向后兼容，也提供一个不需要context的版本
+void showToast(String message) {
+  print('Toast: $message');
 }
