@@ -22,41 +22,47 @@ class ChatManager {
 
   Future<void> init({required String selectedModel, String? systemPrompt}) async {
     print('[ChatManager] 🚀 初始化ChatManager...');
-    _llm = await LLM.create(selectedModel, systemPrompt: systemPrompt);
-    _enhancedKGService = EnhancedKGService();
-    _conversationCache = ConversationCache();
-    _personalizedService = PersonalizedUnderstandingService(); // 初始化个性化理解服务
 
-    // 初始化缓存系统
-    print('[ChatManager] 🔄 初始化对话缓存系统...');
-    await _conversationCache.initialize();
+    try {
+      _llm = await LLM.create(selectedModel, systemPrompt: systemPrompt);
+      _enhancedKGService = EnhancedKGService();
+      _conversationCache = ConversationCache();
+      _personalizedService = PersonalizedUnderstandingService(); // 初始化个性化理解服务
 
-    // 🔥 新增：初始化个性化理解服务
-    print('[ChatManager] 🧠 初��化个性化理解服务...');
-    await _personalizedService.initialize();
+      // 初始化缓存系统
+      print('[ChatManager] 🔄 初始化对话缓存系统...');
+      await _conversationCache.initialize();
 
-    List<RecordEntity>? recentRecords = ObjectBoxService().getTermRecords();
-    print('[ChatManager] 📚 加载最近对话记��: ${recentRecords?.length ?? 0} 条');
+      // 🔥 新增：初始化个性化理解服务
+      print('[ChatManager] 🧠 初始化个性化理解服务...');
+      await _personalizedService.initialize();
 
-    recentRecords?.forEach((RecordEntity recordEntity) {
-      String formattedTime = DateFormat('yyyy-MM-dd HH:mm').format(DateTime.fromMillisecondsSinceEpoch(recordEntity.createdAt!));
-      addChatSession(recordEntity.role!, recordEntity.content!, time: formattedTime);
+      List<RecordEntity>? recentRecords = ObjectBoxService().getTermRecords();
+      print('[ChatManager] 📚 加载最近对话记录: ${recentRecords?.length ?? 0} 条');
 
-      // 🔥 关键修复：将历史对话也添加到缓存系统进行分析
-      final content = recordEntity.content ?? '';
-      if (content.trim().isNotEmpty) {
-        print('[ChatManager] 📝 处理历史对话: "${content.substring(0, content.length > 30 ? 30 : content.length)}..."');
-        _conversationCache.processBackgroundConversation(content);
-      }
-    });
+      recentRecords?.forEach((RecordEntity recordEntity) {
+        String formattedTime = DateFormat('yyyy-MM-dd HH:mm').format(DateTime.fromMillisecondsSinceEpoch(recordEntity.createdAt!));
+        addChatSession(recordEntity.role!, recordEntity.content!, time: formattedTime);
 
-    print('[ChatManager] ✅ ChatManager初始化完成');
+        // 🔥 关键修复：将历史对话也添加到缓存系统进行分析
+        final content = recordEntity.content ?? '';
+        if (content.trim().isNotEmpty) {
+          print('[ChatManager] 📝 处理历史对话: "${content.substring(0, content.length > 30 ? 30 : content.length)}..."');
+          _conversationCache.processBackgroundConversation(content);
+        }
+      });
+
+      print('[ChatManager] ✅ ChatManager初始化完成');
+    } catch (e) {
+      print('[ChatManager] ❌ ChatManager初始化失败: $e');
+      // 不抛出异常，允许系统继续运行
+    }
   }
 
   Stream<String> createStreamingRequest({required String text}) async* {
     print('[ChatManager] 🚀 开始处理用户输入: "${text.substring(0, text.length > 50 ? 50 : text.length)}..."');
 
-    // 🔥 关键修复：立即处理背景对话，更新缓存
+    // 🔥 关键修复：立即处��背景对话，更新缓存
     print('[ChatManager] 📝 触发对话缓存分析...');
     await _conversationCache.processBackgroundConversation(text);
 
@@ -479,7 +485,7 @@ $contextHistory
 """;
   }
 
-  // 🔥 新增：构建主动响应提示
+  // 🔥 新增：构建主��响应提示
   String _buildProactivePrompt(personalizedContext) {
     final currentState = personalizedContext.currentSemanticState;
     final recommendations = personalizedContext.contextualRecommendations;
@@ -502,7 +508,7 @@ ${_formatRecommendations(recommendations)}
 """;
   }
 
-  // 🔥 新增：格式化当前状态
+  // 🔥 新增：格���化当前状态
   String _formatCurrentState(Map<String, dynamic> currentState) {
     final cognitiveState = currentState['cognitive_state'] as Map<String, dynamic>? ?? {};
     final activeIntents = currentState['active_intents'] as Map<String, dynamic>? ?? {};
@@ -542,7 +548,7 @@ ${_formatRecommendations(recommendations)}
     }
 
     if (optimizationOpportunities.isNotEmpty) {
-      buffer.writeln('优化机会:');
+      buffer.writeln('优��机会:');
       optimizationOpportunities.values.forEach((opportunity) {
         if (opportunity is String) buffer.writeln('- $opportunity');
       });
@@ -582,7 +588,7 @@ ${_formatRecommendations(recommendations)}
     return _conversationCache.getRecentSummaries(limit: limit);
   }
 
-  /// 获取当前对话上下文
+  /// 获取当前对话��下文
   ConversationContext? getCurrentConversationContext() {
     return _conversationCache.getCurrentConversationContext();
   }

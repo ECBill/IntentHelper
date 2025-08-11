@@ -2,10 +2,8 @@
 /// 基于人类理解系统的结果，结合用户历史知识图谱，为 LLM 提供个性化上下文
 
 import 'dart:async';
-import 'dart:convert';
 import 'package:app/models/human_understanding_models.dart';
 import 'package:app/services/human_understanding_system.dart';
-import 'package:app/services/knowledge_graph_service.dart';
 import 'package:app/services/objectbox_service.dart';
 import 'package:app/models/graph_models.dart';
 
@@ -355,7 +353,7 @@ class PersonalizedUnderstandingService {
     }
   }
 
-  /// 分析意图类别分布
+  /// 分析意��类别分布
   Map<String, int> _analyzeIntentCategories(List<Intent> intents) {
     final categories = <String, int>{};
     for (final intent in intents) {
