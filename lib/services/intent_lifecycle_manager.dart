@@ -294,7 +294,7 @@ class IntentLifecycleManager {
     // 🔥 兜底：如果没有识别到任何意图，创建一个通用意图
     if (intents.isEmpty && analysis.content.trim().isNotEmpty) {
       final intent = Intent(
-        description: '基于对话内容的一般性意图',
+        description: '基于对话内容的一般性意图（通用意图）',
         category: 'task',
         confidence: 0.4,
         triggerPhrases: [analysis.content.split(' ').first],

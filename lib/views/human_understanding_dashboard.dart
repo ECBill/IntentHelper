@@ -5,6 +5,9 @@ import 'package:flutter/material.dart';
 import 'package:flutter_screenutil/flutter_screenutil.dart';
 import 'package:app/models/human_understanding_models.dart' as hum;
 import 'package:app/services/human_understanding_system.dart';
+import 'package:app/services/intelligent_reminder_manager.dart'; // 🔥 新增
+import 'package:app/views/reminder_management_screen.dart'; // 🔥 新增
+import 'package:go_router/go_router.dart'; // 🔥 新增
 import 'dart:async';
 import 'dart:convert';
 
@@ -18,6 +21,7 @@ class HumanUnderstandingDashboard extends StatefulWidget {
 class _HumanUnderstandingDashboardState extends State<HumanUnderstandingDashboard>
     with TickerProviderStateMixin {
   final HumanUnderstandingSystem _system = HumanUnderstandingSystem();
+  final IntelligentReminderManager _reminderManager = IntelligentReminderManager(); // 🔥 新增
 
   late TabController _tabController;
   StreamSubscription? _systemStateSubscription;
@@ -31,7 +35,7 @@ class _HumanUnderstandingDashboardState extends State<HumanUnderstandingDashboar
   @override
   void initState() {
     super.initState();
-    _tabController = TabController(length: 5, vsync: this);
+    _tabController = TabController(length: 6, vsync: this); // 🔥 修改：增加到6个标签页
     _initializeSystem();
   }
 
@@ -133,6 +137,7 @@ class _HumanUnderstandingDashboardState extends State<HumanUnderstandingDashboar
             Tab(text: '主题追踪'),
             Tab(text: '因果分析'),
             Tab(text: '认知负载'),
+            Tab(text: '提醒管理'), // 🔥 新增标签页
           ],
         ),
       ),
@@ -146,6 +151,7 @@ class _HumanUnderstandingDashboardState extends State<HumanUnderstandingDashboar
                 _buildTopicsTab(),
                 _buildCausalTab(),
                 _buildCognitiveLoadTab(),
+                _buildRemindersTab(), // 🔥 新增提醒管理页面
               ],
             ),
     );
@@ -601,7 +607,7 @@ class _HumanUnderstandingDashboardState extends State<HumanUnderstandingDashboar
     );
   }
 
-  Widget _buildTopicCard(hum.ConversationTopic topic) {
+  Widget _buildTopicCard(hum.Topic topic) {
     return Card(
       margin: EdgeInsets.only(bottom: 8.h),
       child: Padding(
@@ -620,26 +626,21 @@ class _HumanUnderstandingDashboardState extends State<HumanUnderstandingDashboar
                 Container(
                   padding: EdgeInsets.symmetric(horizontal: 8.w, vertical: 4.h),
                   decoration: BoxDecoration(
-                    color: Colors.blue.withOpacity(topic.relevanceScore),
+                    color: Colors.blue.withOpacity(0.2),
                     borderRadius: BorderRadius.circular(12.r),
                   ),
                   child: Text(
-                    '${(topic.relevanceScore * 100).toInt()}%',
-                    style: TextStyle(fontSize: 10.sp, color: Colors.white),
+                    '权重: ${topic.weight.toStringAsFixed(2)}',
+                    style: TextStyle(fontSize: 10.sp),
                   ),
                 ),
               ],
             ),
-            SizedBox(height: 8.h),
-            Text(
-              '类别: ${topic.category}',
-              style: TextStyle(fontSize: 12.sp, color: Colors.grey[600]),
-            ),
             if (topic.keywords.isNotEmpty) ...[
-              SizedBox(height: 4.h),
+              SizedBox(height: 8.h),
               Wrap(
                 spacing: 4.w,
-                children: topic.keywords.take(5).map((keyword) => Chip(
+                children: topic.keywords.map((keyword) => Chip(
                   label: Text(keyword, style: TextStyle(fontSize: 10.sp)),
                   materialTapTargetSize: MaterialTapTargetSize.shrinkWrap,
                 )).toList(),
@@ -654,15 +655,15 @@ class _HumanUnderstandingDashboardState extends State<HumanUnderstandingDashboar
   Widget _buildCausalTab() {
     if (_currentState == null) return Container();
 
-    final causals = _currentState!.recentCausalChains;
+    final causalChains = _currentState!.recentCausalChains;
 
     return Padding(
       padding: EdgeInsets.all(16.w),
-      child: causals.isEmpty
+      child: causalChains.isEmpty
           ? Center(child: Text('暂无因果关系'))
           : ListView.builder(
-              itemCount: causals.length,
-              itemBuilder: (context, index) => _buildCausalCard(causals[index]),
+              itemCount: causalChains.length,
+              itemBuilder: (context, index) => _buildCausalCard(causalChains[index]),
             ),
     );
   }
@@ -678,41 +679,31 @@ class _HumanUnderstandingDashboardState extends State<HumanUnderstandingDashboar
             Row(
               children: [
                 Expanded(
-                  child: RichText(
-                    text: TextSpan(
-                      style: TextStyle(fontSize: 14.sp, color: Colors.black),
-                      children: [
-                        TextSpan(
-                          text: causal.cause,
-                          style: TextStyle(fontWeight: FontWeight.w600),
-                        ),
-                        TextSpan(text: ' → '),
-                        TextSpan(
-                          text: causal.effect,
-                          style: TextStyle(fontWeight: FontWeight.w600),
-                        ),
-                      ],
-                    ),
+                  child: Text(
+                    '${causal.cause} → ${causal.effect}',
+                    style: TextStyle(fontSize: 14.sp, fontWeight: FontWeight.w600),
                   ),
                 ),
                 Container(
                   padding: EdgeInsets.symmetric(horizontal: 8.w, vertical: 4.h),
                   decoration: BoxDecoration(
-                    color: _getCausalTypeColor(causal.type),
+                    color: Colors.green.withOpacity(0.2),
                     borderRadius: BorderRadius.circular(12.r),
                   ),
                   child: Text(
-                    causal.type.toString().split('.').last,
-                    style: TextStyle(fontSize: 10.sp, color: Colors.white),
+                    '置信度: ${(causal.confidence * 100).toInt()}%',
+                    style: TextStyle(fontSize: 10.sp),
                   ),
                 ),
               ],
             ),
-            SizedBox(height: 8.h),
-            Text(
-              '置信度: ${(causal.confidence * 100).toInt()}%',
-              style: TextStyle(fontSize: 12.sp, color: Colors.grey[600]),
-            ),
+            if (causal.reasoning.isNotEmpty) ...[
+              SizedBox(height: 8.h),
+              Text(
+                '推理: ${causal.reasoning}',
+                style: TextStyle(fontSize: 12.sp, color: Colors.grey[600]),
+              ),
+            ],
           ],
         ),
       ),
@@ -722,129 +713,348 @@ class _HumanUnderstandingDashboardState extends State<HumanUnderstandingDashboar
   Widget _buildCognitiveLoadTab() {
     if (_currentState == null) return Container();
 
-    final load = _currentState!.currentCognitiveLoad;
+    final cognitiveLoad = _currentState!.currentCognitiveLoad;
 
-    return SingleChildScrollView(
+    return Padding(
       padding: EdgeInsets.all(16.w),
       child: Column(
         children: [
-          _buildLoadLevelCard(load),
+          _buildCognitiveLoadCard(cognitiveLoad),
           SizedBox(height: 16.h),
-          _buildLoadFactorsCard(load),
-          SizedBox(height: 16.h),
-          _buildLoadRecommendationCard(load),
+          if (_currentState!.cognitiveLoadHistory.isNotEmpty)
+            _buildCognitiveLoadHistoryCard(_currentState!.cognitiveLoadHistory),
         ],
       ),
     );
   }
 
-  Widget _buildLoadLevelCard(hum.CognitiveLoadAssessment load) {
+  Widget _buildCognitiveLoadCard(hum.CognitiveLoad cognitiveLoad) {
     return Card(
       child: Padding(
         padding: EdgeInsets.all(16.w),
         child: Column(
+          crossAxisAlignment: CrossAxisAlignment.start,
           children: [
             Text(
               '当前认知负载',
               style: TextStyle(fontSize: 18.sp, fontWeight: FontWeight.bold),
             ),
-            SizedBox(height: 16.h),
-            CircularProgressIndicator(
-              value: load.score,
-              strokeWidth: 8.w,
-              backgroundColor: Colors.grey[300],
-              valueColor: AlwaysStoppedAnimation(_getCognitiveLoadColor(load.level)),
-            ),
-            SizedBox(height: 16.h),
-            Text(
-              '${(load.score * 100).toInt()}%',
-              style: TextStyle(
-                fontSize: 24.sp,
-                fontWeight: FontWeight.bold,
-                color: _getCognitiveLoadColor(load.level),
-              ),
-            ),
-            Text(
-              _getCognitiveLoadText(load.level),
-              style: TextStyle(fontSize: 16.sp),
-            ),
-          ],
-        ),
-      ),
-    );
-  }
-
-  Widget _buildLoadFactorsCard(hum.CognitiveLoadAssessment load) {
-    return Card(
-      child: Padding(
-        padding: EdgeInsets.all(16.w),
-        child: Column(
-          crossAxisAlignment: CrossAxisAlignment.start,
-          children: [
-            Text(
-              '负载因子分析',
-              style: TextStyle(fontSize: 16.sp, fontWeight: FontWeight.bold),
-            ),
             SizedBox(height: 12.h),
-            ...load.factors.entries.map((entry) => Padding(
-                  padding: EdgeInsets.symmetric(vertical: 4.h),
-                  child: Row(
+            Row(
+              children: [
+                Expanded(
+                  child: Column(
+                    crossAxisAlignment: CrossAxisAlignment.start,
                     children: [
-                      Expanded(
-                        flex: 2,
-                        child: Text(
-                          _getFactorDisplayName(entry.key),
-                          style: TextStyle(fontSize: 14.sp),
-                        ),
-                      ),
-                      Expanded(
-                        flex: 3,
-                        child: LinearProgressIndicator(
-                          value: entry.value,
-                          backgroundColor: Colors.grey[300],
-                          valueColor: AlwaysStoppedAnimation(_getFactorColor(entry.value)),
-                        ),
-                      ),
-                      SizedBox(width: 8.w),
                       Text(
-                        '${(entry.value * 100).toInt()}%',
-                        style: TextStyle(fontSize: 12.sp),
+                        '级别: ${_getCognitiveLoadText(cognitiveLoad.level)}',
+                        style: TextStyle(
+                          fontSize: 16.sp,
+                          color: _getCognitiveLoadColor(cognitiveLoad.level),
+                          fontWeight: FontWeight.w600,
+                        ),
+                      ),
+                      SizedBox(height: 8.h),
+                      LinearProgressIndicator(
+                        value: _getCognitiveLoadValue(cognitiveLoad.level),
+                        backgroundColor: Colors.grey[300],
+                        valueColor: AlwaysStoppedAnimation<Color>(
+                          _getCognitiveLoadColor(cognitiveLoad.level),
+                        ),
                       ),
                     ],
                   ),
-                )),
+                ),
+              ],
+            ),
+            if (cognitiveLoad.factors.isNotEmpty) ...[
+              SizedBox(height: 12.h),
+              Text(
+                '影响因素:',
+                style: TextStyle(fontSize: 14.sp, fontWeight: FontWeight.w600),
+              ),
+              ...cognitiveLoad.factors.entries.map((entry) => Padding(
+                padding: EdgeInsets.symmetric(vertical: 2.h),
+                child: Row(
+                  children: [
+                    Icon(Icons.arrow_right, size: 16.sp, color: Colors.grey),
+                    SizedBox(width: 4.w),
+                    Expanded(
+                      child: Text(
+                        '${entry.key}: ${(entry.value * 100).toInt()}%',
+                        style: TextStyle(fontSize: 12.sp),
+                      ),
+                    ),
+                  ],
+                ),
+              )).toList(),
+            ],
           ],
         ),
       ),
     );
   }
 
-  Widget _buildLoadRecommendationCard(hum.CognitiveLoadAssessment load) {
+  Widget _buildCognitiveLoadHistoryCard(List<hum.CognitiveLoad> history) {
     return Card(
       child: Padding(
         padding: EdgeInsets.all(16.w),
         child: Column(
           crossAxisAlignment: CrossAxisAlignment.start,
           children: [
-            Row(
-              children: [
-                Icon(Icons.lightbulb, color: Colors.amber, size: 20.sp),
-                SizedBox(width: 8.w),
-                Text(
-                  '系统建议',
-                  style: TextStyle(fontSize: 16.sp, fontWeight: FontWeight.bold),
-                ),
-              ],
+            Text(
+              '认知负载历史',
+              style: TextStyle(fontSize: 16.sp, fontWeight: FontWeight.bold),
             ),
             SizedBox(height: 12.h),
-            Text(
-              load.recommendation.isNotEmpty ? load.recommendation : '暂无特别建议',
-              style: TextStyle(fontSize: 14.sp),
+            Container(
+              height: 200.h,
+              child: ListView.builder(
+                itemCount: history.length,
+                itemBuilder: (context, index) {
+                  final load = history[index];
+                  return ListTile(
+                    dense: true,
+                    title: Text(
+                      _getCognitiveLoadText(load.level),
+                      style: TextStyle(
+                        fontSize: 12.sp,
+                        color: _getCognitiveLoadColor(load.level),
+                      ),
+                    ),
+                    subtitle: Text(
+                      load.timestamp.toString().substring(11, 19),
+                      style: TextStyle(fontSize: 10.sp),
+                    ),
+                    trailing: Container(
+                      width: 8.w,
+                      height: 8.w,
+                      decoration: BoxDecoration(
+                        color: _getCognitiveLoadColor(load.level),
+                        shape: BoxShape.circle,
+                      ),
+                    ),
+                  );
+                },
+              ),
             ),
           ],
         ),
       ),
     );
+  }
+
+  Widget _buildRemindersTab() { // 🔥 新增提醒管理页面
+    return ReminderManagementScreen();
+  }
+
+  void _showAddReminderDialog() {
+    showDialog(
+      context: context,
+      builder: (context) {
+        String title = '';
+        String description = '';
+        TimeOfDay time = TimeOfDay.now();
+
+        return AlertDialog(
+          title: Text('添加提醒'),
+          content: Column(
+            mainAxisSize: MainAxisSize.min,
+            children: [
+              TextField(
+                decoration: InputDecoration(labelText: '标题'),
+                onChanged: (value) {
+                  title = value;
+                },
+              ),
+              TextField(
+                decoration: InputDecoration(labelText: '描述'),
+                onChanged: (value) {
+                  description = value;
+                },
+              ),
+              SizedBox(height: 8.h),
+              Row(
+                children: [
+                  Expanded(
+                    child: Text(
+                      '时间: ${time.format(context)}',
+                      style: TextStyle(fontSize: 16.sp),
+                    ),
+                  ),
+                  IconButton(
+                    icon: Icon(Icons.access_time),
+                    onPressed: () async {
+                      final pickedTime = await showTimePicker(
+                        context: context,
+                        initialTime: time,
+                      );
+                      if (pickedTime != null && pickedTime != time) {
+                        setState(() {
+                          time = pickedTime;
+                        });
+                      }
+                    },
+                  ),
+                ],
+              ),
+            ],
+          ),
+          actions: [
+            TextButton(
+              onPressed: () => Navigator.pop(context),
+              child: Text('取消'),
+            ),
+            ElevatedButton(
+              onPressed: () async {
+                // 添加提醒逻辑
+                try {
+                  await _reminderManager.createManualReminder(
+                    title: title,
+                    description: description,
+                    reminderTime: DateTime.now().add(Duration(hours: 1)), // 默认1小时后
+                    type: 'task',
+                  );
+                  Navigator.pop(context);
+                  _loadSystemData(); // 重新加载数据
+                } catch (e) {
+                  print('添加提醒失败: $e');
+                }
+              },
+              child: Text('确定'),
+            ),
+          ],
+        );
+      },
+    );
+  }
+
+  void _showEditReminderDialog(hum.Reminder reminder) {
+    showDialog(
+      context: context,
+      builder: (context) {
+        String title = reminder.title;
+        String description = reminder.description;
+        TimeOfDay time = TimeOfDay.now();
+
+        return AlertDialog(
+          title: Text('编辑提醒'),
+          content: Column(
+            mainAxisSize: MainAxisSize.min,
+            children: [
+              TextField(
+                decoration: InputDecoration(labelText: '标题'),
+                controller: TextEditingController(text: title),
+                onChanged: (value) {
+                  title = value;
+                },
+              ),
+              TextField(
+                decoration: InputDecoration(labelText: '描述'),
+                controller: TextEditingController(text: description),
+                onChanged: (value) {
+                  description = value;
+                },
+              ),
+              SizedBox(height: 8.h),
+              Row(
+                children: [
+                  Expanded(
+                    child: Text(
+                      '时间: ${time.format(context)}',
+                      style: TextStyle(fontSize: 16.sp),
+                    ),
+                  ),
+                  IconButton(
+                    icon: Icon(Icons.access_time),
+                    onPressed: () async {
+                      final pickedTime = await showTimePicker(
+                        context: context,
+                        initialTime: time,
+                      );
+                      if (pickedTime != null && pickedTime != time) {
+                        setState(() {
+                          time = pickedTime;
+                        });
+                      }
+                    },
+                  ),
+                ],
+              ),
+            ],
+          ),
+          actions: [
+            TextButton(
+              onPressed: () => Navigator.pop(context),
+              child: Text('取消'),
+            ),
+            ElevatedButton(
+              onPressed: () async {
+                // 编辑提醒逻辑
+                try {
+                  // 将时间字符串转换为 DateTime
+                  final now = DateTime.now();
+                  final reminderDateTime = DateTime(
+                    now.year,
+                    now.month,
+                    now.day,
+                    time.hour,
+                    time.minute,
+                  );
+
+                  // 创建 ReminderItem 对象而不是 hum.Reminder
+                  final reminderItem = ReminderItem(
+                    id: reminder.id,
+                    title: title,
+                    description: description,
+                    reminderTime: reminderDateTime,
+                    isCompleted: reminder.isCompleted,
+                    originalText: '编辑更新：$title',
+                    createdAt: reminder.createdAt,
+                  );
+
+                  await _reminderManager.updateReminder(reminderItem);
+                  Navigator.pop(context);
+                  _loadSystemData(); // 重新加载数据
+                } catch (e) {
+                  print('编辑提醒失败: $e');
+                }
+              },
+              child: Text('确定'),
+            ),
+          ],
+        );
+      },
+    );
+  }
+
+  void _deleteReminder(String reminderId) async {
+    final confirmed = await showDialog<bool>(
+      context: context,
+      builder: (context) => AlertDialog(
+        title: Text('确认删除'),
+        content: Text('确定要删除这个提醒吗？'),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.pop(context, false),
+            child: Text('取消'),
+          ),
+          TextButton(
+            onPressed: () => Navigator.pop(context, true),
+            child: Text('确定'),
+          ),
+        ],
+      ),
+    );
+
+    if (confirmed == true) {
+      try {
+        await _reminderManager.deleteReminder(reminderId);
+        _loadSystemData(); // 重新加载数据
+      } catch (e) {
+        print('删除提醒失败: $e');
+      }
+    }
   }
 
   void _handleMenuAction(String action) async {
@@ -1016,15 +1226,27 @@ class _HumanUnderstandingDashboardState extends State<HumanUnderstandingDashboar
     }
   }
 
+  double _getCognitiveLoadValue(hum.CognitiveLoadLevel level) {
+    switch (level) {
+      case hum.CognitiveLoadLevel.low: return 0.25;
+      case hum.CognitiveLoadLevel.moderate: return 0.5;
+      case hum.CognitiveLoadLevel.high: return 0.75;
+      case hum.CognitiveLoadLevel.overload: return 1.0;
+    }
+  }
+
   Color _getIntentStateColor(String state) {
-    switch (state) {
-      case 'forming': return Colors.grey;
-      case 'clarifying': return Colors.orange;
-      case 'executing': return Colors.blue;
-      case 'paused': return Colors.yellow;
-      case 'completed': return Colors.green;
-      case 'abandoned': return Colors.red;
-      default: return Colors.grey;
+    switch (state.toLowerCase()) {
+      case 'pending':
+        return Colors.orange;
+      case 'active':
+        return Colors.green;
+      case 'completed':
+        return Colors.blue;
+      case 'cancelled':
+        return Colors.red;
+      default:
+        return Colors.grey;
     }
   }
 

@@ -150,7 +150,7 @@ class _HomeChatScreenState extends State<HomeChatScreen> {
     String role;
     if (rawRole is String) {
       // 直接使用字符串角色
-      if (rawRole == 'user' || rawRole == 'assistant' || rawRole == 'others') {
+      if (rawRole == 'user' || rawRole == 'assistant' || rawRole == 'others' || rawRole == 'system') {
         role = rawRole;
       } else {
         // 对于其他字符串值（如speaker名称），统一归类为 'others'
@@ -166,8 +166,16 @@ class _HomeChatScreenState extends State<HomeChatScreen> {
 
     final String id = rawId?.toString() ?? '';
 
+    // 🔥 新增：检查是否为智能提醒消息
+    final messageType = message['type']?.toString();
+    final isIntelligentReminder = messageType == 'intelligent_reminder';
+
     // 添加调试信息来查看角色识别结果
-    print('DEBUG: _buildMsg - rawRole: $rawRole (${rawRole.runtimeType}) -> role: $role, text: ${text.substring(0, text.length > 20 ? 20 : text.length)}...');
+    if (isIntelligentReminder) {
+      print('DEBUG: 智能提醒消息 - rawRole: $rawRole (${rawRole.runtimeType}) -> role: $role, text: ${text.substring(0, text.length > 20 ? 20 : text.length)}...');
+    } else {
+      print('DEBUG: _buildMsg - rawRole: $rawRole (${rawRole.runtimeType}) -> role: $role, text: ${text.substring(0, text.length > 20 ? 20 : text.length)}...');
+    }
 
     // ✅ 如果 id 为空，直接返回基本的消息组件，不使用 VisibilityDetector
     if (id.isEmpty) {
@@ -179,6 +187,8 @@ class _HomeChatScreenState extends State<HomeChatScreen> {
           text: text,
           style: textTextStyle,
           padding: chatPadding,
+          // 🔥 新增：为智能提醒消息添加特殊样式标识
+          isIntelligentReminder: isIntelligentReminder,
         ),
       );
     }
@@ -191,6 +201,8 @@ class _HomeChatScreenState extends State<HomeChatScreen> {
         text: text,
         style: textTextStyle,
         padding: chatPadding,
+        // 🔥 新增：为智能提醒消息添加特殊样式标识
+        isIntelligentReminder: isIntelligentReminder,
       ),
     );
 

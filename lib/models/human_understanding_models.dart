@@ -122,6 +122,7 @@ class ConversationTopic {
   String category; // 工作、生活、娱乐等
   TopicState state;
   double relevanceScore; // 当前相关性分数
+  double weight; // 新增：权重字段，兼容界面显示
   DateTime createdAt;
   DateTime lastMentioned;
   
@@ -140,6 +141,7 @@ class ConversationTopic {
     required this.category,
     this.state = TopicState.active,
     this.relevanceScore = 1.0,
+    double? weight, // 新增参数
     DateTime? createdAt,
     DateTime? lastMentioned,
     this.keywords = const [],
@@ -148,6 +150,7 @@ class ConversationTopic {
     this.context = const {},
     this.evolutionHistory = const [],
   }) : id = id ?? const Uuid().v4(),
+       weight = weight ?? relevanceScore, // 如果没有设置权重，使用相关性分数
        createdAt = createdAt ?? DateTime.now(),
        lastMentioned = lastMentioned ?? DateTime.now();
 
@@ -222,7 +225,8 @@ class CausalRelation {
   CausalRelationType type;
   double confidence; // 置信度
   DateTime extractedAt;
-  
+  String reasoning; // 新增：推理过程
+
   // 上下文
   String sourceText; // 来源文本
   List<String> involvedEntities; // 涉及的实体
@@ -236,6 +240,7 @@ class CausalRelation {
     this.confidence = 0.5,
     DateTime? extractedAt,
     required this.sourceText,
+    this.reasoning = '', // 新增默认值
     this.involvedEntities = const [],
     this.context = const {},
   }) : id = id ?? const Uuid().v4(),
@@ -250,6 +255,7 @@ class CausalRelation {
       'confidence': confidence,
       'extractedAt': extractedAt.toIso8601String(),
       'sourceText': sourceText,
+      'reasoning': reasoning, // 新增
       'involvedEntities': involvedEntities,
       'context': context,
     };
@@ -380,6 +386,7 @@ class HumanUnderstandingSystemState {
   final List<CausalRelation> recentCausalChains;
   final List<SemanticTriple> recentTriples;
   final CognitiveLoadAssessment currentCognitiveLoad;
+  final List<CognitiveLoadAssessment> cognitiveLoadHistory; // 新增历史记录
   final Map<String, dynamic> systemMetrics;
 
   HumanUnderstandingSystemState({
@@ -389,6 +396,7 @@ class HumanUnderstandingSystemState {
     required this.recentCausalChains,
     required this.recentTriples,
     required this.currentCognitiveLoad,
+    this.cognitiveLoadHistory = const [], // 新增
     this.systemMetrics = const {},
   }) : timestamp = timestamp ?? DateTime.now();
 
@@ -400,7 +408,146 @@ class HumanUnderstandingSystemState {
       'recentCausalChains': recentCausalChains.map((c) => c.toJson()).toList(),
       'recentTriples': recentTriples.map((t) => t.toJson()).toList(),
       'currentCognitiveLoad': currentCognitiveLoad.toJson(),
+      'cognitiveLoadHistory': cognitiveLoadHistory.map((h) => h.toJson()).toList(),
       'systemMetrics': systemMetrics,
     };
   }
+}
+
+// 为了保持兼容性，添加别名
+typedef Topic = ConversationTopic;
+typedef CognitiveLoad = CognitiveLoadAssessment;
+
+// 添加 Reminder 类定义
+class Reminder {
+  final String id;
+  final String title;
+  final String description;
+  final String time;
+  final bool isCompleted;
+  final DateTime createdAt;
+
+  Reminder({
+    required this.id,
+    required this.title,
+    required this.description,
+    required this.time,
+    this.isCompleted = false,
+    DateTime? createdAt,
+  }) : createdAt = createdAt ?? DateTime.now();
+
+  Map<String, dynamic> toJson() {
+    return {
+      'id': id,
+      'title': title,
+      'description': description,
+      'time': time,
+      'isCompleted': isCompleted,
+      'createdAt': createdAt.toIso8601String(),
+    };
+  }
+}
+
+// 智能提醒管理器的数据模型
+
+/// 关键词追踪器
+class KeywordTracker {
+  final String keyword;
+  final List<DateTime> occurrences = [];
+
+  KeywordTracker(this.keyword);
+
+  void addOccurrence(DateTime timestamp) {
+    occurrences.add(timestamp);
+    // 保持最近100个记录
+    if (occurrences.length > 100) {
+      occurrences.removeAt(0);
+    }
+  }
+
+  int getRecentOccurrences(Duration timeWindow) {
+    final cutoff = DateTime.now().subtract(timeWindow);
+    return occurrences.where((time) => time.isAfter(cutoff)).length;
+  }
+
+  DateTime get lastOccurrence => occurrences.isNotEmpty ? occurrences.last : DateTime(2000);
+}
+
+/// 意图追踪器
+class IntentTracker {
+  final String intent;
+  final List<IntentOccurrence> occurrences = [];
+
+  IntentTracker(this.intent);
+
+  void addOccurrence(DateTime timestamp, List<String> entities) {
+    occurrences.add(IntentOccurrence(timestamp, entities));
+    // 保持最近50个记录
+    if (occurrences.length > 50) {
+      occurrences.removeAt(0);
+    }
+  }
+
+  int getRecentOccurrences(Duration timeWindow) {
+    final cutoff = DateTime.now().subtract(timeWindow);
+    return occurrences.where((occ) => occ.timestamp.isAfter(cutoff)).length;
+  }
+
+  DateTime get lastOccurrence => occurrences.isNotEmpty ? occurrences.last.timestamp : DateTime(2000);
+}
+
+/// 意图发生记录
+class IntentOccurrence {
+  final DateTime timestamp;
+  final List<String> entities;
+
+  IntentOccurrence(this.timestamp, this.entities);
+}
+
+/// 提醒触发类型
+enum ReminderTriggerType {
+  keywordFrequency,  // 关键词频率
+  intentPattern,     // 意图模式
+  timePattern,       // 时间模式
+  contextualCue,     // 上下文线索
+}
+
+/// 提醒规则
+class ReminderRule {
+  final String id;
+  final String description;
+  final ReminderTriggerType triggerType;
+  final String triggerValue;
+  final int threshold;
+  final int timeWindowMinutes;
+  final int delaySeconds;
+  final String messageTemplate;
+
+  ReminderRule({
+    required this.id,
+    required this.description,
+    required this.triggerType,
+    required this.triggerValue,
+    required this.threshold,
+    required this.timeWindowMinutes,
+    required this.delaySeconds,
+    required this.messageTemplate,
+  });
+}
+
+/// 待发送提醒
+class PendingReminder {
+  final String id;
+  final String ruleId;
+  final String message;
+  final DateTime scheduledTime;
+  final SemanticAnalysisInput triggerAnalysis;
+
+  PendingReminder({
+    required this.id,
+    required this.ruleId,
+    required this.message,
+    required this.scheduledTime,
+    required this.triggerAnalysis,
+  });
 }

@@ -2,12 +2,13 @@ import 'dart:async';
 import 'dart:convert';
 
 import 'package:app/constants/prompt_constants.dart';
-import 'package:app/extension/map_extension.dart';
 import 'package:flutter/material.dart';
-import 'dart:developer' as dev;
 import 'package:flutter/services.dart';
 import 'package:flutter_foreground_task/flutter_foreground_task.dart';
 import 'package:intl/intl.dart';
+// 🔥 新增：智能提醒管理器导入
+import 'package:app/services/intelligent_reminder_manager.dart';
+import 'package:app/models/human_understanding_models.dart'; // 🔥 新增：添加模型导入
 import '../constants/voice_constants.dart';
 import '../models/record_entity.dart';
 import '../models/summary_entity.dart';
@@ -28,6 +29,9 @@ class ChatController extends ChangeNotifier {
   Map<String, String?> userToResponseMap = {};
 
   final ValueNotifier<Set<String>> unReadMessageId = ValueNotifier({});
+
+  // 🔥 新增：智能提醒管理器实例
+  final IntelligentReminderManager _reminderManager = IntelligentReminderManager();
 
   int countHelp = 0;
   static const int _pageSize = 10;
@@ -53,6 +57,160 @@ class ChatController extends ChangeNotifier {
 
     // 🔥 新增：注册摘要生成回调
     _setupSummaryCallback();
+
+    // 🔥 新增：初始化智能提醒管理器
+    await _initializeReminderManager();
+  }
+
+  // 🔥 新增：初始化智能提醒管理器
+  Future<void> _initializeReminderManager() async {
+    try {
+      await _reminderManager.initialize(chatController: this);
+      print('[ChatController] ✅ 智能提醒管理器已初始化');
+    } catch (e) {
+      print('[ChatController] ❌ 智能提醒管理器初始化失败: $e');
+    }
+  }
+
+  // 🔥 新增：添加系统消息的公共方法（供智能提醒管理器调用）
+  void addSystemMessage(Map<String, dynamic> messageData) {
+    try {
+      final messageText = messageData['text']?.toString() ?? '';
+      final previewLength = messageText.length > 50 ? 50 : messageText.length;
+      print('[ChatController] 📬 接收系统消息: ${messageText.substring(0, previewLength)}...');
+
+      // 确保消息格式正确
+      final systemMessage = {
+        'id': messageData['id'] ?? const Uuid().v4(),
+        'text': messageData['text'] ?? '',
+        'isUser': 'assistant', // 智能提醒以assistant角色显示
+        'timestamp': messageData['timestamp'] ?? DateTime.now().millisecondsSinceEpoch,
+        'type': messageData['type'] ?? 'intelligent_reminder',
+        'rule_type': messageData['rule_type'],
+      };
+
+      // 插入消息到聊天列表
+      insertNewMessage(systemMessage);
+
+      // 可选：保存到数据库（如果需要持久化）
+      _objectBoxService.insertDialogueRecord(
+        RecordEntity(
+          role: 'assistant',
+          content: systemMessage['text'],
+        )
+      );
+
+      print('[ChatController] ✅ 系统消息已添加到聊天中');
+
+    } catch (e) {
+      print('[ChatController] ❌ 添加系统消息失败: $e');
+    }
+  }
+
+  // 🔥 新增：发送系统消息方法（供提醒服务调用）
+  Future<void> sendSystemMessage(String message) async {
+    try {
+      final systemMessage = {
+        'id': const Uuid().v4(),
+        'text': message,
+        'isUser': 'assistant',
+        'timestamp': DateTime.now().millisecondsSinceEpoch,
+        'type': 'system_reminder',
+      };
+
+      // 添加到聊天中
+      addSystemMessage(systemMessage);
+
+      print('[ChatController] 📤 系统消息已发送: $message');
+    } catch (e) {
+      print('[ChatController] ❌ 发送系统消息失败: $e');
+    }
+  }
+
+  // 🔥 新增：获取智能提醒统计信息
+  Map<String, dynamic> getReminderStatistics() {
+    return _reminderManager.getStatistics();
+  }
+
+  // 🔥 新增：手动触发智能分析（用于测试或手动同步）
+  Future<void> triggerIntelligentAnalysis() async {
+    try {
+      // 获取最近的对话内容
+      final recentMessages = newMessages.take(5).toList();
+      if (recentMessages.isEmpty) return;
+
+      // 构建综合内容用于分析
+      final contentBuilder = StringBuffer();
+      for (final message in recentMessages) {
+        final role = message['isUser'] ?? 'unknown';
+        final text = message['text'] ?? '';
+        if (text.toString().trim().isNotEmpty) {
+          contentBuilder.writeln('$role: $text');
+        }
+      }
+
+      final combinedContent = contentBuilder.toString().trim();
+      if (combinedContent.isEmpty) return;
+
+      // 创建语义分析输入（简化版）
+      final semanticInput = SemanticAnalysisInput(
+        entities: _extractBasicEntities(combinedContent),
+        intent: _inferBasicIntent(combinedContent),
+        emotion: _inferBasicEmotion(combinedContent),
+        content: combinedContent,
+        timestamp: DateTime.now(),
+        additionalContext: {
+          'source': 'manual_trigger',
+          'trigger_method': 'chat_controller',
+        },
+      );
+
+      // 提交给智能提醒管理器处理
+      await _reminderManager.processSemanticAnalysis(semanticInput);
+
+      print('[ChatController] ✅ 手动智能分析完成');
+
+    } catch (e) {
+      print('[ChatController] ❌ 手动智能分析失败: $e');
+    }
+  }
+
+  // 🔥 新增：基础实体提取
+  List<String> _extractBasicEntities(String content) {
+    final entities = <String>[];
+    final lowerContent = content.toLowerCase();
+
+    if (lowerContent.contains('flutter')) entities.add('Flutter');
+    if (lowerContent.contains('ai') || lowerContent.contains('人工智能')) entities.add('AI');
+    if (lowerContent.contains('学习')) entities.add('学习');
+    if (lowerContent.contains('项目')) entities.add('项目');
+    if (lowerContent.contains('工作')) entities.add('工作');
+    if (lowerContent.contains('bug') || lowerContent.contains('问题')) entities.add('问题解决');
+
+    return entities.isEmpty ? ['对话'] : entities;
+  }
+
+  // 🔥 新增：基础意图推断
+  String _inferBasicIntent(String content) {
+    final lowerContent = content.toLowerCase();
+
+    if (lowerContent.contains('学习') || lowerContent.contains('教程')) return 'learning';
+    if (lowerContent.contains('计划') || lowerContent.contains('规划')) return 'planning';
+    if (lowerContent.contains('问题') || lowerContent.contains('bug')) return 'problem_solving';
+    if (lowerContent.contains('完成') || lowerContent.contains('进展')) return 'sharing_experience';
+
+    return 'casual_chat';
+  }
+
+  // 🔥 新增：基础情绪推断
+  String _inferBasicEmotion(String content) {
+    final lowerContent = content.toLowerCase();
+
+    if (lowerContent.contains('好') || lowerContent.contains('完成')) return 'positive';
+    if (lowerContent.contains('困难') || lowerContent.contains('问题')) return 'frustrated';
+    if (lowerContent.contains('想') || lowerContent.contains('希望')) return 'curious';
+
+    return 'neutral';
   }
 
   // 🔥 新增：设置摘要回调函数
@@ -78,8 +236,8 @@ class ChatController extends ChangeNotifier {
         'isUser': 'system', // 使用 'system' 角色标识这是系统生成的摘要
       });
 
-      print('[ChatController] ✅ 摘要消息已插入聊天��');
-      
+      print('[ChatController] ✅ 摘要消息已插入聊天中');
+
       // 自���滚动到底部显示新消息
       firstScrollToBottom();
       

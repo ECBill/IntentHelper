@@ -8,6 +8,7 @@ import 'package:app/services/conversation_topic_tracker.dart';
 import 'package:app/services/causal_chain_extractor.dart';
 import 'package:app/services/semantic_graph_builder.dart';
 import 'package:app/services/cognitive_load_estimator.dart';
+import 'package:app/services/intelligent_reminder_manager.dart'; // 🔥 新增：智能提醒管理器
 import 'package:app/services/objectbox_service.dart';
 
 class HumanUnderstandingSystem {
@@ -21,6 +22,7 @@ class HumanUnderstandingSystem {
   final CausalChainExtractor _causalExtractor = CausalChainExtractor();
   final SemanticGraphBuilder _graphBuilder = SemanticGraphBuilder();
   final CognitiveLoadEstimator _loadEstimator = CognitiveLoadEstimator();
+  final IntelligentReminderManager _reminderManager = IntelligentReminderManager(); // 🔥 新增：智能提醒管理器
 
   // 系统状态
   final StreamController<HumanUnderstandingSystemState> _systemStateController = StreamController.broadcast();
@@ -656,16 +658,18 @@ class HumanUnderstandingSystem {
     try {
       final stopwatch = Stopwatch()..start();
 
-      // 1. 并行处理基础分析
+      // 1. 并行处理基础分析（包含智能提醒）
       final results = await Future.wait([
         _intentManager.processSemanticAnalysis(analysis),
         _topicTracker.processConversation(analysis),
         _causalExtractor.extractCausalRelations(analysis),
+        _reminderManager.processSemanticAnalysis(analysis), // 🔥 新增：智能提醒分析
       ]);
 
       final intents = results[0] as List<Intent>;
       final topics = results[1] as List<ConversationTopic>;
       final causalRelations = results[2] as List<CausalRelation>;
+      // 智能提醒处理是异步的，不需要等待返回值
 
       // 2. 构建语义图谱（依赖前面的结果）
       final triples = await _graphBuilder.buildSemanticGraph(
@@ -686,7 +690,8 @@ class HumanUnderstandingSystem {
         additionalContext: analysis.additionalContext,
       );
 
-      // 4. 生成系统状态快照
+      // 4. 生成系统状态快照（包含智能提醒统计）
+      final reminderStats = _reminderManager.getStatistics();
       final systemState = HumanUnderstandingSystemState(
         activeIntents: _intentManager.getActiveIntents(),
         activeTopics: _topicTracker.getActiveTopics(),
@@ -699,6 +704,7 @@ class HumanUnderstandingSystem {
           'new_topics': topics.length,
           'new_causal_relations': causalRelations.length,
           'new_triples': triples.length,
+          'reminder_statistics': reminderStats, // 🔥 新增：提醒统计信息
           'analysis_timestamp': analysis.timestamp.toIso8601String(),
         },
       );
@@ -708,6 +714,7 @@ class HumanUnderstandingSystem {
       stopwatch.stop();
       print('[HumanUnderstandingSystem] ✅ 语义处理完成 (${stopwatch.elapsedMilliseconds}ms)');
       print('[HumanUnderstandingSystem] 📊 新增: ${intents.length}意图, ${topics.length}主题, ${causalRelations.length}因果, ${triples.length}三元组');
+      print('[HumanUnderstandingSystem] 🔔 智能提醒统计: ${reminderStats['pending_reminders']}个等待, ${reminderStats['sent_reminders_today']}个今日已发送');
 
       return systemState;
 
