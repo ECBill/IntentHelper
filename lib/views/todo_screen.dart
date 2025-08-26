@@ -1,8 +1,8 @@
 import 'package:flutter/material.dart';
 import 'package:intl/intl.dart';
-import '../controllers/todo_controller.dart';
 import '../models/todo_entity.dart';
 import '../services/objectbox_service.dart';
+import '../services/intelligent_reminder_manager.dart';
 
 class TodoScreen extends StatefulWidget {
   final Status status;
@@ -19,12 +19,15 @@ class _TodoScreenState extends State<TodoScreen> with TickerProviderStateMixin {
   List<TodoEntity> _pendingTodos = [];
   List<TodoEntity> _completedTodos = [];
   List<TodoEntity> _expiredTodos = [];
+  List<TodoEntity> _intelligentReminders = [];
   bool _isLoading = true;
+
+  final IntelligentReminderManager _reminderManager = IntelligentReminderManager();
 
   @override
   void initState() {
     super.initState();
-    _tabController = TabController(length: 4, vsync: this);
+    _tabController = TabController(length: 5, vsync: this);
     _loadTodos();
   }
 
@@ -45,13 +48,21 @@ class _TodoScreenState extends State<TodoScreen> with TickerProviderStateMixin {
         _allTodos = allTodos;
         _pendingTodos = allTodos.where((todo) =>
           todo.status == Status.pending &&
-          (todo.deadline == null || todo.deadline! > now)
+          (todo.deadline == null || todo.deadline! > now) &&
+          !todo.isIntelligentReminder
         ).toList();
-        _completedTodos = allTodos.where((todo) => todo.status == Status.completed).toList();
+        _completedTodos = allTodos.where((todo) =>
+          todo.status == Status.completed &&
+          !todo.isIntelligentReminder
+        ).toList();
         _expiredTodos = allTodos.where((todo) =>
           todo.status == Status.pending &&
           todo.deadline != null &&
-          todo.deadline! <= now
+          todo.deadline! <= now &&
+          !todo.isIntelligentReminder
+        ).toList();
+        _intelligentReminders = allTodos.where((todo) =>
+          todo.isIntelligentReminder
         ).toList();
         _isLoading = false;
       });
@@ -548,6 +559,305 @@ class _TodoScreenState extends State<TodoScreen> with TickerProviderStateMixin {
     );
   }
 
+  Widget _buildIntelligentReminderCard(TodoEntity todo) {
+    final isExpired = todo.deadline != null &&
+                     todo.deadline! <= DateTime.now().millisecondsSinceEpoch &&
+                     todo.status == Status.pending;
+
+    IconData reminderIcon;
+    Color reminderColor;
+    String reminderTypeText;
+
+    switch (todo.reminderType) {
+      case 'intelligent':
+        reminderIcon = Icons.psychology;
+        reminderColor = Colors.purple;
+        reminderTypeText = '智能提醒';
+        break;
+      case 'natural_language':
+        reminderIcon = Icons.chat_bubble;
+        reminderColor = Colors.blue;
+        reminderTypeText = '语言提醒';
+        break;
+      default:
+        reminderIcon = Icons.notifications;
+        reminderColor = Colors.orange;
+        reminderTypeText = '提醒';
+    }
+
+    return Card(
+      margin: const EdgeInsets.symmetric(horizontal: 16, vertical: 8),
+      elevation: 3,
+      child: Container(
+        decoration: BoxDecoration(
+          borderRadius: BorderRadius.circular(8),
+          border: Border.all(
+            color: reminderColor.withOpacity(0.3),
+            width: 1,
+          ),
+        ),
+        child: Padding(
+          padding: const EdgeInsets.all(16),
+          child: Column(
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              Row(
+                children: [
+                  Icon(reminderIcon, color: reminderColor, size: 20),
+                  const SizedBox(width: 8),
+                  Container(
+                    padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 2),
+                    decoration: BoxDecoration(
+                      color: reminderColor.withOpacity(0.1),
+                      borderRadius: BorderRadius.circular(10),
+                      border: Border.all(color: reminderColor.withOpacity(0.3)),
+                    ),
+                    child: Text(
+                      reminderTypeText,
+                      style: TextStyle(
+                        fontSize: 10,
+                        color: reminderColor,
+                        fontWeight: FontWeight.bold,
+                      ),
+                    ),
+                  ),
+                  const Spacer(),
+                  PopupMenuButton<String>(
+                    onSelected: (value) {
+                      switch (value) {
+                        case 'edit':
+                          _editTodo(todo);
+                          break;
+                        case 'complete':
+                          _updateTodoStatus(todo, Status.completed);
+                          break;
+                        case 'pending':
+                          _updateTodoStatus(todo, Status.pending);
+                          break;
+                        case 'delete':
+                          _deleteTodo(todo);
+                          break;
+                      }
+                    },
+                    itemBuilder: (context) => [
+                      const PopupMenuItem(value: 'edit', child: Text('编辑')),
+                      if (todo.status != Status.completed)
+                        const PopupMenuItem(value: 'complete', child: Text('标记完成')),
+                      if (todo.status == Status.completed)
+                        const PopupMenuItem(value: 'pending', child: Text('标记待完成')),
+                      const PopupMenuItem(value: 'delete', child: Text('删除')),
+                    ],
+                  ),
+                ],
+              ),
+
+              const SizedBox(height: 8),
+
+              Text(
+                todo.task ?? '无标题',
+                style: TextStyle(
+                  fontSize: 16,
+                  fontWeight: FontWeight.bold,
+                  decoration: todo.status == Status.completed
+                    ? TextDecoration.lineThrough
+                    : null,
+                  color: isExpired ? Colors.red : null,
+                ),
+              ),
+
+              if (todo.detail != null && todo.detail!.isNotEmpty) ...[
+                const SizedBox(height: 8),
+                Text(
+                  todo.detail!,
+                  style: TextStyle(
+                    fontSize: 14,
+                    color: Colors.grey[600],
+                  ),
+                ),
+              ],
+
+              if (todo.originalText != null && todo.originalText!.isNotEmpty) ...[
+                const SizedBox(height: 8),
+                Container(
+                  padding: const EdgeInsets.all(8),
+                  decoration: BoxDecoration(
+                    color: Colors.grey[100],
+                    borderRadius: BorderRadius.circular(6),
+                    border: Border.all(color: Colors.grey[300]!),
+                  ),
+                  child: Row(
+                    children: [
+                      Icon(Icons.format_quote, size: 16, color: Colors.grey[600]),
+                      const SizedBox(width: 4),
+                      Expanded(
+                        child: Text(
+                          '"${todo.originalText}"',
+                          style: TextStyle(
+                            fontSize: 12,
+                            color: Colors.grey[700],
+                            fontStyle: FontStyle.italic,
+                          ),
+                        ),
+                      ),
+                    ],
+                  ),
+                ),
+              ],
+
+              const SizedBox(height: 12),
+
+              Row(
+                children: [
+                  Container(
+                    padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
+                    decoration: BoxDecoration(
+                      color: _getStatusColor(todo.status).withOpacity(0.1),
+                      borderRadius: BorderRadius.circular(12),
+                      border: Border.all(color: _getStatusColor(todo.status)),
+                    ),
+                    child: Row(
+                      mainAxisSize: MainAxisSize.min,
+                      children: [
+                        Icon(
+                          _getStatusIcon(todo.status),
+                          size: 16,
+                          color: _getStatusColor(todo.status),
+                        ),
+                        const SizedBox(width: 4),
+                        Text(
+                          _getStatusText(todo.status),
+                          style: TextStyle(
+                            fontSize: 12,
+                            color: _getStatusColor(todo.status),
+                            fontWeight: FontWeight.bold,
+                          ),
+                        ),
+                      ],
+                    ),
+                  ),
+
+                  if (todo.confidence != null) ...[
+                    const SizedBox(width: 8),
+                    Container(
+                      padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 2),
+                      decoration: BoxDecoration(
+                        color: Colors.green.withOpacity(0.1),
+                        borderRadius: BorderRadius.circular(8),
+                      ),
+                      child: Text(
+                        '${(todo.confidence! * 100).toInt()}%',
+                        style: const TextStyle(
+                          fontSize: 10,
+                          color: Colors.green,
+                          fontWeight: FontWeight.bold,
+                        ),
+                      ),
+                    ),
+                  ],
+
+                  const Spacer(),
+
+                  if (todo.deadline != null) ...[
+                    Icon(
+                      Icons.access_time,
+                      size: 16,
+                      color: isExpired ? Colors.red : Colors.grey[600],
+                    ),
+                    const SizedBox(width: 4),
+                    Text(
+                      DateFormat('MM-dd HH:mm').format(
+                        DateTime.fromMillisecondsSinceEpoch(todo.deadline!),
+                      ),
+                      style: TextStyle(
+                        fontSize: 12,
+                        color: isExpired ? Colors.red : Colors.grey[600],
+                        fontWeight: isExpired ? FontWeight.bold : null,
+                      ),
+                    ),
+                  ],
+                ],
+              ),
+            ],
+          ),
+        ),
+      ),
+    );
+  }
+
+  Widget _buildIntelligentReminderList(List<TodoEntity> reminders) {
+    if (reminders.isEmpty) {
+      return Center(
+        child: Column(
+          mainAxisAlignment: MainAxisAlignment.center,
+          children: [
+            Icon(Icons.psychology, size: 64, color: Colors.grey),
+            const SizedBox(height: 16),
+            const Text('暂无智能提醒', style: TextStyle(fontSize: 18, color: Colors.grey)),
+            const SizedBox(height: 8),
+            Text(
+              '试试说"明天上午10点开会"来创建提醒',
+              style: TextStyle(fontSize: 14, color: Colors.grey[600]),
+              textAlign: TextAlign.center,
+            ),
+          ],
+        ),
+      );
+    }
+
+    final intelligentReminders = reminders.where((r) => r.reminderType == 'intelligent').toList();
+    final naturalLanguageReminders = reminders.where((r) => r.reminderType == 'natural_language').toList();
+
+    return RefreshIndicator(
+      onRefresh: _loadTodos,
+      child: ListView(
+        padding: const EdgeInsets.symmetric(vertical: 8),
+        children: [
+          if (naturalLanguageReminders.isNotEmpty) ...[
+            Padding(
+              padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 8),
+              child: Row(
+                children: [
+                  Icon(Icons.chat_bubble, size: 20, color: Colors.blue),
+                  const SizedBox(width: 8),
+                  Text(
+                    '语言提醒 (${naturalLanguageReminders.length})',
+                    style: const TextStyle(
+                      fontSize: 16,
+                      fontWeight: FontWeight.bold,
+                      color: Colors.blue,
+                    ),
+                  ),
+                ],
+              ),
+            ),
+            ...naturalLanguageReminders.map((reminder) => _buildIntelligentReminderCard(reminder)),
+          ],
+
+          if (intelligentReminders.isNotEmpty) ...[
+            Padding(
+              padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 8),
+              child: Row(
+                children: [
+                  Icon(Icons.psychology, size: 20, color: Colors.purple),
+                  const SizedBox(width: 8),
+                  Text(
+                    '智能提醒 (${intelligentReminders.length})',
+                    style: const TextStyle(
+                      fontSize: 16,
+                      fontWeight: FontWeight.bold,
+                      color: Colors.purple,
+                    ),
+                  ),
+                ],
+              ),
+            ),
+            ...intelligentReminders.map((reminder) => _buildIntelligentReminderCard(reminder)),
+          ],
+        ],
+      ),
+    );
+  }
+
   @override
   Widget build(BuildContext context) {
     return Scaffold(
@@ -555,6 +865,7 @@ class _TodoScreenState extends State<TodoScreen> with TickerProviderStateMixin {
         title: const Text('任务管理'),
         bottom: TabBar(
           controller: _tabController,
+          isScrollable: true,
           tabs: [
             Tab(
               icon: const Icon(Icons.list),
@@ -572,6 +883,10 @@ class _TodoScreenState extends State<TodoScreen> with TickerProviderStateMixin {
               icon: const Icon(Icons.error),
               text: '已过期 (${_expiredTodos.length})',
             ),
+            Tab(
+              icon: const Icon(Icons.psychology),
+              text: '智能提醒 (${_intelligentReminders.length})',
+            ),
           ],
         ),
       ),
@@ -584,6 +899,7 @@ class _TodoScreenState extends State<TodoScreen> with TickerProviderStateMixin {
               _buildTodoList(_pendingTodos),
               _buildTodoList(_completedTodos),
               _buildTodoList(_expiredTodos),
+              _buildIntelligentReminderList(_intelligentReminders),
             ],
           ),
       floatingActionButton: FloatingActionButton.extended(

@@ -5,9 +5,7 @@ import 'package:flutter/material.dart';
 import 'package:flutter_screenutil/flutter_screenutil.dart';
 import 'package:app/models/human_understanding_models.dart' as hum;
 import 'package:app/services/human_understanding_system.dart';
-import 'package:app/services/intelligent_reminder_manager.dart'; // 🔥 新增
-import 'package:app/views/reminder_management_screen.dart'; // 🔥 新增
-import 'package:go_router/go_router.dart'; // 🔥 新增
+import 'package:go_router/go_router.dart';
 import 'dart:async';
 import 'dart:convert';
 
@@ -21,7 +19,6 @@ class HumanUnderstandingDashboard extends StatefulWidget {
 class _HumanUnderstandingDashboardState extends State<HumanUnderstandingDashboard>
     with TickerProviderStateMixin {
   final HumanUnderstandingSystem _system = HumanUnderstandingSystem();
-  final IntelligentReminderManager _reminderManager = IntelligentReminderManager(); // 🔥 新增
 
   late TabController _tabController;
   StreamSubscription? _systemStateSubscription;
@@ -35,7 +32,7 @@ class _HumanUnderstandingDashboardState extends State<HumanUnderstandingDashboar
   @override
   void initState() {
     super.initState();
-    _tabController = TabController(length: 6, vsync: this); // 🔥 修改：增加到6个标签页
+    _tabController = TabController(length: 5, vsync: this); // 🔥 修改：改回5个标签页
     _initializeSystem();
   }
 
@@ -120,9 +117,9 @@ class _HumanUnderstandingDashboardState extends State<HumanUnderstandingDashboar
               PopupMenuItem(value: 'export', child: Text('导出数据')),
               PopupMenuItem(value: 'reset', child: Text('重置系统')),
               PopupMenuItem(value: 'test', child: Text('测试分析')),
-              PopupMenuItem(value: 'trigger_check', child: Text('手动检查对话')), // 🔥 新增
-              PopupMenuItem(value: 'reset_monitoring', child: Text('重置监听状态')), // 🔥 新增
-              PopupMenuItem(value: 'debug_info', child: Text('调试信息')), // 🔥 新增
+              PopupMenuItem(value: 'trigger_check', child: Text('手动检查对话')),
+              PopupMenuItem(value: 'reset_monitoring', child: Text('重置监听状态')),
+              PopupMenuItem(value: 'debug_info', child: Text('调试信息')),
             ],
           ),
         ],
@@ -137,7 +134,7 @@ class _HumanUnderstandingDashboardState extends State<HumanUnderstandingDashboar
             Tab(text: '主题追踪'),
             Tab(text: '因果分析'),
             Tab(text: '认知负载'),
-            Tab(text: '提醒管理'), // 🔥 新增标签页
+            // 🔥 删除：提醒管理标签页
           ],
         ),
       ),
@@ -151,7 +148,7 @@ class _HumanUnderstandingDashboardState extends State<HumanUnderstandingDashboar
                 _buildTopicsTab(),
                 _buildCausalTab(),
                 _buildCognitiveLoadTab(),
-                _buildRemindersTab(), // 🔥 新增提醒管理页面
+                // 🔥 删除：提醒管理页面
               ],
             ),
     );
@@ -842,219 +839,6 @@ class _HumanUnderstandingDashboardState extends State<HumanUnderstandingDashboar
         ),
       ),
     );
-  }
-
-  Widget _buildRemindersTab() { // 🔥 新增提醒管理页面
-    return ReminderManagementScreen();
-  }
-
-  void _showAddReminderDialog() {
-    showDialog(
-      context: context,
-      builder: (context) {
-        String title = '';
-        String description = '';
-        TimeOfDay time = TimeOfDay.now();
-
-        return AlertDialog(
-          title: Text('添加提醒'),
-          content: Column(
-            mainAxisSize: MainAxisSize.min,
-            children: [
-              TextField(
-                decoration: InputDecoration(labelText: '标题'),
-                onChanged: (value) {
-                  title = value;
-                },
-              ),
-              TextField(
-                decoration: InputDecoration(labelText: '描述'),
-                onChanged: (value) {
-                  description = value;
-                },
-              ),
-              SizedBox(height: 8.h),
-              Row(
-                children: [
-                  Expanded(
-                    child: Text(
-                      '时间: ${time.format(context)}',
-                      style: TextStyle(fontSize: 16.sp),
-                    ),
-                  ),
-                  IconButton(
-                    icon: Icon(Icons.access_time),
-                    onPressed: () async {
-                      final pickedTime = await showTimePicker(
-                        context: context,
-                        initialTime: time,
-                      );
-                      if (pickedTime != null && pickedTime != time) {
-                        setState(() {
-                          time = pickedTime;
-                        });
-                      }
-                    },
-                  ),
-                ],
-              ),
-            ],
-          ),
-          actions: [
-            TextButton(
-              onPressed: () => Navigator.pop(context),
-              child: Text('取消'),
-            ),
-            ElevatedButton(
-              onPressed: () async {
-                // 添加提醒逻辑
-                try {
-                  await _reminderManager.createManualReminder(
-                    title: title,
-                    description: description,
-                    reminderTime: DateTime.now().add(Duration(hours: 1)), // 默认1小时后
-                    type: 'task',
-                  );
-                  Navigator.pop(context);
-                  _loadSystemData(); // 重新加载数据
-                } catch (e) {
-                  print('添加提醒失败: $e');
-                }
-              },
-              child: Text('确定'),
-            ),
-          ],
-        );
-      },
-    );
-  }
-
-  void _showEditReminderDialog(hum.Reminder reminder) {
-    showDialog(
-      context: context,
-      builder: (context) {
-        String title = reminder.title;
-        String description = reminder.description;
-        TimeOfDay time = TimeOfDay.now();
-
-        return AlertDialog(
-          title: Text('编辑提醒'),
-          content: Column(
-            mainAxisSize: MainAxisSize.min,
-            children: [
-              TextField(
-                decoration: InputDecoration(labelText: '标题'),
-                controller: TextEditingController(text: title),
-                onChanged: (value) {
-                  title = value;
-                },
-              ),
-              TextField(
-                decoration: InputDecoration(labelText: '描述'),
-                controller: TextEditingController(text: description),
-                onChanged: (value) {
-                  description = value;
-                },
-              ),
-              SizedBox(height: 8.h),
-              Row(
-                children: [
-                  Expanded(
-                    child: Text(
-                      '时间: ${time.format(context)}',
-                      style: TextStyle(fontSize: 16.sp),
-                    ),
-                  ),
-                  IconButton(
-                    icon: Icon(Icons.access_time),
-                    onPressed: () async {
-                      final pickedTime = await showTimePicker(
-                        context: context,
-                        initialTime: time,
-                      );
-                      if (pickedTime != null && pickedTime != time) {
-                        setState(() {
-                          time = pickedTime;
-                        });
-                      }
-                    },
-                  ),
-                ],
-              ),
-            ],
-          ),
-          actions: [
-            TextButton(
-              onPressed: () => Navigator.pop(context),
-              child: Text('取消'),
-            ),
-            ElevatedButton(
-              onPressed: () async {
-                // 编辑提醒逻辑
-                try {
-                  // 将时间字符串转换为 DateTime
-                  final now = DateTime.now();
-                  final reminderDateTime = DateTime(
-                    now.year,
-                    now.month,
-                    now.day,
-                    time.hour,
-                    time.minute,
-                  );
-
-                  // 创建 ReminderItem 对象而不是 hum.Reminder
-                  final reminderItem = ReminderItem(
-                    id: reminder.id,
-                    title: title,
-                    description: description,
-                    reminderTime: reminderDateTime,
-                    isCompleted: reminder.isCompleted,
-                    originalText: '编辑更新：$title',
-                    createdAt: reminder.createdAt,
-                  );
-
-                  await _reminderManager.updateReminder(reminderItem);
-                  Navigator.pop(context);
-                  _loadSystemData(); // 重新加载数据
-                } catch (e) {
-                  print('编辑提醒失败: $e');
-                }
-              },
-              child: Text('确定'),
-            ),
-          ],
-        );
-      },
-    );
-  }
-
-  void _deleteReminder(String reminderId) async {
-    final confirmed = await showDialog<bool>(
-      context: context,
-      builder: (context) => AlertDialog(
-        title: Text('确认删除'),
-        content: Text('确定要删除这个提醒吗？'),
-        actions: [
-          TextButton(
-            onPressed: () => Navigator.pop(context, false),
-            child: Text('取消'),
-          ),
-          TextButton(
-            onPressed: () => Navigator.pop(context, true),
-            child: Text('确定'),
-          ),
-        ],
-      ),
-    );
-
-    if (confirmed == true) {
-      try {
-        await _reminderManager.deleteReminder(reminderId);
-        _loadSystemData(); // 重新加载数据
-      } catch (e) {
-        print('删除提醒失败: $e');
-      }
-    }
   }
 
   void _handleMenuAction(String action) async {

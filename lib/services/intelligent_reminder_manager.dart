@@ -5,8 +5,9 @@ import 'dart:async';
 import 'package:app/models/human_understanding_models.dart';
 import 'package:app/services/llm.dart';
 import 'package:app/controllers/chat_controller.dart';
-import 'package:app/services/natural_language_reminder_service.dart'; // 🔥 新增
-import 'package:app/views/reminder_management_screen.dart'; // 🔥 新增：导入 ReminderItem
+import 'package:app/services/natural_language_reminder_service.dart'; // 🔥 新增：导入TodoEntity和ObjectBoxService
+import 'package:app/models/todo_entity.dart';
+import 'package:app/services/objectbox_service.dart';
 
 class IntelligentReminderManager {
   static final IntelligentReminderManager _instance = IntelligentReminderManager._internal();
@@ -34,8 +35,13 @@ class IntelligentReminderManager {
   static const int _analysisInterval = 300; // 5分钟分析一次
   static const int _maxRemindersPerHour = 3; // 每小时最多3个提醒
 
-  // 提醒计数器（防止过度提醒）
-  final Map<int, int> _hourlyReminderCount = {};
+  // 🔥 新增：智能提醒调度参数
+  static const int _minIntervalBetweenReminders = 900; // 15分钟内最多发送1个提醒
+  static const int _maxRemindersPerDay = 8; // 每天最多8个提醒
+
+  // 🔥 修改：提醒计数器改为更精细的时间跟踪
+  final List<DateTime> _recentReminderTimes = [];
+  final Map<int, int> _hourlyReminderCount = {}; // 🔥 新增：每小时提醒计数
 
   /// 初始化提醒管理器
   Future<void> initialize({ChatController? chatController}) async {
@@ -208,74 +214,100 @@ class IntelligentReminderManager {
 
     if (_sentReminderIds.contains(reminderId)) return;
 
-    // 检查每小时提醒限制
-    final currentHour = DateTime.now().hour;
-    final hourlyCount = _hourlyReminderCount[currentHour] ?? 0;
-    if (hourlyCount >= _maxRemindersPerHour) {
-      print('[IntelligentReminderManager] ⚠️ 达到每小时提醒限制');
+    // 🔥 新增：检查是否太频繁发送提醒
+    if (!_canSendReminderNow()) {
+      print('[IntelligentReminderManager] ⚠️ 提醒发送过于频繁，延迟处理');
       return;
     }
+
+    // 🔥 修改：使用智能调度，避免集中发送
+    final scheduledTime = _calculateOptimalReminderTime(rule);
 
     // 生成个性化提醒内容
     final reminderContent = await _generateReminderContent(rule, analysis);
 
-    final reminder = PendingReminder(
-      id: reminderId,
-      rule: rule,
-      content: reminderContent,
-      scheduledTime: DateTime.now().add(Duration(seconds: rule.delaySeconds)),
-      context: analysis,
-    );
-
-    _pendingReminders.add(reminder);
-    print('[IntelligentReminderManager] 📅 安排提醒: ${rule.description} (${rule.delaySeconds}秒后)');
+    // 🔥 新增：直接创建TodoEntity而不是PendingReminder
+    await _createReminderTodo(rule, analysis, reminderContent, scheduledTime, reminderId);
   }
 
-  /// 生成个性化提醒内容
-  Future<String> _generateReminderContent(ReminderRule rule, SemanticAnalysisInput analysis) async {
+  /// 🔥 新增：创建提醒任务
+  Future<void> _createReminderTodo(
+    ReminderRule rule,
+    SemanticAnalysisInput analysis,
+    String content,
+    DateTime scheduledTime,
+    String reminderId
+  ) async {
     try {
-      final contentPrompt = '''
-你是一个贴心的智能助手。请根据用户的对话历史和当前上下文，生成一个自然、有用的提醒消息。
+      final todo = TodoEntity(
+        task: _generateReminderTitle(rule, content),
+        detail: content,
+        deadline: scheduledTime.millisecondsSinceEpoch,
+        status: Status.pending,
+        isIntelligentReminder: true,
+        originalText: analysis.content,
+        reminderType: 'intelligent',
+        ruleId: rule.id,
+        confidence: null,
+      );
 
-【提醒类型】：${rule.type.toString()}
-【提醒目标】：${rule.targetKeyword ?? rule.targetIntent}
-【提醒描述】：${rule.description}
+      // 保存到数据库
+      ObjectBoxService().createTodos([todo]);
 
-【用户近期对话】：
-"${analysis.content}"
+      // 标记为已处理
+      _sentReminderIds.add(reminderId);
+      _recentReminderTimes.add(DateTime.now());
 
-【用户情绪】：${analysis.emotion}
-【相关实体】：${analysis.entities.join(', ')}
+      // 发送通知到聊天
+      await _sendReminderNotification(todo, rule);
 
-【生成要求】：
-1. 语调自然友好，就像一个贴心的朋友
-2. 提醒要有实际价值，不要空洞
-3. 长度控制在30-50字
-4. 可以结合用户的情绪状态调整语调
-5. 避免过于正式或机械化的表达
-
-【示例风格】：
-- "我注意到你最近经常提到学习Flutter，要不要我帮你整理一个学习计划？"
-- "看起来你对那个项目挺关注的，需要我提醒你明天跟进一下吗？"
-- "你刚才提到的优化方案很有意思，要不要记录下来避免忘记？"
-
-请生成一个合适的提醒消息：
-''';
-
-      final llm = await LLM.create('gpt-4o-mini', systemPrompt: contentPrompt);
-      final response = await llm.createRequest(content: analysis.content);
-
-      // 清理响应，移除引号和多余符号
-      String cleanResponse = response.trim();
-      if (cleanResponse.startsWith('"') && cleanResponse.endsWith('"')) {
-        cleanResponse = cleanResponse.substring(1, cleanResponse.length - 1);
-      }
-
-      return cleanResponse.isNotEmpty ? cleanResponse : rule.defaultMessage;
+      print('[IntelligentReminderManager] ✅ 创建智能提醒任务: ${todo.task}');
 
     } catch (e) {
-      print('[IntelligentReminderManager] ❌ 生成提醒内容失败: $e');
-      return rule.defaultMessage;
+      print('[IntelligentReminderManager] ❌ 创建提醒任务失败: $e');
+    }
+  }
+
+  /// 🔥 新增：生成提醒标题
+  String _generateReminderTitle(ReminderRule rule, String content) {
+    switch (rule.type) {
+      case ReminderType.keywordFrequency:
+        return '💡 ${rule.targetKeyword}相关提醒';
+      case ReminderType.intentPattern:
+        return '📋 ${rule.targetIntent}跟进提醒';
+      case ReminderType.timeBasedFollow:
+        return '⏰ 定时跟进提醒';
+      case ReminderType.contextualSuggestion:
+        return '🎯 智能建议提醒';
+      default:
+        return '🔔 智能提醒';
+    }
+  }
+
+  /// 🔥 新增：发送提醒通知到聊天
+  Future<void> _sendReminderNotification(TodoEntity todo, ReminderRule rule) async {
+    try {
+      if (_chatController == null) return;
+
+      final timeStr = _formatDuration(
+        DateTime.fromMillisecondsSinceEpoch(todo.deadline!).difference(DateTime.now())
+      );
+
+      final message = '🤖 智能提醒已创建：${todo.task}\n📝 ${todo.detail}\n⏰ 将在${timeStr}后提醒您';
+
+      final reminderMessage = {
+        'id': DateTime.now().millisecondsSinceEpoch.toString(),
+        'text': message,
+        'isUser': 'assistant',
+        'timestamp': DateTime.now().millisecondsSinceEpoch,
+        'type': 'intelligent_reminder_created',
+        'todo_id': todo.id.toString(),
+      };
+
+      _chatController!.addSystemMessage(reminderMessage);
+
+    } catch (e) {
+      print('[IntelligentReminderManager] ❌ 发送提醒通知失败: $e');
     }
   }
 
@@ -331,6 +363,9 @@ class IntelligentReminderManager {
       // 更新每小时计数
       final currentHour = DateTime.now().hour;
       _hourlyReminderCount[currentHour] = (_hourlyReminderCount[currentHour] ?? 0) + 1;
+
+      // 🔥 新增：记录最近发送的提醒时间
+      _recentReminderTimes.add(DateTime.now());
 
       print('[IntelligentReminderManager] 💬 发送智能提醒: ${reminder.content}');
 
@@ -529,34 +564,32 @@ class IntelligentReminderManager {
   /// 🔥 新增：获取自然语言提醒服务引用
   NaturalLanguageReminderService get naturalLanguageReminderService => _nlReminderService;
 
-  /// 🔥 新增：手动创建提醒的便捷方法
-  Future<void> createManualReminder({
+  /// 🔥 新增：手动创建提醒任务
+  Future<TodoEntity?> createManualReminderTodo({
     required String title,
     String? description,
     required DateTime reminderTime,
-    String type = 'task', // 改为 String 类型，添加 task 选项
+    String type = 'manual',
   }) async {
-    await _nlReminderService.createManualReminder(
-      title: title,
-      description: description,
-      reminderTime: reminderTime,
-      type: type,
-    );
-  }
+    try {
+      final todo = TodoEntity(
+        task: title,
+        detail: description ?? '',
+        deadline: reminderTime.millisecondsSinceEpoch,
+        status: Status.pending,
+        isIntelligentReminder: type != 'manual',
+        originalText: type == 'manual' ? null : description,
+        reminderType: type,
+        confidence: null,
+      );
 
-  /// 🔥 新增：添加提醒方法
-  Future<void> addReminder(ReminderItem reminder) async {
-    await _nlReminderService.addReminder(reminder);
-  }
+      ObjectBoxService().createTodos([todo]);
+      return todo;
 
-  /// 🔥 新增：更新提醒方法
-  Future<void> updateReminder(ReminderItem updatedReminder) async {
-    await _nlReminderService.updateReminder(updatedReminder);
-  }
-
-  /// 🔥 新增：删除提醒方法
-  Future<void> deleteReminder(String reminderId) async {
-    await _nlReminderService.deleteReminder(reminderId);
+    } catch (e) {
+      print('[IntelligentReminderManager] ❌ 创建手动提醒失败: $e');
+      return null;
+    }
   }
 
   /// 清理资源
@@ -565,6 +598,88 @@ class IntelligentReminderManager {
     _analysisTimer?.cancel();
     _nlReminderService.dispose();
     print('[IntelligentReminderManager] 🧹 智能提醒管理器已清理');
+  }
+
+  /// 🔥 新增：检查是否可以发送提醒
+  bool _canSendReminderNow() {
+    final now = DateTime.now();
+
+    // 清理过期的提醒时间记录
+    _recentReminderTimes.removeWhere((time) =>
+      now.difference(time).inMinutes > _minIntervalBetweenReminders ~/ 60);
+
+    // 检查最近是否发送过提醒
+    if (_recentReminderTimes.isNotEmpty) {
+      final lastReminderTime = _recentReminderTimes.last;
+      if (now.difference(lastReminderTime).inSeconds < _minIntervalBetweenReminders) {
+        return false;
+      }
+    }
+
+    // 检查今天是否已达到最大提醒数
+    final todayStart = DateTime(now.year, now.month, now.day);
+    final todayReminders = _recentReminderTimes.where((time) =>
+      time.isAfter(todayStart)).length;
+
+    return todayReminders < _maxRemindersPerDay;
+  }
+
+  /// 🔥 新增：计算最优提醒时间
+  DateTime _calculateOptimalReminderTime(ReminderRule rule) {
+    final now = DateTime.now();
+    var scheduledTime = now.add(Duration(seconds: rule.delaySeconds));
+
+    // 避开用户可能忙碌的时间（深夜或早晨）
+    if (scheduledTime.hour < 8) {
+      scheduledTime = scheduledTime.copyWith(hour: 8, minute: 0);
+    } else if (scheduledTime.hour > 22) {
+      scheduledTime = scheduledTime.add(Duration(days: 1)).copyWith(hour: 9, minute: 0);
+    }
+
+    return scheduledTime;
+  }
+
+  /// 🔥 新增：生成个性化提醒内容
+  Future<String> _generateReminderContent(ReminderRule rule, SemanticAnalysisInput analysis) async {
+    try {
+      final contentPrompt = '''
+根据用户的对话内容和提醒规则，生成一个个性化的提醒内容。
+
+【提醒规则】：
+- 类型: ${rule.type.toString()}
+- 目标关键词: ${rule.targetKeyword}
+- 目标意图: ${rule.targetIntent}
+- 默认消息: ${rule.defaultMessage}
+
+【用户对话内容】：
+"${analysis.content}"
+
+【用户情绪】：${analysis.emotion}
+
+请生成一个简洁、友好、有用的提醒内容，不超过100字。
+''';
+
+      final llm = await LLM.create('gpt-4o-mini', systemPrompt: contentPrompt);
+      final response = await llm.createRequest(content: analysis.content);
+
+      return response.trim().isNotEmpty ? response.trim() : rule.defaultMessage;
+    } catch (e) {
+      print('[IntelligentReminderManager] ❌ 生成提醒内容失败: $e');
+      return rule.defaultMessage;
+    }
+  }
+
+  /// 🔥 新增：格式化时间差
+  String _formatDuration(Duration duration) {
+    if (duration.inDays > 0) {
+      return '${duration.inDays}天';
+    } else if (duration.inHours > 0) {
+      return '${duration.inHours}小时';
+    } else if (duration.inMinutes > 0) {
+      return '${duration.inMinutes}分钟';
+    } else {
+      return '现在';
+    }
   }
 }
 
