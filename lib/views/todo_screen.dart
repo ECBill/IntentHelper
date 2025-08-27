@@ -2,7 +2,6 @@ import 'package:flutter/material.dart';
 import 'package:intl/intl.dart';
 import '../models/todo_entity.dart';
 import '../services/objectbox_service.dart';
-import '../services/intelligent_reminder_manager.dart';
 
 class TodoScreen extends StatefulWidget {
   final Status status;
@@ -15,19 +14,16 @@ class TodoScreen extends StatefulWidget {
 
 class _TodoScreenState extends State<TodoScreen> with TickerProviderStateMixin {
   late TabController _tabController;
-  List<TodoEntity> _allTodos = [];
-  List<TodoEntity> _pendingTodos = [];
-  List<TodoEntity> _completedTodos = [];
-  List<TodoEntity> _expiredTodos = [];
-  List<TodoEntity> _intelligentReminders = [];
+  List<TodoEntity> _pendingReminders = []; // 待提醒
+  List<TodoEntity> _remindedTodos = []; // 已提醒
+  List<TodoEntity> _intelligentReminders = []; // 智能建议提醒
+  List<TodoEntity> _allTodos = []; // 全部任务
   bool _isLoading = true;
-
-  final IntelligentReminderManager _reminderManager = IntelligentReminderManager();
 
   @override
   void initState() {
     super.initState();
-    _tabController = TabController(length: 5, vsync: this);
+    _tabController = TabController(length: 4, vsync: this); // 确认为4个标签页
     _loadTodos();
   }
 
@@ -44,31 +40,44 @@ class _TodoScreenState extends State<TodoScreen> with TickerProviderStateMixin {
       final allTodos = ObjectBoxService().getAllTodos() ?? [];
       final now = DateTime.now().millisecondsSinceEpoch;
 
+      // 🔥 删除过期的待提醒任务
+      _deleteExpiredPendingReminders(allTodos, now);
+
       setState(() {
-        _allTodos = allTodos;
-        _pendingTodos = allTodos.where((todo) =>
-          todo.status == Status.pending &&
-          (todo.deadline == null || todo.deadline! > now) &&
-          !todo.isIntelligentReminder
+        // 按提醒类型分类
+        _pendingReminders = allTodos.where((todo) =>
+            todo.status == Status.pending_reminder
         ).toList();
-        _completedTodos = allTodos.where((todo) =>
-          todo.status == Status.completed &&
-          !todo.isIntelligentReminder
+
+        _remindedTodos = allTodos.where((todo) =>
+            todo.status == Status.reminded
         ).toList();
-        _expiredTodos = allTodos.where((todo) =>
-          todo.status == Status.pending &&
-          todo.deadline != null &&
-          todo.deadline! <= now &&
-          !todo.isIntelligentReminder
-        ).toList();
+
         _intelligentReminders = allTodos.where((todo) =>
-          todo.isIntelligentReminder
+            todo.status == Status.intelligent_suggestion
         ).toList();
+
+        // 添加全部任务
+        _allTodos = allTodos;
+
         _isLoading = false;
       });
     } catch (e) {
       setState(() => _isLoading = false);
       _showErrorDialog('加载任务失败: $e');
+    }
+  }
+
+  /// 删除过期的待提醒任务
+  void _deleteExpiredPendingReminders(List<TodoEntity> allTodos, int now) {
+    final expiredTodos = allTodos.where((todo) =>
+        todo.status == Status.pending_reminder &&
+        todo.deadline != null &&
+        todo.deadline! <= now
+    ).toList();
+
+    for (final todo in expiredTodos) {
+      ObjectBoxService().deleteTodo(todo.id);
     }
   }
 
@@ -125,8 +134,8 @@ class _TodoScreenState extends State<TodoScreen> with TickerProviderStateMixin {
                     Expanded(
                       child: Text(
                         selectedDeadline == null
-                          ? '未设置截止时间'
-                          : '截止时间: ${DateFormat('yyyy-MM-dd HH:mm').format(selectedDeadline!)}',
+                            ? '未设置截止时间'
+                            : '截止时间: ${DateFormat('yyyy-MM-dd HH:mm').format(selectedDeadline!)}',
                       ),
                     ),
                     TextButton(
@@ -189,7 +198,7 @@ class _TodoScreenState extends State<TodoScreen> with TickerProviderStateMixin {
         task: task,
         detail: detail.isEmpty ? null : detail,
         deadline: deadline?.millisecondsSinceEpoch,
-        status: Status.pending,
+        status: Status.pending_reminder, // 默认为待提醒状态
         createdAt: DateTime.now().millisecondsSinceEpoch,
       );
 
@@ -255,8 +264,8 @@ class _TodoScreenState extends State<TodoScreen> with TickerProviderStateMixin {
     final taskController = TextEditingController(text: todo.task);
     final detailController = TextEditingController(text: todo.detail ?? '');
     DateTime? selectedDeadline = todo.deadline != null
-      ? DateTime.fromMillisecondsSinceEpoch(todo.deadline!)
-      : null;
+        ? DateTime.fromMillisecondsSinceEpoch(todo.deadline!)
+        : null;
 
     showDialog(
       context: context,
@@ -290,8 +299,8 @@ class _TodoScreenState extends State<TodoScreen> with TickerProviderStateMixin {
                     Expanded(
                       child: Text(
                         selectedDeadline == null
-                          ? '未设置截止时间'
-                          : '截止时间: ${DateFormat('yyyy-MM-dd HH:mm').format(selectedDeadline!)}',
+                            ? '未设置截止时间'
+                            : '截止时间: ${DateFormat('yyyy-MM-dd HH:mm').format(selectedDeadline!)}',
                       ),
                     ),
                     TextButton(
@@ -306,8 +315,8 @@ class _TodoScreenState extends State<TodoScreen> with TickerProviderStateMixin {
                           final time = await showTimePicker(
                             context: context,
                             initialTime: selectedDeadline != null
-                              ? TimeOfDay.fromDateTime(selectedDeadline!)
-                              : TimeOfDay.now(),
+                                ? TimeOfDay.fromDateTime(selectedDeadline!)
+                                : TimeOfDay.now(),
                           );
                           if (time != null) {
                             setDialogState(() {
@@ -383,6 +392,12 @@ class _TodoScreenState extends State<TodoScreen> with TickerProviderStateMixin {
         return '已过期';
       case Status.all:
         return '全部';
+      case Status.pending_reminder:
+        return '待提醒';
+      case Status.reminded:
+        return '已提醒';
+      case Status.intelligent_suggestion:
+        return '智能建议';
     }
   }
 
@@ -396,6 +411,12 @@ class _TodoScreenState extends State<TodoScreen> with TickerProviderStateMixin {
         return Colors.red;
       case Status.all:
         return Colors.blue;
+      case Status.pending_reminder:
+        return Colors.purple;
+      case Status.reminded:
+        return Colors.teal;
+      case Status.intelligent_suggestion:
+        return Colors.deepPurple;
     }
   }
 
@@ -409,13 +430,19 @@ class _TodoScreenState extends State<TodoScreen> with TickerProviderStateMixin {
         return Icons.error;
       case Status.all:
         return Icons.list;
+      case Status.pending_reminder:
+        return Icons.alarm;
+      case Status.reminded:
+        return Icons.notifications_active;
+      case Status.intelligent_suggestion:
+        return Icons.lightbulb;
     }
   }
 
   Widget _buildTodoCard(TodoEntity todo) {
     final isExpired = todo.deadline != null &&
-                     todo.deadline! <= DateTime.now().millisecondsSinceEpoch &&
-                     todo.status == Status.pending;
+        todo.deadline! <= DateTime.now().millisecondsSinceEpoch &&
+        todo.status == Status.pending;
 
     return Card(
       margin: const EdgeInsets.symmetric(horizontal: 16, vertical: 8),
@@ -434,8 +461,8 @@ class _TodoScreenState extends State<TodoScreen> with TickerProviderStateMixin {
                       fontSize: 18,
                       fontWeight: FontWeight.bold,
                       decoration: todo.status == Status.completed
-                        ? TextDecoration.lineThrough
-                        : null,
+                          ? TextDecoration.lineThrough
+                          : null,
                       color: isExpired ? Colors.red : null,
                     ),
                   ),
@@ -561,8 +588,8 @@ class _TodoScreenState extends State<TodoScreen> with TickerProviderStateMixin {
 
   Widget _buildIntelligentReminderCard(TodoEntity todo) {
     final isExpired = todo.deadline != null &&
-                     todo.deadline! <= DateTime.now().millisecondsSinceEpoch &&
-                     todo.status == Status.pending;
+        todo.deadline! <= DateTime.now().millisecondsSinceEpoch &&
+        todo.status == Status.pending;
 
     IconData reminderIcon;
     Color reminderColor;
@@ -659,8 +686,8 @@ class _TodoScreenState extends State<TodoScreen> with TickerProviderStateMixin {
                   fontSize: 16,
                   fontWeight: FontWeight.bold,
                   decoration: todo.status == Status.completed
-                    ? TextDecoration.lineThrough
-                    : null,
+                      ? TextDecoration.lineThrough
+                      : null,
                   color: isExpired ? Colors.red : null,
                 ),
               ),
@@ -865,43 +892,37 @@ class _TodoScreenState extends State<TodoScreen> with TickerProviderStateMixin {
         title: const Text('任务管理'),
         bottom: TabBar(
           controller: _tabController,
-          isScrollable: true,
           tabs: [
             Tab(
-              icon: const Icon(Icons.list),
-              text: '全部 (${_allTodos.length})',
-            ),
-            Tab(
               icon: const Icon(Icons.schedule),
-              text: '待完成 (${_pendingTodos.length})',
+              text: '待提醒 (${_pendingReminders.length})',
             ),
             Tab(
-              icon: const Icon(Icons.check_circle),
-              text: '已完成 (${_completedTodos.length})',
-            ),
-            Tab(
-              icon: const Icon(Icons.error),
-              text: '已过期 (${_expiredTodos.length})',
+              icon: const Icon(Icons.notifications_active),
+              text: '已提醒 (${_remindedTodos.length})',
             ),
             Tab(
               icon: const Icon(Icons.psychology),
-              text: '智能提醒 (${_intelligentReminders.length})',
+              text: '智能建议 (${_intelligentReminders.length})',
+            ),
+            Tab(
+              icon: const Icon(Icons.list),
+              text: '全部 (${_allTodos.length})',
             ),
           ],
         ),
       ),
       body: _isLoading
-        ? const Center(child: CircularProgressIndicator())
-        : TabBarView(
-            controller: _tabController,
-            children: [
-              _buildTodoList(_allTodos),
-              _buildTodoList(_pendingTodos),
-              _buildTodoList(_completedTodos),
-              _buildTodoList(_expiredTodos),
-              _buildIntelligentReminderList(_intelligentReminders),
-            ],
-          ),
+          ? const Center(child: CircularProgressIndicator())
+          : TabBarView(
+        controller: _tabController,
+        children: [
+          _buildTodoList(_pendingReminders),
+          _buildTodoList(_remindedTodos),
+          _buildTodoList(_intelligentReminders),
+          _buildTodoList(_allTodos),
+        ],
+      ),
       floatingActionButton: FloatingActionButton.extended(
         onPressed: _showAddTodoDialog,
         icon: const Icon(Icons.add),

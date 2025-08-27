@@ -21,7 +21,7 @@ class TodoEntity {
   @Index()
   int? createdAt;
 
-  // 🔥 新增：智能提醒相关字段
+  // 🔥 修复：智能提醒相关字段
   /// 是否为智能提醒生成的任务
   bool isIntelligentReminder;
 
@@ -46,17 +46,18 @@ class TodoEntity {
     this.clock = false,
     int? createdAt,
     Status status = Status.pending,
-    // 🔥 新增字段的默认值
+    // 🔥 修复：智能提醒字段的默认值
     this.isIntelligentReminder = false,
     this.originalText,
-    this.reminderType = 'manual',
+    this.reminderType,
     this.ruleId,
     this.confidence,
   }) : statusIndex = status.index,
         createdAt = createdAt ?? DateTime.now().millisecondsSinceEpoch;
 
+  // 🔥 添加：status getter和setter
   Status get status => Status.values[statusIndex];
   set status(Status status) => statusIndex = status.index;
 }
 
-enum Status { pending, completed, expired, all }
+enum Status { pending, completed, expired, all, pending_reminder, reminded, intelligent_suggestion }

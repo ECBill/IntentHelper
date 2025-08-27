@@ -264,7 +264,33 @@ final _entities = <obx_int.ModelEntity>[
             name: 'createdAt',
             type: 6,
             flags: 8,
-            indexId: const obx_int.IdUid(11, 5204193897549032489))
+            indexId: const obx_int.IdUid(11, 5204193897549032489)),
+        // 🔥 新增：智能提醒相关字段
+        obx_int.ModelProperty(
+            id: const obx_int.IdUid(9, 1234567890123456789),
+            name: 'isIntelligentReminder',
+            type: 1,
+            flags: 0),
+        obx_int.ModelProperty(
+            id: const obx_int.IdUid(10, 1234567890123456790),
+            name: 'originalText',
+            type: 9,
+            flags: 0),
+        obx_int.ModelProperty(
+            id: const obx_int.IdUid(11, 1234567890123456791),
+            name: 'reminderType',
+            type: 9,
+            flags: 0),
+        obx_int.ModelProperty(
+            id: const obx_int.IdUid(12, 1234567890123456792),
+            name: 'ruleId',
+            type: 9,
+            flags: 0),
+        obx_int.ModelProperty(
+            id: const obx_int.IdUid(13, 1234567890123456793),
+            name: 'confidence',
+            type: 8,
+            flags: 0)
       ],
       relations: <obx_int.ModelRelation>[],
       backlinks: <obx_int.ModelBacklink>[]),
@@ -1046,7 +1072,17 @@ obx_int.ModelDefinition getObjectBoxModel() {
           final vectorOffset = object.vector == null
               ? null
               : fbb.writeListFloat32(object.vector!);
-          fbb.startTable(9);
+          // 🔥 新增：智能提醒字段的序列化
+          final originalTextOffset = object.originalText == null
+              ? null
+              : fbb.writeString(object.originalText!);
+          final reminderTypeOffset = object.reminderType == null
+              ? null
+              : fbb.writeString(object.reminderType!);
+          final ruleIdOffset = object.ruleId == null
+              ? null
+              : fbb.writeString(object.ruleId!);
+          fbb.startTable(14); // 🔥 修改：更新表大小以包含新字段
           fbb.addInt64(0, object.id);
           fbb.addOffset(1, taskOffset);
           fbb.addOffset(2, detailOffset);
@@ -1055,6 +1091,12 @@ obx_int.ModelDefinition getObjectBoxModel() {
           fbb.addInt64(5, object.deadline);
           fbb.addBool(6, object.clock);
           fbb.addInt64(7, object.createdAt);
+          // 🔥 新增：智能提醒字段的写入
+          fbb.addBool(8, object.isIntelligentReminder);
+          fbb.addOffset(9, originalTextOffset);
+          fbb.addOffset(10, reminderTypeOffset);
+          fbb.addOffset(11, ruleIdOffset);
+          fbb.addFloat64(12, object.confidence);
           fbb.finish(fbb.endTable());
           return object.id;
         },
@@ -1076,6 +1118,18 @@ obx_int.ModelDefinition getObjectBoxModel() {
               const fb.BoolReader().vTableGet(buffer, rootOffset, 16, false);
           final createdAtParam =
               const fb.Int64Reader().vTableGetNullable(buffer, rootOffset, 18);
+          // 🔥 新增：智能提醒字段的读取
+          final isIntelligentReminderParam =
+              const fb.BoolReader().vTableGet(buffer, rootOffset, 20, false);
+          final originalTextParam = const fb.StringReader(asciiOptimization: true)
+              .vTableGetNullable(buffer, rootOffset, 22);
+          final reminderTypeParam = const fb.StringReader(asciiOptimization: true)
+              .vTableGetNullable(buffer, rootOffset, 24);
+          final ruleIdParam = const fb.StringReader(asciiOptimization: true)
+              .vTableGetNullable(buffer, rootOffset, 26);
+          final confidenceParam = const fb.Float64Reader()
+              .vTableGetNullable(buffer, rootOffset, 28);
+
           final object = TodoEntity(
               id: idParam,
               task: taskParam,
@@ -1083,7 +1137,13 @@ obx_int.ModelDefinition getObjectBoxModel() {
               vector: vectorParam,
               deadline: deadlineParam,
               clock: clockParam,
-              createdAt: createdAtParam)
+              createdAt: createdAtParam,
+              // 🔥 新增：智能提醒字段的构造参数
+              isIntelligentReminder: isIntelligentReminderParam,
+              originalText: originalTextParam,
+              reminderType: reminderTypeParam,
+              ruleId: ruleIdParam,
+              confidence: confidenceParam)
             ..statusIndex =
                 const fb.Int64Reader().vTableGet(buffer, rootOffset, 12, 0);
 
@@ -1869,6 +1929,26 @@ class TodoEntity_ {
   /// See [TodoEntity.createdAt].
   static final createdAt =
       obx.QueryIntegerProperty<TodoEntity>(_entities[4].properties[7]);
+
+  /// See [TodoEntity.isIntelligentReminder].
+  static final isIntelligentReminder =
+      obx.QueryBooleanProperty<TodoEntity>(_entities[4].properties[8]);
+
+  /// See [TodoEntity.originalText].
+  static final originalText =
+      obx.QueryStringProperty<TodoEntity>(_entities[4].properties[9]);
+
+  /// See [TodoEntity.reminderType].
+  static final reminderType =
+      obx.QueryStringProperty<TodoEntity>(_entities[4].properties[10]);
+
+  /// See [TodoEntity.ruleId].
+  static final ruleId =
+      obx.QueryStringProperty<TodoEntity>(_entities[4].properties[11]);
+
+  /// See [TodoEntity.confidence].
+  static final confidence =
+      obx.QueryDoubleProperty<TodoEntity>(_entities[4].properties[12]);
 }
 
 /// [EventEntity] entity fields to define ObjectBox queries.

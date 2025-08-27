@@ -243,7 +243,7 @@ class IntelligentReminderManager {
         task: _generateReminderTitle(rule, content),
         detail: content,
         deadline: scheduledTime.millisecondsSinceEpoch,
-        status: Status.pending,
+        status: Status.intelligent_suggestion, // 🔥 修改：智能建议使用专门的状态
         isIntelligentReminder: true,
         originalText: analysis.content,
         reminderType: 'intelligent',
@@ -289,11 +289,8 @@ class IntelligentReminderManager {
     try {
       if (_chatController == null) return;
 
-      final timeStr = _formatDuration(
-        DateTime.fromMillisecondsSinceEpoch(todo.deadline!).difference(DateTime.now())
-      );
 
-      final message = '🤖 智能提醒已创建：${todo.task}\n📝 ${todo.detail}\n⏰ 将在${timeStr}后提醒您';
+      final message = '${todo.task}\n📝 ${todo.detail}\n';
 
       final reminderMessage = {
         'id': DateTime.now().millisecondsSinceEpoch.toString(),
