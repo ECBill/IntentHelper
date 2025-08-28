@@ -771,4 +771,14 @@ class ObjectBoxService {
       print('Error clearing all knowledge graph data: $e');
     }
   }
+
+  /// 查询实体节点（新增方法）
+  List<Node> queryEntityNodes() {
+    try {
+      return nodeBox.getAll();
+    } catch (e) {
+      print('[ObjectBoxService] ❌ 查询实体节点失败: $e');
+      return [];
+    }
+  }
 }

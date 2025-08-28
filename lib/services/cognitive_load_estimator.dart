@@ -120,6 +120,68 @@ class CognitiveLoadEstimator {
     }
   }
 
+  /// 更新认知负载（新增方法）
+  Future<void> updateLoad({
+    required int activeIntentCount,
+    required int activeTopicCount,
+    required double emotionalIntensity,
+    double topicSwitchRate = 0.0,
+    double complexityScore = 0.5,
+    double temporalPressure = 0.0,
+  }) async {
+    if (!_initialized) await initialize();
+
+    try {
+      // 计算认知负载
+      final loadFactors = <String, double>{
+        'intent_count': (activeIntentCount / 10.0).clamp(0.0, 1.0),
+        'topic_count': (activeTopicCount / 8.0).clamp(0.0, 1.0),
+        'emotional_intensity': emotionalIntensity.clamp(0.0, 1.0),
+        'topic_switch_rate': topicSwitchRate.clamp(0.0, 1.0),
+        'complexity_score': complexityScore.clamp(0.0, 1.0),
+        'temporal_pressure': temporalPressure.clamp(0.0, 1.0),
+      };
+
+      double totalLoad = 0.0;
+      for (final entry in loadFactors.entries) {
+        final weight = _loadWeights[entry.key] ?? 0.0;
+        totalLoad += entry.value * weight;
+      }
+
+      final loadLevel = _categorizeLoadLevel(totalLoad);
+
+      // 创建评估结果
+      final assessment = CognitiveLoadAssessment(
+        level: loadLevel, // 修复：使用正确的参数名
+        score: totalLoad, // 修复：使用正确的参数名
+        factors: loadFactors, // 修复：使用正确的参数名
+        activeIntentCount: activeIntentCount, // 修复：添加必需参数
+        activeTopicCount: activeTopicCount, // 修复：添加必需参数
+        emotionalIntensity: emotionalIntensity.clamp(0.0, 1.0), // 修复：添加必需参数
+        topicSwitchRate: topicSwitchRate, // 修复：添加必需参数
+        complexityScore: complexityScore.clamp(0.0, 1.0), // 修复：添加必需参数
+        recommendation: _generateRecommendations(totalLoad, loadFactors).join('; '), // 修复：使用正确的参数名并转换为字符串
+      );
+
+      _assessmentHistory.add(assessment);
+      _loadUpdatesController.add(assessment);
+
+      print('[CognitiveLoadEstimator] 📊 认知负载更新: ${loadLevel.toString().split('.').last} (${(totalLoad * 100).toInt()}%)');
+    } catch (e) {
+      print('[CognitiveLoadEstimator] ❌ 更新认知负载失败: $e');
+    }
+  }
+
+  /// 重置认知负载（新增方法）
+  Future<void> resetLoad() async {
+    try {
+      _assessmentHistory.clear();
+      print('[CognitiveLoadEstimator] 🧹 已重置认知负载历史');
+    } catch (e) {
+      print('[CognitiveLoadEstimator] ❌ 重置认知负载失败: $e');
+    }
+  }
+
   /// 计算负载因子
   Future<Map<String, double>> _calculateLoadFactors({
     required List<Intent> activeIntents,
@@ -310,6 +372,15 @@ class CognitiveLoadEstimator {
     return CognitiveLoadLevel.low;
   }
 
+  /// 分类负载水平
+  CognitiveLoadLevel _categorizeLoadLevel(double load) {
+    if (load >= 0.8) return CognitiveLoadLevel.high;
+    if (load >= 0.6) return CognitiveLoadLevel.high; // 修复：使用存在的enum值
+    if (load >= 0.4) return CognitiveLoadLevel.moderate;
+    if (load >= 0.2) return CognitiveLoadLevel.low; // 修复：使用存在的enum值
+    return CognitiveLoadLevel.low;
+  }
+
   /// 生成建议
   String _generateRecommendation(CognitiveLoadLevel level, Map<String, double> factors) {
     final recommendations = <String>[];
@@ -351,6 +422,33 @@ class CognitiveLoadEstimator {
     }
     
     return recommendations.join('\n');
+  }
+
+  /// 生成建议
+  List<String> _generateRecommendations(double totalLoad, Map<String, double> factors) {
+    final recommendations = <String>[];
+
+    if (totalLoad >= 0.8) {
+      recommendations.add('认知负载过高，建议暂停复杂任务');
+      recommendations.add('考虑进行放松休息');
+    } else if (totalLoad >= 0.6) {
+      recommendations.add('认知负载较高，建议简化当前任务');
+    }
+
+    // 基于具体因素的建议
+    if (factors['intent_count']! >= 0.8) {
+      recommendations.add('活跃意图过多，建议优先处理重要意图');
+    }
+
+    if (factors['emotional_intensity']! >= 0.7) {
+      recommendations.add('情绪强度较高，建议进行情绪调节');
+    }
+
+    if (factors['topic_switch_rate']! >= 0.7) {
+      recommendations.add('话题切换频繁，建议专注单一主题');
+    }
+
+    return recommendations;
   }
 
   /// 启动持续监控

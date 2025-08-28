@@ -9,6 +9,7 @@ import 'package:app/services/causal_chain_extractor.dart';
 import 'package:app/services/semantic_graph_builder.dart';
 import 'package:app/services/cognitive_load_estimator.dart';
 import 'package:app/services/intelligent_reminder_manager.dart'; // 🔥 新增：智能提醒管理器
+import 'package:app/services/knowledge_graph_service.dart'; // 🔥 新增：知识图谱服务
 import 'package:app/services/objectbox_service.dart';
 
 class HumanUnderstandingSystem {
@@ -23,6 +24,7 @@ class HumanUnderstandingSystem {
   final SemanticGraphBuilder _graphBuilder = SemanticGraphBuilder();
   final CognitiveLoadEstimator _loadEstimator = CognitiveLoadEstimator();
   final IntelligentReminderManager _reminderManager = IntelligentReminderManager(); // 🔥 新增：智能提醒管理器
+  final KnowledgeGraphService _knowledgeGraph = KnowledgeGraphService(); // 🔥 新增：知识图谱服务
 
   // 系统状态
   final StreamController<HumanUnderstandingSystemState> _systemStateController = StreamController.broadcast();
@@ -95,7 +97,7 @@ class HumanUnderstandingSystem {
     }
   }
 
-  // 🔥 新增：初始化状态���志
+  // 🔥 新增：初始化状态标志
   bool _initializing = false;
 
   /// 🔥 修复：异步处理初始对话，避免阻塞初始化
@@ -220,7 +222,7 @@ class HumanUnderstandingSystem {
     }).toList();
   }
 
-  /// 🔥 新增：判断是否为系��消息
+  /// 🔥 新增：判断是否为系统消息
   bool _isSystemMessage(String content) {
     final systemPatterns = [
       '录音开始', '录音结束', '系统启动', '连接成功', '断开连接',
@@ -260,20 +262,55 @@ class HumanUnderstandingSystem {
       final conversationContext = _buildConversationContext(records);
 
       if (conversationContext.trim().isEmpty) {
-        print('[HumanUnderstandingSystem] ⚠️ 对话上下��为空，跳过处理');
+        print('[HumanUnderstandingSystem] ⚠️ 对话上下文为空，跳过处理');
         return;
       }
 
       print('[HumanUnderstandingSystem] 📝 对话上下文长度: ${conversationContext.length}');
       print('[HumanUnderstandingSystem] 🔍 对话预览: "${conversationContext.substring(0, conversationContext.length > 100 ? 100 : conversationContext.length)}..."');
 
-      // 创建语义分析输入
-      final semanticInput = _createSemanticAnalysisFromContext(conversationContext, records);
+      final contextId = 'hu_batch_${DateTime.now().millisecondsSinceEpoch}';
+      final conversationTime = records.isNotEmpty && records.first.createdAt != null
+          ? DateTime.fromMillisecondsSinceEpoch(records.first.createdAt)
+          : DateTime.now();
+
+      // 🔥 第二步：先进行 HU 系统的实体提取
+      final allContent = records
+          .map((r) => r.content?.toString() ?? '')
+          .where((content) => content.trim().isNotEmpty)
+          .join(' ');
+
+      // HU 系统预提取实体
+      final preExtractedEntities = _extractBasicEntities(allContent);
+      final entityTypeMapping = _createEntityTypeMapping(preExtractedEntities);
+
+      print('[HumanUnderstandingSystem] 🔍 HU系统预提取实体: ${preExtractedEntities.length}个');
+      print('[HumanUnderstandingSystem] 📊 实体列表: ${preExtractedEntities.take(5).join('、')}${preExtractedEntities.length > 5 ? '...' : ''}');
+
+      // 🔥 第二步：使用共享实体调用 KG 系统，避免重复提取
+      final kgProcessingFuture = KnowledgeGraphService.processEventsFromConversationWithSharedEntities(
+        conversationContext,
+        contextId: contextId,
+        conversationTime: conversationTime,
+        preExtractedEntities: preExtractedEntities,
+        entityTypeMapping: entityTypeMapping,
+      );
+
+      // 创建语义分析输入（使用预提取的实体）
+      final semanticInput = _createSemanticAnalysisFromContextWithEntities(
+        conversationContext,
+        records,
+        preExtractedEntities,
+      );
+
+      // 等待 KG 处理完成，然后进行 HU 处理
+      await kgProcessingFuture;
+      print('[HumanUnderstandingSystem] ✅ KG 系统处理完成（使用共享实体），开始 HU 系统处理');
 
       // 处理语义输入
       await processSemanticInput(semanticInput);
 
-      print('[HumanUnderstandingSystem] ✅ 批量对话处理完成');
+      print('[HumanUnderstandingSystem] ✅ 批量对话处理完成（HU + KG 实体共享融合）');
 
     } catch (e) {
       print('[HumanUnderstandingSystem] ❌ 批量处理对话失败: $e');
@@ -304,16 +341,54 @@ class HumanUnderstandingSystem {
     return contextBuilder.toString().trim();
   }
 
-  /// 🔥 修复：从对话上下文创建语义分析输入
-  SemanticAnalysisInput _createSemanticAnalysisFromContext(String context, List<dynamic> records) {
+  /// 🔥 第二步：创建实体类型映射
+  Map<String, String> _createEntityTypeMapping(List<String> entities) {
+    final mapping = <String, String>{};
+
+    for (final entity in entities) {
+      // 技术相关
+      if (entity.contains('Flutter') || entity.contains('AI') ||
+          entity.contains('数据库') || entity.contains('Bug') ||
+          entity.contains('性能优化')) {
+        mapping[entity] = '技术概念';
+      }
+      // 工作相关
+      else if (entity.contains('工作项目') || entity.contains('会议') ||
+               entity.contains('团队协作') || entity.contains('功能开发')) {
+        mapping[entity] = '工作概念';
+      }
+      // 学习相关
+      else if (entity.contains('学习') || entity.contains('研究')) {
+        mapping[entity] = '学习概念';
+      }
+      // 生活相关
+      else if (entity.contains('饮食') || entity.contains('运动') ||
+               entity.contains('休息')) {
+        mapping[entity] = '生活概念';
+      }
+      // 默认概念类型
+      else {
+        mapping[entity] = '概念';
+      }
+    }
+
+    return mapping;
+  }
+
+  /// 🔥 第二步：从对话上下文创建语义分析输入（使用预提取实体）
+  SemanticAnalysisInput _createSemanticAnalysisFromContextWithEntities(
+    String context,
+    List<dynamic> records,
+    List<String> preExtractedEntities,
+  ) {
     // 提取所有对话内容
     final allContent = records
         .map((r) => r.content?.toString() ?? '')
         .where((content) => content.trim().isNotEmpty)
         .join(' ');
 
-    // 基础实体��取
-    final entities = _extractBasicEntities(allContent);
+    // 使用预提取的实体，无需重复提取
+    final entities = preExtractedEntities;
 
     // 基础意图推断
     final intent = _inferBasicIntent(allContent);
@@ -335,9 +410,11 @@ class HumanUnderstandingSystem {
           ? DateTime.fromMillisecondsSinceEpoch(latestTimestamp)
           : DateTime.now(),
       additionalContext: {
-        'source': 'real_conversation_monitoring',
+        'source': 'real_conversation_monitoring_with_shared_entities',
         'conversation_context': context,
         'record_count': records.length,
+        'pre_extracted_entities_count': preExtractedEntities.length,
+        'entity_sharing_enabled': true,
         'processing_time': DateTime.now().toIso8601String(),
         'monitoring_interval': _monitorInterval,
       },
@@ -365,7 +442,7 @@ class HumanUnderstandingSystem {
       print('[HumanUnderstandingSystem] 📊 找到 ${recentRecords.length} 条历史对话');
 
       // 处理最近的对话记录
-      final limitedRecords = recentRecords.take(10).toList(); // 🔥 优化：减少初始���理数量
+      final limitedRecords = recentRecords.take(10).toList(); // 🔥 优化：减少初始处理数量
       await _processBatchConversations(limitedRecords);
 
       // 标记这些记录为已处理
@@ -405,7 +482,7 @@ class HumanUnderstandingSystem {
           entities: ['对话', '分析', '理解'],
           intent: 'capability_demonstration',
           emotion: 'positive',
-          content: '展示对话分析和语义理解���基础能力',
+          content: '展示对话分析和语义理解的基础能力',
           timestamp: DateTime.now().add(Duration(seconds: 1)),
           additionalContext: {
             'source': 'initial_test_data',
@@ -490,6 +567,7 @@ class HumanUnderstandingSystem {
     try {
       final results = <String, dynamic>{};
 
+      // HU 系统的搜索
       // 搜索意图
       final relatedIntents = _intentManager.searchIntents(query);
       results['intents'] = relatedIntents.map((i) => i.toJson()).toList();
@@ -510,8 +588,49 @@ class HumanUnderstandingSystem {
       );
       results['semantic_triples'] = relatedTriples.map((t) => t.toJson()).toList();
 
-      results['total_results'] = relatedIntents.length + relatedTopics.length +
-          relatedCausal.length + relatedTriples.length;
+      // 🔥 第三步：融入知识图谱的事件和关系信息
+      final queryKeywords = query.split(' ').where((w) => w.trim().isNotEmpty).toList();
+
+      // 从 KG 获取相关节点
+      final kgNodes = await KnowledgeGraphService.getRelatedNodesByKeywords(queryKeywords);
+      results['kg_entities'] = kgNodes.map((n) => {
+        'id': n.id,
+        'name': n.name,
+        'type': n.type,
+        'attributes': n.attributes,
+        'aliases': n.aliases,
+        'last_updated': n.lastUpdated.toIso8601String(),
+      }).toList();
+
+      // 从 KG 获取相关事件
+      final kgEvents = <Map<String, dynamic>>[];
+      for (final node in kgNodes.take(5)) { // 限制查询数量
+        final relatedEvents = await KnowledgeGraphService.getRelatedEvents(node.id);
+        for (final event in relatedEvents) {
+          kgEvents.add({
+            'id': event.id,
+            'name': event.name,
+            'type': event.type,
+            'description': event.description,
+            'location': event.location,
+            'start_time': event.startTime?.toIso8601String(),
+            'end_time': event.endTime?.toIso8601String(),
+            'related_entity': node.name,
+          });
+        }
+      }
+      results['kg_events'] = kgEvents;
+
+      // 总结搜索结果
+      final huResults = relatedIntents.length + relatedTopics.length + relatedCausal.length + relatedTriples.length;
+      final kgResults = kgNodes.length + kgEvents.length;
+
+      results['search_summary'] = {
+        'total_results': huResults + kgResults,
+        'hu_system_results': huResults,
+        'kg_system_results': kgResults,
+        'fusion_enabled': true,
+      };
 
       return results;
 
@@ -521,216 +640,197 @@ class HumanUnderstandingSystem {
     }
   }
 
-  /// 分析用户行为模式
-  Map<String, dynamic> analyzeUserPatterns() {
+  /// 🔥 第三步：获取特定实体的完整上下文（融合 HU + KG）
+  Future<Map<String, dynamic>> getEntityContext(String entityName) async {
     try {
-      return {
-        'intent_statistics': _intentManager.getIntentStatistics(),
-        'topic_statistics': _topicTracker.getTopicStatistics(),
-        'causal_statistics': _causalExtractor.getCausalStatistics(),
-        'graph_statistics': _graphBuilder.getGraphStatistics(),
-        'load_patterns': _loadEstimator.analyzeLoadPatterns(),
-        'analysis_timestamp': DateTime.now().toIso8601String(),
+      final context = <String, dynamic>{
+        'entity_name': entityName,
+        'search_timestamp': DateTime.now().toIso8601String(),
       };
+
+      // HU 系统中与该实体相关的信息
+      final huInfo = await searchRelevantInfo(entityName);
+      context['hu_analysis'] = {
+        'related_intents': huInfo['intents'] ?? [],
+        'related_topics': huInfo['topics'] ?? [],
+        'causal_relations': huInfo['causal_relations'] ?? [],
+        'semantic_triples': huInfo['semantic_triples'] ?? [],
+      };
+
+      // KG 系统中的实体信息
+      final kgNodes = await KnowledgeGraphService.getRelatedNodesByKeywords([entityName]);
+      final primaryNode = kgNodes.isNotEmpty ? kgNodes.first : null;
+
+      if (primaryNode != null) {
+        // 获取相关事件
+        final relatedEvents = await KnowledgeGraphService.getRelatedEvents(primaryNode.id);
+
+        context['kg_analysis'] = {
+          'entity_details': {
+            'id': primaryNode.id,
+            'name': primaryNode.name,
+            'type': primaryNode.type,
+            'canonical_name': primaryNode.canonicalName,
+            'attributes': primaryNode.attributes,
+            'aliases': primaryNode.aliases,
+            'last_updated': primaryNode.lastUpdated.toIso8601String(),
+            'source_context': primaryNode.sourceContext,
+          },
+          'related_events': relatedEvents.map((event) => {
+            'id': event.id,
+            'name': event.name,
+            'type': event.type,
+            'description': event.description,
+            'location': event.location,
+            'purpose': event.purpose,
+            'result': event.result,
+            'start_time': event.startTime?.toIso8601String(),
+            'end_time': event.endTime?.toIso8601String(),
+            'last_updated': event.lastUpdated.toIso8601String(),
+          }).toList(),
+          'event_count': relatedEvents.length,
+        };
+
+        // 实体的时间线分析
+        context['timeline_analysis'] = _buildEntityTimeline(relatedEvents);
+      } else {
+        context['kg_analysis'] = {
+          'entity_details': null,
+          'related_events': [],
+          'event_count': 0,
+        };
+      }
+
+      // 融合分析
+      context['fusion_insights'] = _generateFusionInsights(context);
+
+      return context;
+
     } catch (e) {
-      print('[HumanUnderstandingSystem] ❌ 分析用户模式失败: $e');
-      return {'error': e.toString()};
+      print('[HumanUnderstandingSystem] ❌ 获取实体上下文失败: $e');
+      return {'error': e.toString(), 'entity_name': entityName};
     }
   }
 
-  /// 获取系统性能指标
-  Map<String, dynamic> getSystemMetrics() {
+  /// 🔥 第三步：构建实体时间线
+  Map<String, dynamic> _buildEntityTimeline(List<dynamic> events) {
+    if (events.isEmpty) {
+      return {
+        'total_events': 0,
+        'time_span': null,
+        'event_frequency': 0.0,
+        'recent_activity': [],
+      };
+    }
+
+    // 按时间排序事件
+    final sortedEvents = events.where((e) => e.startTime != null).toList();
+    sortedEvents.sort((a, b) => a.startTime!.compareTo(b.startTime!));
+
+    DateTime? firstEventTime;
+    DateTime? lastEventTime;
+
+    if (sortedEvents.isNotEmpty) {
+      firstEventTime = sortedEvents.first.startTime;
+      lastEventTime = sortedEvents.last.startTime;
+    }
+
+    // 最近活动（最近7天）
+    final now = DateTime.now();
+    final recentThreshold = now.subtract(Duration(days: 7));
+    final recentEvents = events.where((e) =>
+      e.lastUpdated.isAfter(recentThreshold)
+    ).toList();
+
     return {
-      'system_initialized': _initialized,
-      'uptime_minutes': _initialized ? DateTime.now().difference(_initTime).inMinutes : 0,
-      'modules_status': {
-        'intent_manager': _intentManager.getIntentStatistics(),
-        'topic_tracker': _topicTracker.getTopicStatistics(),
-        'causal_extractor': _causalExtractor.getCausalStatistics(),
-        'graph_builder': _graphBuilder.getGraphStatistics(),
-        'load_estimator': _loadEstimator.getLoadStatistics(),
-      },
-      'last_update': DateTime.now().toIso8601String(),
+      'total_events': events.length,
+      'time_span': firstEventTime != null && lastEventTime != null
+          ? {
+              'start': firstEventTime.toIso8601String(),
+              'end': lastEventTime.toIso8601String(),
+              'duration_days': lastEventTime.difference(firstEventTime).inDays,
+            }
+          : null,
+      'event_frequency': firstEventTime != null && lastEventTime != null
+          ? events.length / (lastEventTime.difference(firstEventTime).inDays + 1)
+          : 0.0,
+      'recent_activity': recentEvents.take(5).map((e) => {
+        'name': e.name,
+        'type': e.type,
+        'last_updated': e.lastUpdated.toIso8601String(),
+      }).toList(),
+      'recent_activity_count': recentEvents.length,
     };
   }
 
-  /// 重置系统状态
-  Future<void> resetSystem() async {
-    print('[HumanUnderstandingSystem] 🔄 重置系统状态...');
+  /// 🔥 第三步：生成融合洞察
+  Map<String, dynamic> _generateFusionInsights(Map<String, dynamic> context) {
+    final insights = <String, dynamic>{};
 
-    try {
-      // 停止��有定时器
-      _stateUpdateTimer?.cancel();
-      _conversationMonitorTimer?.cancel();
+    final huAnalysis = context['hu_analysis'] as Map<String, dynamic>? ?? {};
+    final kgAnalysis = context['kg_analysis'] as Map<String, dynamic>? ?? {};
 
-      // 释放所有子模块
-      _intentManager.dispose();
-      _topicTracker.dispose();
-      _causalExtractor.dispose();
-      _graphBuilder.dispose();
-      _loadEstimator.dispose();
+    // 统计信息
+    final huIntentCount = (huAnalysis['related_intents'] as List?)?.length ?? 0;
+    final huTopicCount = (huAnalysis['related_topics'] as List?)?.length ?? 0;
+    final kgEventCount = (kgAnalysis['event_count'] as int?) ?? 0;
 
-      _initialized = false;
+    insights['data_richness'] = {
+      'hu_intent_coverage': huIntentCount,
+      'hu_topic_coverage': huTopicCount,
+      'kg_event_coverage': kgEventCount,
+      'total_data_points': huIntentCount + huTopicCount + kgEventCount,
+    };
 
-      // 重新初始化
-      await initialize();
+    // 实体活跃度分析
+    final timelineAnalysis = context['timeline_analysis'] as Map<String, dynamic>? ?? {};
+    final recentActivityCount = (timelineAnalysis['recent_activity_count'] as int?) ?? 0;
 
-      print('[HumanUnderstandingSystem] ✅ 系统重置完成');
-
-    } catch (e) {
-      print('[HumanUnderstandingSystem] ❌ 系统重置失败: $e');
-      rethrow;
+    String activityLevel;
+    if (recentActivityCount >= 5) {
+      activityLevel = 'high';
+    } else if (recentActivityCount >= 2) {
+      activityLevel = 'medium';
+    } else if (recentActivityCount >= 1) {
+      activityLevel = 'low';
+    } else {
+      activityLevel = 'inactive';
     }
+
+    insights['activity_analysis'] = {
+      'recent_activity_level': activityLevel,
+      'recent_events': recentActivityCount,
+      'activity_trend': recentActivityCount > 0 ? 'active' : 'dormant',
+    };
+
+    // 建议的分析方向
+    final suggestions = <String>[];
+
+    if (huIntentCount > 0) {
+      suggestions.add('深入分析用户对该实体的意图模式');
+    }
+    if (kgEventCount > 0) {
+      suggestions.add('分析该实体的事件模式和行为规律');
+    }
+    if (huTopicCount > 0) {
+      suggestions.add('探索该实体在不同对话主题中的作用');
+    }
+    if (recentActivityCount > 0) {
+      suggestions.add('关注该实体的最新动态和变化');
+    }
+
+    insights['analysis_suggestions'] = suggestions;
+
+    return insights;
   }
 
-  /// 导出系统数据
-  Map<String, dynamic> exportSystemData() {
-    try {
-      return {
-        'export_timestamp': DateTime.now().toIso8601String(),
-        'system_state': getCurrentState().toJson(),
-        'detailed_data': {
-          'all_intents': _intentManager.getActiveIntents().map((i) => i.toJson()).toList(),
-          'all_topics': _topicTracker.getAllTopics().map((t) => t.toJson()).toList(),
-          'causal_relations': _causalExtractor.getRecentCausalRelations(limit: 100).map((c) => c.toJson()).toList(),
-          'semantic_graph': _graphBuilder.exportGraph(),
-          'load_history': _loadEstimator.getLoadHistory(limit: 50).map((l) => l.toJson()).toList(),
-        },
-        'system_metrics': getSystemMetrics(),
-      };
-    } catch (e) {
-      print('[HumanUnderstandingSystem] ❌ 导出系统数据失败: $e');
-      return {'error': e.toString()};
-    }
-  }
-
-  /// 处理新的语义分析输入（从现有cache系统接收）
-  Future<HumanUnderstandingSystemState> processSemanticInput(
-    SemanticAnalysisInput analysis,
-  ) async {
-    // 🔥 修复：避免在初始化过程中触发循环调用
-    if (_initializing) {
-      print('[HumanUnderstandingSystem] ⚠️ 系统正���初始化中，跳过语义输入处理');
-      // 返回默认状态
-      return HumanUnderstandingSystemState(
-        activeIntents: [],
-        activeTopics: [],
-        recentCausalChains: [],
-        recentTriples: [],
-        currentCognitiveLoad: CognitiveLoadAssessment(
-          level: CognitiveLoadLevel.moderate,
-          score: 0.5,
-          factors: {},
-          activeIntentCount: 0,
-          activeTopicCount: 0,
-          emotionalIntensity: 0.5,
-          topicSwitchRate: 0.0,
-          complexityScore: 0.5,
-        ),
-        systemMetrics: {'status': 'initializing'},
-      );
-    }
-
-    if (!_initialized) {
-      print('[HumanUnderstandingSystem] ⚠️ 系统未初始化，跳过语义输入处理');
-      // 返回默认状态，不触发初始化
-      return HumanUnderstandingSystemState(
-        activeIntents: [],
-        activeTopics: [],
-        recentCausalChains: [],
-        recentTriples: [],
-        currentCognitiveLoad: CognitiveLoadAssessment(
-          level: CognitiveLoadLevel.moderate,
-          score: 0.5,
-          factors: {},
-          activeIntentCount: 0,
-          activeTopicCount: 0,
-          emotionalIntensity: 0.5,
-          topicSwitchRate: 0.0,
-          complexityScore: 0.5,
-        ),
-        systemMetrics: {'status': 'not_initialized'},
-      );
-    }
-
-    print('[HumanUnderstandingSystem] 🧠 处理语义输入: "${analysis.content.substring(0, analysis.content.length > 50 ? 50 : analysis.content.length)}..."');
-
-    try {
-      final stopwatch = Stopwatch()..start();
-
-      // 1. 并行处理基础分析（包含智能提醒）
-      final results = await Future.wait([
-        _intentManager.processSemanticAnalysis(analysis),
-        _topicTracker.processConversation(analysis),
-        _causalExtractor.extractCausalRelations(analysis),
-        _reminderManager.processSemanticAnalysis(analysis), // 🔥 新增：智能提醒分析
-      ]);
-
-      final intents = results[0] as List<Intent>;
-      final topics = results[1] as List<ConversationTopic>;
-      final causalRelations = results[2] as List<CausalRelation>;
-      // 智能提醒处理是异步的，不需要等待返回值
-
-      // 2. 构建语义图谱（依赖前面的结果）
-      final triples = await _graphBuilder.buildSemanticGraph(
-        analysis,
-        intents,
-        topics,
-        causalRelations,
-      );
-
-      // 3. 评估认知负载
-      final cognitiveLoad = await _loadEstimator.assessCognitiveLoad(
-        activeIntents: _intentManager.getActiveIntents(),
-        activeTopics: _topicTracker.getActiveTopics(),
-        backgroundTopics: _topicTracker.getBackgroundTopics(),
-        currentEmotion: analysis.emotion,
-        topicSwitchRate: _topicTracker.calculateTopicSwitchRate(),
-        lastConversationContent: analysis.content,
-        additionalContext: analysis.additionalContext,
-      );
-
-      // 4. 生成系统状态快照（包含智能提醒统计）
-      final reminderStats = _reminderManager.getStatistics();
-      final systemState = HumanUnderstandingSystemState(
-        activeIntents: _intentManager.getActiveIntents(),
-        activeTopics: _topicTracker.getActiveTopics(),
-        recentCausalChains: _causalExtractor.getRecentCausalRelations(limit: 5),
-        recentTriples: _graphBuilder.getRecentTriples(limit: 10),
-        currentCognitiveLoad: cognitiveLoad,
-        systemMetrics: {
-          'processing_time_ms': stopwatch.elapsedMilliseconds,
-          'new_intents': intents.length,
-          'new_topics': topics.length,
-          'new_causal_relations': causalRelations.length,
-          'new_triples': triples.length,
-          'reminder_statistics': reminderStats, // 🔥 新增：提醒统计信息
-          'analysis_timestamp': analysis.timestamp.toIso8601String(),
-        },
-      );
-
-      _systemStateController.add(systemState);
-
-      stopwatch.stop();
-      print('[HumanUnderstandingSystem] ✅ 语义处理完成 (${stopwatch.elapsedMilliseconds}ms)');
-      print('[HumanUnderstandingSystem] 📊 新增: ${intents.length}意图, ${topics.length}主题, ${causalRelations.length}因果, ${triples.length}三元组');
-      print('[HumanUnderstandingSystem] 🔔 智能提醒统计: ${reminderStats['pending_reminders']}个等待, ${reminderStats['sent_reminders_today']}个今日已发送');
-
-      return systemState;
-
-    } catch (e) {
-      print('[HumanUnderstandingSystem] ❌ 处理语义输入失败: $e');
-      rethrow;
-    }
-  }
-
-  /// 获取智能建议
+  /// 获取智能建议 - 第四步：基于知识图谱增强智能建议功能
   Map<String, dynamic> getIntelligentSuggestions() {
     try {
       final currentState = getCurrentState();
       final suggestions = <String, dynamic>{};
 
-      // 基于意图���建议
+      // 基于意图的建议
       final activeIntents = currentState.activeIntents;
       if (activeIntents.length > 3) {
         suggestions['intent_management'] = '当前有 ${activeIntents.length} 个活跃意图，建议优先完成重要意图';
@@ -749,7 +849,7 @@ class HumanUnderstandingSystem {
       // 基于因果关系的建议
       final causalChains = currentState.recentCausalChains;
       if (causalChains.isNotEmpty) {
-        suggestions['causal_insight'] = '发现了 ${causalChains.length} 个因果关���，可以深入分析行为动机';
+        suggestions['causal_insight'] = '发现了 ${causalChains.length} 个因果关系，可以深入分析行为动机';
       }
 
       return {
@@ -764,179 +864,1246 @@ class HumanUnderstandingSystem {
     }
   }
 
-  /// 获取优先行动建议
-  List<String> _getPriorityActions(HumanUnderstandingSystemState state) {
-    final actions = <String>[];
+  /// 🔥 第四步：获取增强的智能建议（融合知识图谱信息）
+  Future<Map<String, dynamic>> getEnhancedIntelligentSuggestions() async {
+    try {
+      final currentState = getCurrentState();
+      final suggestions = <String, dynamic>{};
+      final kgInsights = <String, dynamic>{};
 
-    // 基于认知负载
-    if (state.currentCognitiveLoad.level == CognitiveLoadLevel.overload) {
-      actions.add('立即减少活跃任务数量');
-    } else if (state.currentCognitiveLoad.level == CognitiveLoadLevel.high) {
-      actions.add('优先处理紧急重要的意图');
+      // 基础建议（HU 系统）
+      final basicSuggestions = getIntelligentSuggestions();
+      suggestions.addAll(basicSuggestions);
+
+      // 🔥 第四步：基于知识图谱的增强建议
+      await _generateKnowledgeGraphInsights(suggestions, kgInsights, currentState);
+
+      // 🔥 第四步：基于实体活动模式的建议
+      await _generateEntityActivitySuggestions(suggestions, kgInsights);
+
+      // 🔥 第四步：基于事件时间模式的建议
+      await _generateTemporalPatternSuggestions(suggestions, kgInsights);
+
+      // 🔥 第四步：生成个性化行动计划
+      final actionPlan = await _generatePersonalizedActionPlan(currentState, kgInsights);
+
+      return {
+        'basic_suggestions': basicSuggestions['suggestions'] ?? {},
+        'enhanced_suggestions': suggestions,
+        'kg_insights': kgInsights,
+        'personalized_action_plan': actionPlan,
+        'priority_actions': _getEnhancedPriorityActions(currentState, kgInsights),
+        'fusion_analysis': {
+          'hu_data_points': _countHuDataPoints(currentState),
+          'kg_data_points': kgInsights['total_entities'] ?? 0,
+          'suggestion_quality': _assessSuggestionQuality(kgInsights),
+        },
+        'generated_at': DateTime.now().toIso8601String(),
+      };
+
+    } catch (e) {
+      print('[HumanUnderstandingSystem] ❌ 生成增强智能建议失败: $e');
+      return {'error': e.toString()};
     }
-
-    // 基于意图状态
-    final clarifyingIntents = state.activeIntents.where(
-      (intent) => intent.state == IntentLifecycleState.clarifying
-    ).toList();
-    if (clarifyingIntents.isNotEmpty) {
-      actions.add('澄清 ${clarifyingIntents.length} 个需要明确的意图');
-    }
-
-    // 基于主题活跃度
-    final highRelevanceTopics = state.activeTopics.where(
-      (topic) => topic.relevanceScore > 0.8
-    ).toList();
-    if (highRelevanceTopics.isNotEmpty) {
-      actions.add('深入讨论高相关性主题：${highRelevanceTopics.map((t) => t.name).take(2).join('、')}');
-    }
-
-    return actions;
   }
 
-  /// 🔥 新增：基础实体提取
+  /// 🔥 第四步：生成知识图谱洞察
+  Future<void> _generateKnowledgeGraphInsights(
+    Map<String, dynamic> suggestions,
+    Map<String, dynamic> kgInsights,
+    HumanUnderstandingSystemState currentState,
+  ) async {
+    try {
+      // 获取最近活跃的实体
+      final activeEntities = <String>[];
+
+      // 从意图中提取实体 - 🔥 修复：使用正确的属性名
+      for (final intent in currentState.activeIntents) {
+        activeEntities.addAll(intent.relatedEntities);
+      }
+
+      // 从主题中提取关键词
+      for (final topic in currentState.activeTopics) {
+        activeEntities.add(topic.name);
+      }
+
+      if (activeEntities.isEmpty) {
+        kgInsights['entity_analysis'] = {'message': '当前没有识别到活跃实体'};
+        return;
+      }
+
+      // 查询这些实体的知识图谱信息
+      final entityContexts = <Map<String, dynamic>>[];
+      for (final entity in activeEntities.take(5)) { // 限制查询数量
+        final context = await getEntityContext(entity);
+        if (context.containsKey('kg_analysis')) {
+          entityContexts.add(context);
+        }
+      }
+
+      // 分析实体模式
+      final entityPatterns = _analyzeEntityPatterns(entityContexts);
+      kgInsights['entity_patterns'] = entityPatterns;
+      kgInsights['total_entities'] = entityContexts.length;
+
+      // 基于实体模式生成建议
+      if (entityPatterns['high_activity_entities'].isNotEmpty) {
+        suggestions['entity_focus'] = '检测到高活跃度实体：${entityPatterns['high_activity_entities'].take(3).join('、')}，建议深入关注';
+      }
+
+      if (entityPatterns['dormant_entities'].isNotEmpty) {
+        suggestions['entity_reactivation'] = '发现休眠实体：${entityPatterns['dormant_entities'].take(3).join('、')}，可能需要重新激活';
+      }
+
+      if (entityPatterns['trending_patterns'].isNotEmpty) {
+        suggestions['pattern_recognition'] = '识别到趋势模式：${entityPatterns['trending_patterns'].join('、')}';
+      }
+
+    } catch (e) {
+      print('[HumanUnderstandingSystem] ❌ 生成知识图谱洞察失败: $e');
+      kgInsights['error'] = e.toString();
+    }
+  }
+
+  /// 🔥 第四步：分析实体模式
+  Map<String, dynamic> _analyzeEntityPatterns(List<Map<String, dynamic>> entityContexts) {
+    final patterns = <String, dynamic>{
+      'high_activity_entities': <String>[],
+      'dormant_entities': <String>[],
+      'trending_patterns': <String>[],
+      'entity_statistics': {},
+    };
+
+    final entityStats = <String, Map<String, dynamic>>{};
+
+    for (final context in entityContexts) {
+      final entityName = context['entity_name'] as String;
+      final timelineAnalysis = context['timeline_analysis'] as Map<String, dynamic>? ?? {};
+      final recentActivityCount = (timelineAnalysis['recent_activity_count'] as int?) ?? 0;
+      final totalEvents = (timelineAnalysis['total_events'] as int?) ?? 0;
+
+      entityStats[entityName] = {
+        'recent_activity': recentActivityCount,
+        'total_events': totalEvents,
+        'activity_level': recentActivityCount >= 3 ? 'high' :
+                        recentActivityCount >= 1 ? 'medium' : 'low',
+      };
+
+      // 分类实体
+      if (recentActivityCount >= 3) {
+        patterns['high_activity_entities'].add(entityName);
+      } else if (totalEvents > 0 && recentActivityCount == 0) {
+        patterns['dormant_entities'].add(entityName);
+      }
+    }
+
+    patterns['entity_statistics'] = entityStats;
+
+    // 识别趋势模式
+    final highActivityCount = patterns['high_activity_entities'].length;
+    final dormantCount = patterns['dormant_entities'].length;
+
+    if (highActivityCount > dormantCount * 2) {
+      patterns['trending_patterns'].add('高活跃度模式');
+    } else if (dormantCount > highActivityCount) {
+      patterns['trending_patterns'].add('低活跃度模式');
+    } else {
+      patterns['trending_patterns'].add('平衡活跃度模式');
+    }
+
+    return patterns;
+  }
+
+  /// 🔥 第四步：生成基于实体活动的建议
+  Future<void> _generateEntityActivitySuggestions(
+    Map<String, dynamic> suggestions,
+    Map<String, dynamic> kgInsights,
+  ) async {
+    try {
+      // 分析最近的实体活动模式
+      final objectBox = ObjectBoxService();
+      final recentEvents = objectBox.queryEventNodes()
+          .where((event) => event.lastUpdated.isAfter(DateTime.now().subtract(Duration(days: 7))))
+          .toList();
+
+      if (recentEvents.isEmpty) {
+        return;
+      }
+
+      // 按类型分组事件
+      final eventsByType = <String, List<dynamic>>{};
+      for (final event in recentEvents) {
+        eventsByType.putIfAbsent(event.type, () => []).add(event);
+      }
+
+      // 生成基于事件类型的建议
+      final typeRecommendations = <String>[];
+
+      eventsByType.forEach((type, events) {
+        if (events.length >= 3) {
+          typeRecommendations.add('$type类型事件活跃（${events.length}个），建议优化此类活动');
+        }
+      });
+
+      if (typeRecommendations.isNotEmpty) {
+        suggestions['activity_optimization'] = typeRecommendations.join('；');
+      }
+
+      // 分析事件密度
+      final eventDensity = recentEvents.length / 7.0; // 每天平均事件数
+      if (eventDensity > 3) {
+        suggestions['schedule_management'] = '最近事件密度较高（${eventDensity.toStringAsFixed(1)}个/天），建议优化时间安排';
+      } else if (eventDensity < 0.5) {
+        suggestions['activity_increase'] = '最近活动较少（${eventDensity.toStringAsFixed(1)}个/天），可以考虑增加有意义的活动';
+      }
+
+      kgInsights['activity_analysis'] = {
+        'recent_events_count': recentEvents.length,
+        'event_density_per_day': eventDensity,
+        'event_types': eventsByType.keys.toList(),
+        'most_frequent_type': eventsByType.entries
+            .reduce((a, b) => a.value.length > b.value.length ? a : b)
+            .key,
+      };
+
+    } catch (e) {
+      print('[HumanUnderstandingSystem] ❌ 生成实体活动建议失败: $e');
+    }
+  }
+
+  /// 🔥 第四步：生成基于时间模式的建议
+  Future<void> _generateTemporalPatternSuggestions(
+    Map<String, dynamic> suggestions,
+    Map<String, dynamic> kgInsights,
+  ) async {
+    try {
+      final objectBox = ObjectBoxService();
+      final allEvents = objectBox.queryEventNodes()
+          .where((event) => event.startTime != null)
+          .toList();
+
+      if (allEvents.length < 5) {
+        return;
+      }
+
+      // 分析时间模式
+      final hourDistribution = <int, int>{};
+      final dayOfWeekDistribution = <int, int>{};
+
+      for (final event in allEvents) {
+        final eventTime = event.startTime!;
+        final hour = eventTime.hour;
+        final dayOfWeek = eventTime.weekday;
+
+        hourDistribution[hour] = (hourDistribution[hour] ?? 0) + 1;
+        dayOfWeekDistribution[dayOfWeek] = (dayOfWeekDistribution[dayOfWeek] ?? 0) + 1;
+      }
+
+      // 找出最活跃的时间段
+      final mostActiveHour = hourDistribution.entries
+          .reduce((a, b) => a.value > b.value ? a : b);
+
+      final mostActiveDay = dayOfWeekDistribution.entries
+          .reduce((a, b) => a.value > b.value ? a : b);
+
+      final dayNames = ['', '周一', '周二', '周三', '周四', '周五', '周六', '周日'];
+
+      suggestions['temporal_optimization'] =
+          '您在${mostActiveHour.key}点和${dayNames[mostActiveDay.key]}最为活跃，建议在这些时间段安排重要任务';
+
+      // 检测活动间隔
+      final sortedEvents = allEvents..sort((a, b) => a.startTime!.compareTo(b.startTime!));
+      final intervals = <int>[];
+
+      for (int i = 1; i < sortedEvents.length; i++) {
+        final interval = sortedEvents[i].startTime!.difference(sortedEvents[i-1].startTime!).inHours;
+        if (interval < 168) { // 一周内的间隔
+          intervals.add(interval);
+        }
+      }
+
+      if (intervals.isNotEmpty) {
+        final avgInterval = intervals.reduce((a, b) => a + b) / intervals.length;
+
+        if (avgInterval < 4) {
+          suggestions['pacing_advice'] = '活动间隔较短（${avgInterval.toStringAsFixed(1)}小时），建议适当放慢节奏';
+        } else if (avgInterval > 48) {
+          suggestions['consistency_advice'] = '活动间隔较长（${avgInterval.toStringAsFixed(1)}小时），建议保持更好的连续性';
+        }
+      }
+
+      kgInsights['temporal_analysis'] = {
+        'most_active_hour': mostActiveHour.key,
+        'most_active_day': dayNames[mostActiveDay.key],
+        'total_events_analyzed': allEvents.length,
+        'average_interval_hours': intervals.isNotEmpty
+            ? intervals.reduce((a, b) => a + b) / intervals.length
+            : 0,
+        'hour_distribution': hourDistribution,
+        'day_distribution': dayOfWeekDistribution,
+      };
+
+    } catch (e) {
+      print('[HumanUnderstandingSystem] ❌ 生成时间模式建议失败: $e');
+    }
+  }
+
+  /// 🔥 第四步：生成个性化行动计划
+  Future<Map<String, dynamic>> _generatePersonalizedActionPlan(
+    HumanUnderstandingSystemState currentState,
+    Map<String, dynamic> kgInsights,
+  ) async {
+    final actionPlan = <String, dynamic>{
+      'immediate_actions': <String>[],
+      'short_term_goals': <String>[],
+      'long_term_strategies': <String>[],
+      'personalization_factors': <String, dynamic>{},
+    };
+
+    try {
+      // 基于认知负载的即时行动
+      final loadLevel = currentState.currentCognitiveLoad.level;
+      switch (loadLevel) {
+        case CognitiveLoadLevel.overload:
+          actionPlan['immediate_actions'].add('立即暂停非必要任务，专注于最重要的1-2个意图');
+          actionPlan['immediate_actions'].add('进行5分钟休息，降低认知负载');
+          break;
+        case CognitiveLoadLevel.high:
+          actionPlan['immediate_actions'].add('优化当前任务优先级，延后不紧急的工作');
+          break;
+        case CognitiveLoadLevel.low:
+          actionPlan['immediate_actions'].add('可以接受新的挑战或学习机会');
+          break;
+        default:
+          actionPlan['immediate_actions'].add('保持当前工作节奏');
+      }
+
+      // 基于活跃意图的短期目标
+      final activeIntents = currentState.activeIntents;
+      for (final intent in activeIntents.take(3)) {
+        if (intent.state == IntentLifecycleState.clarifying) {
+          actionPlan['short_term_goals'].add('澄清意图：${intent.description}');
+        } else if (intent.state == IntentLifecycleState.executing) {
+          actionPlan['short_term_goals'].add('制定执行计划：${intent.description}');
+        }
+      }
+
+      // 基于知识图谱的长期策略
+      final entityPatterns = kgInsights['entity_patterns'] as Map<String, dynamic>? ?? {};
+      final highActivityEntities = entityPatterns['high_activity_entities'] as List? ?? [];
+
+      if (highActivityEntities.isNotEmpty) {
+        actionPlan['long_term_strategies'].add('深化对高活跃度领域的投入：${highActivityEntities.take(2).join('、')}');
+      }
+
+      final temporalAnalysis = kgInsights['temporal_analysis'] as Map<String, dynamic>? ?? {};
+      final mostActiveHour = temporalAnalysis['most_active_hour'] as int?;
+
+      if (mostActiveHour != null) {
+        actionPlan['long_term_strategies'].add('在最佳时间段（${mostActiveHour}点左右）安排重要工作');
+      }
+
+      // 个性化因素
+      actionPlan['personalization_factors'] = {
+        'cognitive_pattern': loadLevel.toString(),
+        'preferred_work_time': mostActiveHour ?? 'unknown',
+        'active_focus_areas': highActivityEntities.take(3),
+        'current_intent_count': activeIntents.length,
+        'recent_activity_level': kgInsights['activity_analysis']?['event_density_per_day'] ?? 0,
+      };
+
+    } catch (e) {
+      print('[HumanUnderstandingSystem] ❌ 生成个性化行动计划失败: $e');
+      actionPlan['error'] = e.toString();
+    }
+
+    return actionPlan;
+  }
+
+  /// 🔥 第四步：获取增强的优先行动建议
+  List<String> _getEnhancedPriorityActions(
+    HumanUnderstandingSystemState state,
+    Map<String, dynamic> kgInsights,
+  ) {
+    final actions = _getPriorityActions(state); // 获取基础建议
+
+    // 基于知识图谱洞察添加增强建议
+    final entityPatterns = kgInsights['entity_patterns'] as Map<String, dynamic>? ?? {};
+    final highActivityEntities = entityPatterns['high_activity_entities'] as List? ?? [];
+    final dormantEntities = entityPatterns['dormant_entities'] as List? ?? [];
+
+    if (highActivityEntities.isNotEmpty) {
+      actions.add('专注于高活跃领域：${highActivityEntities.first}');
+    }
+
+    if (dormantEntities.isNotEmpty) {
+      actions.add('重新激活休眠领域：${dormantEntities.first}');
+    }
+
+    final activityAnalysis = kgInsights['activity_analysis'] as Map<String, dynamic>? ?? {};
+    final eventDensity = activityAnalysis['event_density_per_day'] as double? ?? 0;
+
+    if (eventDensity > 3) {
+      actions.add('优化高密度时间安排');
+    } else if (eventDensity < 0.5) {
+      actions.add('增加有意义的活动');
+    }
+
+    return actions.take(5).toList(); // 限制为最多5个建议
+  }
+
+  /// 🔥 第四步：统计 HU 系统数据点
+  int _countHuDataPoints(HumanUnderstandingSystemState state) {
+    return state.activeIntents.length +
+           state.activeTopics.length +
+           state.recentCausalChains.length +
+           state.recentTriples.length;
+  }
+
+  /// 🔥 第四步：评估建议质量
+  String _assessSuggestionQuality(Map<String, dynamic> kgInsights) {
+    final totalEntities = kgInsights['total_entities'] as int? ?? 0;
+    final activityAnalysis = kgInsights['activity_analysis'] as Map<String, dynamic>? ?? {};
+    final recentEventsCount = activityAnalysis['recent_events_count'] as int? ?? 0;
+
+    if (totalEntities >= 5 && recentEventsCount >= 10) {
+      return 'high';
+    } else if (totalEntities >= 2 && recentEventsCount >= 3) {
+      return 'medium';
+    } else {
+      return 'low';
+    }
+  }
+
+  /// 🔥 新增：基础实体提取方法
   List<String> _extractBasicEntities(String content) {
     final entities = <String>[];
 
-    // 技术相关
-    if (content.contains('Flutter') || content.contains('flutter')) entities.add('Flutter');
-    if (content.contains('AI') || content.contains('人工智能')) entities.add('AI');
-    if (content.contains('机器学习')) entities.add('机器学习');
-    if (content.contains('数据库')) entities.add('数据库');
-    if (content.contains('性能') || content.contains('优化')) entities.add('性能优化');
-    if (content.contains('Bug') || content.contains('错误')) entities.add('Bug修复');
+    // 技术相关实体
+    final techPatterns = [
+      r'Flutter', r'AI', r'数据库', r'Bug', r'性能优化', r'API', r'前端', r'后端',
+      r'算法', r'机器学习', r'深度学习', r'人工智能', r'编程', r'代码', r'开发',
+      r'测试', r'部署', r'架构', r'框架', r'库', r'SDK', r'IDE'
+    ];
 
-    // 工作相关
-    if (content.contains('项目') || content.contains('工作')) entities.add('工作项目');
-    if (content.contains('会议') || content.contains('讨论')) entities.add('会议');
-    if (content.contains('团队') || content.contains('协作')) entities.add('团队协作');
-    if (content.contains('功能') || content.contains('模块')) entities.add('功能开发');
+    // 工作相关实体
+    final workPatterns = [
+      r'项目', r'会议', r'团队', r'协作', r'任务', r'需求', r'功能', r'模块',
+      r'版本', r'发布', r'上线', r'迭代', r'sprint', r'敏捷', r'产品',
+      r'用户', r'客户', r'需求分析', r'设计', r'评审'
+    ];
 
-    // 学习相关
-    if (content.contains('学习') || content.contains('教程')) entities.add('学习');
-    if (content.contains('了解') || content.contains('研究')) entities.add('研究');
+    // 学习相关实体
+    final learningPatterns = [
+      r'学习', r'研究', r'教程', r'文档', r'课程', r'培训', r'知识',
+      r'技能', r'经验', r'实践', r'总结', r'分享', r'交流'
+    ];
 
-    // 日常生活相关
-    if (content.contains('吃') || content.contains('饭') || content.contains('食物')) entities.add('饮食');
-    if (content.contains('睡觉') || content.contains('休息')) entities.add('休息');
-    if (content.contains('运动') || content.contains('锻炼')) entities.add('运动');
+    // 生活相关实体
+    final lifePatterns = [
+      r'饮食', r'运动', r'休息', r'睡眠', r'健康', r'娱乐', r'旅行',
+      r'购物', r'聚会', r'朋友', r'家人', r'兴趣', r'爱好'
+    ];
 
-    return entities.isEmpty ? ['对话'] : entities;
+    // 合并所有模式
+    final allPatterns = [
+      ...techPatterns,
+      ...workPatterns,
+      ...learningPatterns,
+      ...lifePatterns
+    ];
+
+    // 提取匹配的实体
+    for (final pattern in allPatterns) {
+      final regex = RegExp(pattern, caseSensitive: false);
+      if (regex.hasMatch(content)) {
+        entities.add(pattern);
+      }
+    }
+
+    // 提取专有名词（大写字母开头的词）
+    final properNounRegex = RegExp(r'\b[A-Z][a-zA-Z]{2,}\b');
+    final properNouns = properNounRegex.allMatches(content)
+        .map((match) => match.group(0)!)
+        .where((word) => word.length > 2)
+        .toList();
+    entities.addAll(properNouns);
+
+    // 去重并限制数量
+    return entities.toSet().take(20).toList();
   }
 
-  /// 🔥 新增：基础意图推断
+  /// 🔥 新增：基础意图推断方法
   String _inferBasicIntent(String content) {
-    if (content.contains('学习') || content.contains('教程') || content.contains('了解')) {
-      return 'learning';
-    }
-    if (content.contains('规划') || content.contains('计划') || content.contains('准备')) {
-      return 'planning';
-    }
-    if (content.contains('问题') || content.contains('Bug') || content.contains('优化')) {
+    final lowerContent = content.toLowerCase();
+
+    // 问题相关
+    if (lowerContent.contains('问题') || lowerContent.contains('bug') ||
+        lowerContent.contains('错误') || lowerContent.contains('异常')) {
       return 'problem_solving';
     }
-    if (content.contains('完成') || content.contains('进展') || content.contains('做了')) {
-      return 'sharing_experience';
+
+    // 学习相关
+    if (lowerContent.contains('学习') || lowerContent.contains('了解') ||
+        lowerContent.contains('研究') || lowerContent.contains('教程')) {
+      return 'learning';
     }
-    if (content.contains('推荐') || content.contains('什么') || content.contains('如何')) {
-      return 'information_seeking';
+
+    // 工作相关
+    if (lowerContent.contains('项目') || lowerContent.contains('开发') ||
+        lowerContent.contains('功能') || lowerContent.contains('需求')) {
+      return 'work_planning';
     }
-    return 'casual_chat';
+
+    // 分享相关
+    if (lowerContent.contains('分享') || lowerContent.contains('介绍') ||
+        lowerContent.contains('展示') || lowerContent.contains('演示')) {
+      return 'sharing';
+    }
+
+    // 讨论相关
+    if (lowerContent.contains('讨论') || lowerContent.contains('交流') ||
+        lowerContent.contains('沟通') || lowerContent.contains('聊天')) {
+      return 'discussion';
+    }
+
+    // 询问相关
+    if (lowerContent.contains('?') || lowerContent.contains('？') ||
+        lowerContent.contains('怎么') || lowerContent.contains('如何')) {
+      return 'inquiry';
+    }
+
+    // 默认为一般对话
+    return 'general_conversation';
   }
 
-  /// 🔥 新增：基础情绪推断
+  /// 🔥 新增：基础情绪推断方法
   String _inferBasicEmotion(String content) {
-    if (content.contains('不错') || content.contains('完成') || content.contains('好')) {
+    final lowerContent = content.toLowerCase();
+
+    // 积极情绪
+    final positiveKeywords = [
+      '好', '棒', '赞', '优秀', '完美', '成功', '满意', '开心', '高兴',
+      '兴奋', '期待', '喜欢', '爱', '感谢', '谢谢', '不错', '很棒'
+    ];
+
+    // 消极情绪
+    final negativeKeywords = [
+      '糟糕', '失败', '错误', '问题', '困难', '麻烦', '烦恼', '担心',
+      '焦虑', '沮丧', '失望', '难过', '生气', '愤怒', '讨厌', '不好'
+    ];
+
+    // 中性情绪
+    final neutralKeywords = [
+      '正常', '一般', '普通', '还行', '可以', '了解', '知道', '明白',
+      '理解', '分析', '思考', '考虑', '建议', '推荐'
+    ];
+
+    // 计算情绪得分
+    int positiveScore = 0;
+    int negativeScore = 0;
+    int neutralScore = 0;
+
+    for (final keyword in positiveKeywords) {
+      if (lowerContent.contains(keyword)) {
+        positiveScore++;
+      }
+    }
+
+    for (final keyword in negativeKeywords) {
+      if (lowerContent.contains(keyword)) {
+        negativeScore++;
+      }
+    }
+
+    for (final keyword in neutralKeywords) {
+      if (lowerContent.contains(keyword)) {
+        neutralScore++;
+      }
+    }
+
+    // 判断主导情绪
+    if (positiveScore > negativeScore && positiveScore > neutralScore) {
       return 'positive';
+    } else if (negativeScore > positiveScore && negativeScore > neutralScore) {
+      return 'negative';
+    } else if (positiveScore == negativeScore && positiveScore > 0) {
+      return 'mixed';
+    } else {
+      return 'neutral';
     }
-    if (content.contains('困难') || content.contains('问题') || content.contains('棘手')) {
-      return 'frustrated';
+  }
+
+  /// 🔥 新增：处理语义分析输入的核心方法
+  Future<void> processSemanticInput(SemanticAnalysisInput input) async {
+    try {
+      print('[HumanUnderstandingSystem] 🧠 开始处理语义输入...');
+
+      // 🔥 修复：使用更通用的方法调用，避免依赖具体方法名
+      await Future.wait([
+        // 意图管理器处理 - 使用通用接口或跳过
+        Future(() async {
+          try {
+            // 尝试调用分析方法，如果不存在则跳过
+            if (_intentManager.runtimeType.toString().contains('IntentLifecycleManager')) {
+              // 直接分析输入内容并创建意图
+              await _intentManager.analyzeIntent(input.content, input.intent);
+            }
+          } catch (e) {
+            print('[HumanUnderstandingSystem] ⚠️ 意图管理器处理失败: $e');
+          }
+        }),
+
+        // 主题跟踪器处理
+        Future(() async {
+          try {
+            // 直接添加主题而不是处理输入
+            final entities = input.entities;
+            for (final entity in entities.take(3)) { // 限制数量
+              await _topicTracker.addTopic(entity, importance: 0.8);
+            }
+          } catch (e) {
+            print('[HumanUnderstandingSystem] ⚠️ 主题跟踪器处理失败: $e');
+          }
+        }),
+
+        // 因果链提取器处理
+        Future(() async {
+          try {
+            // 简单的因果关系提取
+            await _causalExtractor.extractCausalRelations(input);
+          } catch (e) {
+            print('[HumanUnderstandingSystem] ⚠️ 因果链提取器处理失败: $e');
+          }
+        }),
+
+        // 语义图构建器处理
+        Future(() async {
+          try {
+            // 添加语义三元组
+            for (int i = 0; i < input.entities.length - 1; i++) {
+              final subject = input.entities[i];
+              final object = input.entities[i + 1];
+              await _graphBuilder.addTriple(subject, '相关', object);
+            }
+          } catch (e) {
+            print('[HumanUnderstandingSystem] ⚠️ 语义图构建器处理失败: $e');
+          }
+        }),
+
+        // 认知负载估算器处理
+        Future(() async {
+          try {
+            // 更新认知负载
+            await _loadEstimator.updateLoad(
+              activeIntentCount: _intentManager.getActiveIntents().length,
+              activeTopicCount: _topicTracker.getActiveTopics().length,
+              emotionalIntensity: _mapEmotionToIntensity(input.emotion),
+              // 移除未定义的contentComplexity参数
+            );
+          } catch (e) {
+            print('[HumanUnderstandingSystem] ⚠️ 认知负载估算器处理失败: $e');
+          }
+        }),
+      ]);
+
+      print('[HumanUnderstandingSystem] ✅ 语义输入处理完成');
+
+      // 更新系统状态
+      _updateSystemState();
+
+    } catch (e) {
+      print('[HumanUnderstandingSystem] ❌ 处理语义输入失败: $e');
     }
-    if (content.contains('感兴趣') || content.contains('想') || content.contains('希望')) {
-      return 'curious';
+  }
+
+  /// 🔥 新增：映射情绪到强度值
+  double _mapEmotionToIntensity(String emotion) {
+    switch (emotion.toLowerCase()) {
+      case 'positive':
+        return 0.3; // 积极情绪，认知负载较低
+      case 'negative':
+        return 0.8; // 消极情绪，认知负载较高
+      case 'mixed':
+        return 0.6; // 混合情绪，中等认知负载
+      default:
+        return 0.5; // 中性情绪，正常认知负载
     }
-    if (content.contains('需要') || content.contains('应该') || content.contains('考虑')) {
-      return 'focused';
+  }
+
+  /// 🔥 新增：分析意图模式
+  Map<String, dynamic> _analyzeIntentPatterns(List<Intent> intents) {
+    final patterns = <String, dynamic>{
+      'pattern_count': 0,
+      'dominant_intent_types': <String>[],
+      'intent_frequency': <String, int>{},
+      'completion_rate': 0.0,
+    };
+
+    if (intents.isEmpty) return patterns;
+
+    // 统计意图类型频率
+    final typeFrequency = <String, int>{};
+    int completedCount = 0;
+
+    for (final intent in intents) {
+      // 🔥 修复：使用description而不是type
+      final type = intent.description ?? 'unknown';
+      typeFrequency[type] = (typeFrequency[type] ?? 0) + 1;
+
+      if (intent.state == IntentLifecycleState.completed) {
+        completedCount++;
+      }
     }
-    return 'neutral';
+
+    // 找出主导意图类型
+    final sortedTypes = typeFrequency.entries.toList()
+      ..sort((a, b) => b.value.compareTo(a.value));
+
+    patterns['pattern_count'] = typeFrequency.length;
+    patterns['dominant_intent_types'] = sortedTypes.take(3).map((e) => e.key).toList();
+    patterns['intent_frequency'] = typeFrequency;
+    patterns['completion_rate'] = intents.isNotEmpty ? (completedCount / intents.length) : 0.0;
+
+    return patterns;
+  }
+
+  /// 🔥 新增：分析主题模式
+  Map<String, dynamic> _analyzeTopicPatterns(List<ConversationTopic> topics) {
+    final patterns = <String, dynamic>{
+      'pattern_count': 0,
+      'active_topic_count': 0,
+      'topic_diversity': 0.0,
+      'average_engagement': 0.0,
+    };
+
+    if (topics.isEmpty) return patterns;
+
+    int activeTopics = 0;
+    double totalEngagement = 0.0;
+
+    for (final topic in topics) {
+      // 🔥 修复：假设主题有一个活跃状态判断，可能需要根据实际模型调整
+      if (topic.lastActivity.isAfter(DateTime.now().subtract(Duration(hours: 24)))) {
+        activeTopics++;
+      }
+      // 🔥 修复：使用importance作为engagement的替代
+      totalEngagement += topic.importance;
+    }
+
+    patterns['pattern_count'] = topics.length;
+    patterns['active_topic_count'] = activeTopics;
+    patterns['topic_diversity'] = topics.length / 10.0; // 相对多样性
+    patterns['average_engagement'] = topics.isNotEmpty ? (totalEngagement / topics.length) : 0.0;
+
+    return patterns;
+  }
+
+  /// 🔥 新增：重置系统
+  Future<void> resetSystem() async {
+    try {
+      print('[HumanUnderstandingSystem] 🔄 开始重置系统...');
+
+      // 停止监听
+      _conversationMonitorTimer?.cancel();
+      _stateUpdateTimer?.cancel();
+      _isMonitoring = false;
+
+      // 清理数据
+      _processedRecordIds.clear();
+      _lastProcessedTimestamp = 0;
+
+      // 🔥 修复：重置子模块 - 使用通用方法或跳过
+      await Future.wait([
+        Future(() async {
+          try {
+            // 尝试重置意图管理器
+            await _intentManager.clearAllIntents();
+          } catch (e) {
+            print('[HumanUnderstandingSystem] ⚠️ 重置意图管理器失败: $e');
+          }
+        }),
+        Future(() async {
+          try {
+            // 尝试重置主题跟踪器
+            await _topicTracker.clearAllTopics();
+          } catch (e) {
+            print('[HumanUnderstandingSystem] ⚠️ 重置主题跟踪器失败: $e');
+          }
+        }),
+        Future(() async {
+          try {
+            // 尝试重置因果链提取器
+            await _causalExtractor.clearAllRelations();
+          } catch (e) {
+            print('[HumanUnderstandingSystem] ⚠️ 重置因果链提取器失败: $e');
+          }
+        }),
+        Future(() async {
+          try {
+            // 尝试重置语义图构建器
+            await _graphBuilder.clearAllTriples();
+          } catch (e) {
+            print('[HumanUnderstandingSystem] ⚠️ 重置语义图构建器失败: $e');
+          }
+        }),
+        Future(() async {
+          try {
+            // 尝试重置认知负载估算器
+            await _loadEstimator.resetLoad();
+          } catch (e) {
+            print('[HumanUnderstandingSystem] ⚠️ 重置认知负载估算器失败: $e');
+          }
+        }),
+      ]);
+
+      // 重新初始化
+      _initialized = false;
+      await initialize();
+
+      print('[HumanUnderstandingSystem] ✅ 系统重置完成');
+
+    } catch (e) {
+      print('[HumanUnderstandingSystem] ❌ 系统重置失败: $e');
+      rethrow;
+    }
   }
 
   /// 🔥 新增：获取监听状态
   Map<String, dynamic> getMonitoringStatus() {
     return {
       'is_monitoring': _isMonitoring,
-      'last_processed_timestamp': _lastProcessedTimestamp,
-      'processed_record_count': _processedRecordIds.length,
       'monitor_interval_seconds': _monitorInterval,
-      'batch_size': _conversationBatchSize,
-      'last_check_time': DateTime.now().toIso8601String(),
+      'last_processed_timestamp': _lastProcessedTimestamp,
+      'processed_records_count': _processedRecordIds.length,
       'system_initialized': _initialized,
+      'conversation_batch_size': _conversationBatchSize,
+      'monitoring_active_since': _isMonitoring ? _initTime.toIso8601String() : null,
     };
   }
 
-  /// 🔥 新增：手动触发对话检查（用于测试）
-  Future<void> triggerConversationCheck() async {
-    print('[HumanUnderstandingSystem] 🔄 手动触发对话检查...');
-    await _monitorNewConversations();
-  }
-
-  /// 🔥 新增：重置监听状态
-  void resetMonitoringState() {
-    print('[HumanUnderstandingSystem] 🔄 重置监听状态...');
-    _processedRecordIds.clear();
-    _lastProcessedTimestamp = DateTime.now().millisecondsSinceEpoch;
-    print('[HumanUnderstandingSystem] ✅ 监听状态已重置');
-  }
-
-  /// 🔥 新增：手动触发对话检查（dashboard调用）
-  Future<void> triggerDialogueCheck() async {
-    print('[HumanUnderstandingSystem] 🔄 手动触发对话检查（来自Dashboard）...');
-    await _monitorNewConversations();
-  }
-
-  /// 🔥 新增：重置监听状态（dashboard调用）
-  Future<void> resetMonitoringStatus() async {
-    print('[HumanUnderstandingSystem] 🔄 重置监听状态（来自Dashboard）...');
-    resetMonitoringState();
-  }
-
-  /// 🔥 新增：获取调试信息
-  Map<String, dynamic> getDebugInfo() {
-    final recentRecords = ObjectBoxService().getRecordsSince(_lastProcessedTimestamp - 3600000); // 最近1小时
-
+  /// 🔥 新增：获取系统指标
+  Map<String, dynamic> getSystemMetrics() {
+    final currentState = getCurrentState();
     return {
       'system_status': {
         'initialized': _initialized,
         'monitoring': _isMonitoring,
-        'last_processed_timestamp': _lastProcessedTimestamp,
-        'processed_record_count': _processedRecordIds.length,
+        'uptime_minutes': DateTime.now().difference(_initTime).inMinutes,
+      },
+      'data_metrics': {
+        'active_intents': currentState.activeIntents.length,
+        'active_topics': currentState.activeTopics.length,
+        'recent_causal_chains': currentState.recentCausalChains.length,
+        'recent_triples': currentState.recentTriples.length,
+        'processed_records': _processedRecordIds.length,
+      },
+      'cognitive_load': {
+        'level': currentState.currentCognitiveLoad.level.toString(),
+        'score': currentState.currentCognitiveLoad.score,
+        'recommendation': currentState.currentCognitiveLoad.recommendation,
+      },
+      'performance_metrics': {
         'monitor_interval': _monitorInterval,
         'batch_size': _conversationBatchSize,
+        'last_processed': DateTime.fromMillisecondsSinceEpoch(_lastProcessedTimestamp).toIso8601String(),
       },
-      'database_status': {
-        'recent_records_count': recentRecords.length,
-        'recent_records_preview': recentRecords.take(3).map((r) => {
-          'id': r.id,
-          'role': r.role,
-          'content': r.content?.substring(0, r.content!.length > 50 ? 50 : r.content!.length),
-          'created_at': r.createdAt,
-        }).toList(),
-      },
-      'module_status': {
-        'intent_manager_stats': _intentManager.getIntentStatistics(),
-        'topic_tracker_stats': _topicTracker.getTopicStatistics(),
-        'causal_extractor_stats': _causalExtractor.getCausalStatistics(),
-        'graph_builder_stats': _graphBuilder.getGraphStatistics(),
-        'load_estimator_stats': _loadEstimator.getLoadStatistics(),
-      },
-      'current_state_summary': {
-        'active_intents_count': _intentManager.getActiveIntents().length,
-        'active_topics_count': _topicTracker.getActiveTopics().length,
-        'recent_causal_count': _causalExtractor.getRecentCausalRelations(limit: 10).length,
-        'recent_triples_count': _graphBuilder.getRecentTriples(limit: 10).length,
-      },
-      'last_check_time': DateTime.now().toIso8601String(),
     };
+  }
+
+  /// 🔥 新增：分析用户模式
+  Future<Map<String, dynamic>> analyzeUserPatterns() async {
+    try {
+      final currentState = getCurrentState();
+      final patterns = <String, dynamic>{};
+
+      // 意图模式分析
+      final intentPatterns = _analyzeIntentPatterns(currentState.activeIntents);
+      patterns['intent_patterns'] = intentPatterns;
+
+      // 主题模式分析
+      final topicPatterns = _analyzeTopicPatterns(currentState.activeTopics);
+      patterns['topic_patterns'] = topicPatterns;
+
+      // 认知负载模式分析
+      final cognitivePatterns = _analyzeCognitivePatterns(currentState.currentCognitiveLoad);
+      patterns['cognitive_patterns'] = cognitivePatterns;
+
+      // 时间模式分析（需要从知识图谱获取数据）
+      final temporalPatterns = await _analyzeTemporalPatterns();
+      patterns['temporal_patterns'] = temporalPatterns;
+
+      // 行为模式分析
+      final behaviorPatterns = _analyzeBehaviorPatterns(currentState.recentCausalChains);
+      patterns['behavior_patterns'] = behaviorPatterns;
+
+      patterns['analysis_timestamp'] = DateTime.now().toIso8601String();
+      patterns['total_pattern_count'] = intentPatterns['pattern_count'] +
+                                       topicPatterns['pattern_count'] +
+                                       temporalPatterns['pattern_count'];
+
+      return patterns;
+
+    } catch (e) {
+      print('[HumanUnderstandingSystem] ❌ 分析用户模式失败: $e');
+      return {'error': e.toString()};
+    }
+  }
+
+  /// 🔥 新增：分析认知负载模式
+  Map<String, dynamic> _analyzeCognitivePatterns(CognitiveLoadAssessment load) {
+    return {
+      'pattern_count': 1,
+      'current_level': load.level.toString(),
+      'load_score': load.score,
+      'stress_indicators': load.factors.keys.where((key) =>
+        load.factors[key]! > 0.7).toList(),
+      'optimization_needed': load.level == CognitiveLoadLevel.overload ||
+                            load.level == CognitiveLoadLevel.high,
+    };
+  }
+
+  /// 🔥 新增：分析时间模式
+  Future<Map<String, dynamic>> _analyzeTemporalPatterns() async {
+    try {
+      final objectBox = ObjectBoxService();
+      final recentEvents = objectBox.queryEventNodes()
+          .where((event) => event.startTime != null &&
+                          event.startTime!.isAfter(DateTime.now().subtract(Duration(days: 30))))
+          .toList();
+
+      final patterns = <String, dynamic>{
+        'pattern_count': 0,
+        'peak_hours': <int>[],
+        'activity_rhythm': 'unknown',
+        'weekly_distribution': <String, int>{},
+      };
+
+      if (recentEvents.isEmpty) return patterns;
+
+      // 分析小时分布
+      final hourCounts = <int, int>{};
+      final dayOfWeekCounts = <int, int>{};
+
+      for (final event in recentEvents) {
+        final hour = event.startTime!.hour;
+        final dayOfWeek = event.startTime!.weekday;
+
+        hourCounts[hour] = (hourCounts[hour] ?? 0) + 1;
+        dayOfWeekCounts[dayOfWeek] = (dayOfWeekCounts[dayOfWeek] ?? 0) + 1;
+      }
+
+      // 找出活跃时间段
+      final sortedHours = hourCounts.entries.toList()
+        ..sort((a, b) => b.value.compareTo(a.value));
+
+      patterns['pattern_count'] = hourCounts.length;
+      patterns['peak_hours'] = sortedHours.take(3).map((e) => e.key).toList();
+
+      // 判断活动节律
+      final morningActivity = hourCounts.entries
+          .where((e) => e.key >= 6 && e.key < 12)
+          .fold(0, (sum, e) => sum + e.value);
+      final afternoonActivity = hourCounts.entries
+          .where((e) => e.key >= 12 && e.key < 18)
+          .fold(0, (sum, e) => sum + e.value);
+      final eveningActivity = hourCounts.entries
+          .where((e) => e.key >= 18 || e.key < 6)
+          .fold(0, (sum, e) => sum + e.value);
+
+      if (morningActivity > afternoonActivity && morningActivity > eveningActivity) {
+        patterns['activity_rhythm'] = 'morning_person';
+      } else if (eveningActivity > morningActivity && eveningActivity > afternoonActivity) {
+        patterns['activity_rhythm'] = 'evening_person';
+      } else {
+        patterns['activity_rhythm'] = 'balanced';
+      }
+
+      // 周分布
+      final dayNames = ['', '周一', '周二', '周三', '周四', '周五', '周六', '周日'];
+      final weeklyDist = <String, int>{};
+      dayOfWeekCounts.forEach((day, count) {
+        if (day >= 1 && day <= 7) {
+          weeklyDist[dayNames[day]] = count;
+        }
+      });
+      patterns['weekly_distribution'] = weeklyDist;
+
+      return patterns;
+
+    } catch (e) {
+      print('[HumanUnderstandingSystem] ❌ 分析时间模式失败: $e');
+      return {'pattern_count': 0, 'error': e.toString()};
+    }
+  }
+
+  /// 🔥 新增：分析行为模式
+  Map<String, dynamic> _analyzeBehaviorPatterns(List<CausalRelation> causalChains) {
+    final patterns = <String, dynamic>{
+      'pattern_count': 0,
+      'common_triggers': <String>[],
+      'frequent_outcomes': <String>[],
+      'behavior_complexity': 0.0,
+    };
+
+    if (causalChains.isEmpty) return patterns;
+
+    // 统计触发因素和结果
+    final triggers = <String, int>{};
+    final outcomes = <String, int>{};
+
+    for (final relation in causalChains) {
+      triggers[relation.cause] = (triggers[relation.cause] ?? 0) + 1;
+      outcomes[relation.effect] = (outcomes[relation.effect] ?? 0) + 1;
+    }
+
+    // 找出常见模式
+    final sortedTriggers = triggers.entries.toList()
+      ..sort((a, b) => b.value.compareTo(a.value));
+    final sortedOutcomes = outcomes.entries.toList()
+      ..sort((a, b) => b.value.compareTo(a.value));
+
+    patterns['pattern_count'] = causalChains.length;
+    patterns['common_triggers'] = sortedTriggers.take(3).map((e) => e.key).toList();
+    patterns['frequent_outcomes'] = sortedOutcomes.take(3).map((e) => e.key).toList();
+    patterns['behavior_complexity'] = causalChains.length / 10.0; // 相对复杂度
+
+    return patterns;
+  }
+
+  /// 🔥 新增：导出系统数据
+  Future<Map<String, dynamic>> exportSystemData() async {
+    try {
+      final exportData = <String, dynamic>{
+        'export_metadata': {
+          'timestamp': DateTime.now().toIso8601String(),
+          'version': '1.0.0',
+          'system_uptime': DateTime.now().difference(_initTime).inMinutes,
+        },
+      };
+
+      // 导出当前状态
+      final currentState = getCurrentState();
+      exportData['current_state'] = {
+        'active_intents': currentState.activeIntents.map((i) => i.toJson()).toList(),
+        'active_topics': currentState.activeTopics.map((t) => t.toJson()).toList(),
+        'recent_causal_chains': currentState.recentCausalChains.map((c) => c.toJson()).toList(),
+        'recent_triples': currentState.recentTriples.map((t) => t.toJson()).toList(),
+        'cognitive_load': {
+          'level': currentState.currentCognitiveLoad.level.toString(),
+          'score': currentState.currentCognitiveLoad.score,
+          'factors': currentState.currentCognitiveLoad.factors,
+        },
+      };
+
+      // 导出系统指标
+      exportData['system_metrics'] = getSystemMetrics();
+
+      // 导出监听状态
+      exportData['monitoring_status'] = getMonitoringStatus();
+
+      // 导出用户模式分析
+      exportData['user_patterns'] = await analyzeUserPatterns();
+
+      // 导出知识图谱统计（如果可用）
+      try {
+        final kgStats = await _exportKnowledgeGraphStats();
+        exportData['knowledge_graph_stats'] = kgStats;
+      } catch (e) {
+        exportData['knowledge_graph_stats'] = {'error': e.toString()};
+      }
+
+      exportData['export_summary'] = {
+        'total_active_intents': currentState.activeIntents.length,
+        'total_active_topics': currentState.activeTopics.length,
+        'total_causal_relations': currentState.recentCausalChains.length,
+        'total_semantic_triples': currentState.recentTriples.length,
+        'data_completeness': _calculateDataCompleteness(currentState),
+      };
+
+      return exportData;
+
+    } catch (e) {
+      print('[HumanUnderstandingSystem] ❌ 导出系统数据失败: $e');
+      return {'error': e.toString()};
+    }
+  }
+
+  /// 🔥 新增：导出知识图谱统计
+  Future<Map<String, dynamic>> _exportKnowledgeGraphStats() async {
+    final objectBox = ObjectBoxService();
+
+    final entityNodes = objectBox.queryEntityNodes();
+    final eventNodes = objectBox.queryEventNodes();
+
+    return {
+      'entity_count': entityNodes.length,
+      'event_count': eventNodes.length,
+      'recent_entities': entityNodes
+          .where((e) => e.lastUpdated.isAfter(DateTime.now().subtract(Duration(days: 7))))
+          .length,
+      'recent_events': eventNodes
+          .where((e) => e.lastUpdated.isAfter(DateTime.now().subtract(Duration(days: 7))))
+          .length,
+      'entity_types': entityNodes.map((e) => e.type).toSet().toList(),
+      'event_types': eventNodes.map((e) => e.type).toSet().toList(),
+    };
+  }
+
+  /// 🔥 新增：计算数据完整性
+  double _calculateDataCompleteness(HumanUnderstandingSystemState state) {
+    int totalPoints = 0;
+    int availablePoints = 0;
+
+    // 意图数据 (25%)
+    totalPoints += 25;
+    if (state.activeIntents.isNotEmpty) {
+      availablePoints += 25;
+    }
+
+    // 主题数据 (25%)
+    totalPoints += 25;
+    if (state.activeTopics.isNotEmpty) {
+      availablePoints += 25;
+    }
+
+    // 因果关系数据 (25%)
+    totalPoints += 25;
+    if (state.recentCausalChains.isNotEmpty) {
+      availablePoints += 25;
+    }
+
+    // 语义三元组数据 (25%)
+    totalPoints += 25;
+    if (state.recentTriples.isNotEmpty) {
+      availablePoints += 25;
+    }
+
+    return totalPoints > 0 ? (availablePoints / totalPoints) : 0.0;
+  }
+
+  /// 🔥 新增：触发对话检查
+  Future<void> triggerDialogueCheck() async {
+    try {
+      print('[HumanUnderstandingSystem] 🔍 手动触发对话检查...');
+
+      if (!_initialized) {
+        print('[HumanUnderstandingSystem] ⚠️ 系统未初始化，跳过检查');
+        return;
+      }
+
+      // 强制执行一次对话监听
+      await _monitorNewConversations();
+
+      print('[HumanUnderstandingSystem] ✅ 对话检查完成');
+
+    } catch (e) {
+      print('[HumanUnderstandingSystem] ❌ 对话检查失败: $e');
+    }
+  }
+
+  /// 🔥 新增：重置监听状态
+  void resetMonitoringStatus() {
+    try {
+      print('[HumanUnderstandingSystem] 🔄 重置监听状态...');
+
+      // 停止当前监听
+      _conversationMonitorTimer?.cancel();
+      _isMonitoring = false;
+
+      // 清理监听相关数据
+      _processedRecordIds.clear();
+      _lastProcessedTimestamp = DateTime.now().millisecondsSinceEpoch;
+
+      // 重新启动监听
+      if (_initialized) {
+        _startConversationMonitoring();
+      }
+
+      print('[HumanUnderstandingSystem] ✅ 监听状态已重置');
+
+    } catch (e) {
+      print('[HumanUnderstandingSystem] ❌ 重置监听状态失败: $e');
+    }
+  }
+
+  /// 🔥 新增：获取调试信息
+  Map<String, dynamic> getDebugInfo() {
+    return {
+      'system_state': {
+        'initialized': _initialized,
+        'initializing': _initializing,
+        'monitoring': _isMonitoring,
+        'init_time': _initTime.toIso8601String(),
+        'uptime_minutes': DateTime.now().difference(_initTime).inMinutes,
+      },
+      'monitoring_config': {
+        'monitor_interval': _monitorInterval,
+        'batch_size': _conversationBatchSize,
+        'last_processed_timestamp': _lastProcessedTimestamp,
+        'processed_records_count': _processedRecordIds.length,
+      },
+      'sub_modules': {
+        'intent_manager': 'IntentLifecycleManager',
+        'topic_tracker': 'ConversationTopicTracker',
+        'causal_extractor': 'CausalChainExtractor',
+        'graph_builder': 'SemanticGraphBuilder',
+        'load_estimator': 'CognitiveLoadEstimator',
+        'reminder_manager': 'IntelligentReminderManager',
+        'knowledge_graph': 'KnowledgeGraphService',
+      },
+      'timers_status': {
+        'state_update_timer_active': _stateUpdateTimer?.isActive ?? false,
+        'conversation_monitor_timer_active': _conversationMonitorTimer?.isActive ?? false,
+      },
+      'memory_usage': {
+        'processed_record_ids': _processedRecordIds.length,
+        'stream_controller_has_listener': _systemStateController.hasListener,
+      },
+      'debug_timestamp': DateTime.now().toIso8601String(),
+    };
+  }
+
+  /// 🔥 新增：获取优先行动建议
+  List<String> _getPriorityActions(HumanUnderstandingSystemState state) {
+    final actions = <String>[];
+
+    // 基于认知负载的建议
+    switch (state.currentCognitiveLoad.level) {
+      case CognitiveLoadLevel.overload:
+        actions.add('立即减少任务数量');
+        actions.add('专注于最重要的意图');
+        break;
+      case CognitiveLoadLevel.high:
+        actions.add('优化任务优先级');
+        actions.add('适当休息');
+        break;
+      case CognitiveLoadLevel.low:
+        actions.add('可以接受新挑战');
+        actions.add('学习新技能');
+        break;
+      default:
+        actions.add('保持当前节奏');
+    }
+
+    // 基于活跃意图的建议
+    final activeIntents = state.activeIntents;
+    if (activeIntents.length > 3) {
+      actions.add('整理和优化意图清单');
+    }
+
+    // 基于主题的建议
+    final activeTopics = state.activeTopics;
+    if (activeTopics.length > 5) {
+      actions.add('聚焦核心讨论主题');
+    }
+
+    // 基于因果关系的建议
+    if (state.recentCausalChains.isNotEmpty) {
+      actions.add('分析行为模式和动机');
+    }
+
+    return actions.take(3).toList(); // 限制为最多3个优先建议
   }
 
   /// 释放所有资源

@@ -123,9 +123,12 @@ class ConversationTopic {
   TopicState state;
   double relevanceScore; // 当前相关性分数
   double weight; // 新增：权重字段，兼容界面显示
+  double confidence; // 新增：置信度
   DateTime createdAt;
   DateTime lastMentioned;
-  
+  DateTime firstMentioned; // 新增：首次提及时间
+  int mentionCount; // 新增：提及次数
+
   // 主题内容
   List<String> keywords; // 关键词
   List<String> entities; // 相关实体
@@ -142,8 +145,11 @@ class ConversationTopic {
     this.state = TopicState.active,
     this.relevanceScore = 1.0,
     double? weight, // 新增参数
+    this.confidence = 0.8, // 新增参数
     DateTime? createdAt,
     DateTime? lastMentioned,
+    DateTime? firstMentioned, // 新增参数
+    this.mentionCount = 1, // 新增参数
     this.keywords = const [],
     this.entities = const [],
     this.relatedIntentIds = const [],
@@ -152,7 +158,14 @@ class ConversationTopic {
   }) : id = id ?? const Uuid().v4(),
        weight = weight ?? relevanceScore, // 如果没有设置权重，使用相关性分数
        createdAt = createdAt ?? DateTime.now(),
-       lastMentioned = lastMentioned ?? DateTime.now();
+       lastMentioned = lastMentioned ?? DateTime.now(),
+       firstMentioned = firstMentioned ?? DateTime.now();
+
+  // 新增：获取lastActivity（兼容性方法）
+  DateTime get lastActivity => lastMentioned;
+
+  // 新增：获取importance（兼容性方法）
+  double get importance => relevanceScore;
 
   void updateRelevance(double newScore, String reason) {
     final evolution = TopicEvolution(
@@ -164,6 +177,7 @@ class ConversationTopic {
     evolutionHistory = [...evolutionHistory, evolution];
     relevanceScore = newScore;
     lastMentioned = DateTime.now();
+    mentionCount += 1;
   }
 
   Map<String, dynamic> toJson() {
@@ -173,8 +187,12 @@ class ConversationTopic {
       'category': category,
       'state': state.toString(),
       'relevanceScore': relevanceScore,
+      'weight': weight,
+      'confidence': confidence,
       'createdAt': createdAt.toIso8601String(),
       'lastMentioned': lastMentioned.toIso8601String(),
+      'firstMentioned': firstMentioned.toIso8601String(),
+      'mentionCount': mentionCount,
       'keywords': keywords,
       'entities': entities,
       'relatedIntentIds': relatedIntentIds,

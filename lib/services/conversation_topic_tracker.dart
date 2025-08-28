@@ -449,6 +449,54 @@ ${getActiveTopics().map((t) => '${t.name} (${t.relevanceScore.toStringAsFixed(2)
     return true;
   }
 
+  /// 添加主题（新增方法）
+  Future<void> addTopic(String topicName, {double importance = 0.5}) async {
+    if (!_initialized) await initialize();
+
+    try {
+      // 检查是否已存在
+      if (_topics.containsKey(topicName)) {
+        final existingTopic = _topics[topicName]!;
+        existingTopic.updateRelevance(importance, '手动添加');
+        _topicUpdatesController.add(existingTopic);
+        print('[ConversationTopicTracker] 🔄 更新已存在主题: $topicName');
+        return;
+      }
+
+      // 创建新主题
+      final topic = ConversationTopic(
+        id: DateTime.now().millisecondsSinceEpoch.toString(),
+        name: topicName,
+        category: 'general',
+        keywords: [topicName],
+        relevanceScore: importance,
+        confidence: 0.8,
+        lastMentioned: DateTime.now(),
+        firstMentioned: DateTime.now(),
+        mentionCount: 1,
+        state: TopicState.active,
+        context: {'source': 'manual_add'},
+      );
+
+      _topics[topicName] = topic;
+      _topicUpdatesController.add(topic);
+      print('[ConversationTopicTracker] ➕ 添加新主题: $topicName');
+    } catch (e) {
+      print('[ConversationTopicTracker] ❌ 添加主题失败: $e');
+    }
+  }
+
+  /// 清除所有主题（新增方法）
+  Future<void> clearAllTopics() async {
+    try {
+      _topics.clear();
+      _conversationHistory.clear();
+      print('[ConversationTopicTracker] 🧹 已清除所有主题');
+    } catch (e) {
+      print('[ConversationTopicTracker] ❌ 清除主题失败: $e');
+    }
+  }
+
   /// 释放资源
   void dispose() {
     _relevanceDecayTimer?.cancel();

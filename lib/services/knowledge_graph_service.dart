@@ -82,14 +82,25 @@ class KnowledgeGraphService {
   // 2. 从对话中提取事件和实体（事件中心设计）
   static Future<Map<String, dynamic>> extractEventsAndEntitiesFromText(
     String conversationText,
-    {DateTime? conversationTime}
+    {DateTime? conversationTime, List<String>? preExtractedEntities}
   ) async {
     final now = conversationTime ?? DateTime.now();
     final timeContext = "${now.year}年${now.month.toString().padLeft(2, '0')}月${now.day.toString().padLeft(2, '0')}日";
 
+    // 🔥 第二步：如果已有预提取的实体，在prompt中包含它们
+    String entityHint = '';
+    if (preExtractedEntities != null && preExtractedEntities.isNotEmpty) {
+      entityHint = '''
+
+【预识别实体提示】：
+系统已预先识别出以下实体：${preExtractedEntities.join('、')}
+请在抽取过程中优先考虑这些实体，并补充识别其他相关实体。
+''';
+    }
+
     final eventExtractionPrompt = """
 你是一个知识图谱构建助手。请从对话中细致地提取事件和实体信息，采用事件中心的图谱设计。
-
+$entityHint
 【重要原则】：
 1. 实体抽取要尽可能具体和细致，避免过度泛化
 2. 要识别出具体的人物、物品、地点、概念等实体
@@ -190,6 +201,293 @@ class KnowledgeGraphService {
       print('[KnowledgeGraphService] ❌ 事件提取错误: $e\n$st');
       return {'events': [], 'entities': [], 'event_relations': []};
     }
+  }
+
+  // 🔥 第二步：新增支持预提取实体的处理方法
+  static Future<void> processEventsFromConversationWithSharedEntities(
+    String conversationText,
+    {required String contextId,
+     DateTime? conversationTime,
+     List<String>? preExtractedEntities,
+     Map<String, String>? entityTypeMapping}
+  ) async {
+    try {
+      print('[KnowledgeGraphService] 🔄 使用共享实体处理对话...');
+      print('[KnowledgeGraphService] 📊 预提取实体: ${preExtractedEntities?.length ?? 0}个');
+
+      // 使用预提取的实体进行更精准的事件抽取
+      final result = await extractEventsAndEntitiesFromText(
+        conversationText,
+        conversationTime: conversationTime,
+        preExtractedEntities: preExtractedEntities,
+      );
+
+      final events = result['events'] ?? [];
+      final entities = result['entities'] ?? [];
+      final eventRelations = result['event_relations'] ?? [];
+      final objectBox = ObjectBoxService();
+      final now = conversationTime ?? DateTime.now();
+
+      print('[KnowledgeGraphService] 📊 提取结果: ${events.length}个事件, ${entities.length}个实体（含预提取）');
+
+      // 🔥 第二步：合并预提取实体和新提取实体，避免重复处理
+      final allEntities = <Map<String, dynamic>>[];
+      final processedEntityNames = <String>{};
+
+      // 1. 先处理预提取的实体
+      if (preExtractedEntities != null) {
+        for (final entityName in preExtractedEntities) {
+          if (!processedEntityNames.contains(entityName)) {
+            // 从预提取实体映射中获取类型，或使用默认推断
+            final entityType = entityTypeMapping?[entityName] ?? _inferEntityType(entityName);
+
+            allEntities.add({
+              'name': entityName,
+              'type': entityType,
+              'attributes': {'source': 'pre_extracted'},
+              'aliases': [],
+            });
+            processedEntityNames.add(entityName);
+          }
+        }
+      }
+
+      // 2. 再处理新提取的实体，避免重复
+      for (final entityData in entities) {
+        if (entityData is Map) {
+          final name = entityData['name']?.toString() ?? '';
+          if (name.isNotEmpty && !processedEntityNames.contains(name)) {
+            // 🔥 修复：确保类型安全
+            allEntities.add(Map<String, dynamic>.from(entityData));
+            processedEntityNames.add(name);
+          }
+        }
+      }
+
+      print('[KnowledgeGraphService] 🔄 合并后实体数量: ${allEntities.length}个（去重后）');
+
+      // 继续使用原有的处理逻辑，但使用合并后的实体列表
+      final Map<String, String> entityIdMap = {};
+      for (final entityData in allEntities) {
+        final name = entityData['name']?.toString() ?? '';
+        final type = entityData['type']?.toString() ?? '';
+        final attributes = entityData['attributes'] is Map
+          ? Map<String, String>.from(entityData['attributes'])
+          : <String, String>{};
+        final aliases = entityData['aliases'] is List
+          ? (entityData['aliases'] as List).map((e) => e.toString()).toList()
+          : <String>[];
+
+        if (name.isNotEmpty && type.isNotEmpty) {
+          final entityId = await alignEntity(name, type, contextId);
+          entityIdMap['${name}_$type'] = entityId;
+
+          // 检查是否需要更新或创建实体
+          final existingNode = objectBox.findNodeById(entityId);
+          if (existingNode != null) {
+            // 合并属性（时间戳策略）
+            final existingAttrs = existingNode.attributes;
+            bool hasChanges = false;
+
+            for (final entry in attributes.entries) {
+              if (!existingAttrs.containsKey(entry.key) ||
+                  existingAttrs[entry.key] != entry.value) {
+                existingAttrs[entry.key] = entry.value;
+                hasChanges = true;
+              }
+            }
+
+            // 合并别名
+            final existingAliases = existingNode.aliases;
+            for (final alias in aliases) {
+              if (!existingAliases.contains(alias)) {
+                existingAliases.add(alias);
+                hasChanges = true;
+              }
+            }
+
+            if (hasChanges) {
+              existingNode.attributes = existingAttrs;
+              existingNode.aliases = existingAliases;
+              existingNode.lastUpdated = now;
+              existingNode.sourceContext = contextId;
+              objectBox.updateNode(existingNode);
+            }
+          } else {
+            // 创建新实体
+            final allAliases = [name, ...aliases].toSet().toList();
+            final newNode = Node(
+              id: entityId,
+              name: name,
+              type: type,
+              canonicalName: _normalizeEntityName(name),
+              attributes: attributes,
+              lastUpdated: now,
+              sourceContext: contextId,
+              aliases: allAliases,
+            );
+            objectBox.insertNode(newNode);
+          }
+        }
+      }
+
+      // 继续处理事件和关系（保持原有逻辑）
+      final Map<String, String> eventIdMap = {};
+      for (final eventData in events) {
+        if (eventData is Map) {
+          final name = eventData['name']?.toString() ?? '';
+          final type = eventData['type']?.toString() ?? '';
+          final description = eventData['description']?.toString();
+          final location = eventData['location']?.toString();
+          final purpose = eventData['purpose']?.toString();
+          final result = eventData['result']?.toString();
+
+          if (name.isNotEmpty && type.isNotEmpty) {
+            final eventId = 'event_${name.replaceAll(' ', '_')}_${now.millisecondsSinceEpoch}';
+            eventIdMap[name] = eventId;
+
+            // 解析时间
+            DateTime? startTime;
+            DateTime? endTime;
+            try {
+              if (eventData['start_time'] != null) {
+                startTime = DateTime.parse(eventData['start_time'].toString());
+              }
+              if (eventData['end_time'] != null) {
+                endTime = DateTime.parse(eventData['end_time'].toString());
+              }
+            } catch (e) {
+              print('[KnowledgeGraphService] 时间解析错误: $e');
+            }
+
+            // 创建事件节点
+            final eventNode = EventNode(
+              id: eventId,
+              name: name,
+              type: type,
+              startTime: startTime,
+              endTime: endTime,
+              location: location,
+              purpose: purpose,
+              result: result,
+              description: description,
+              lastUpdated: now,
+              sourceContext: contextId,
+            );
+            objectBox.insertEventNode(eventNode);
+
+            // 3. 建立事件-实体关系
+            // 参与者
+            final participants = eventData['participants'] as List? ?? [];
+            for (final participant in participants) {
+              final participantStr = participant.toString();
+              final participantId = await alignEntity(participantStr, '人物', contextId);
+              objectBox.insertEventEntityRelation(EventEntityRelation(
+                eventId: eventId,
+                entityId: participantId,
+                role: '参与者',
+                lastUpdated: now,
+              ));
+            }
+
+            // 使用的工具或物品
+            final toolsUsed = eventData['tools_used'] as List? ?? [];
+            for (final tool in toolsUsed) {
+              final toolStr = tool.toString();
+              final toolId = await alignEntity(toolStr, '物品', contextId);
+              objectBox.insertEventEntityRelation(EventEntityRelation(
+                eventId: eventId,
+                entityId: toolId,
+                role: '使用物品',
+                lastUpdated: now,
+              ));
+            }
+
+            // 相关地点
+            final relatedLocations = eventData['related_locations'] as List? ?? [];
+            for (final location in relatedLocations) {
+              final locationStr = location.toString();
+              final locationId = await alignEntity(locationStr, '地点', contextId);
+              objectBox.insertEventEntityRelation(EventEntityRelation(
+                eventId: eventId,
+                entityId: locationId,
+                role: '发生地点',
+                lastUpdated: now,
+              ));
+            }
+
+            // 新增：相关概念（状态、活动、技能等）
+            final relatedConcepts = eventData['related_concepts'] as List? ?? [];
+            for (final concept in relatedConcepts) {
+              final conceptStr = concept.toString();
+              final conceptId = await alignEntity(conceptStr, '概念', contextId);
+              objectBox.insertEventEntityRelation(EventEntityRelation(
+                eventId: eventId,
+                entityId: conceptId,
+                role: '相关概念',
+                lastUpdated: now,
+              ));
+            }
+          }
+        }
+      }
+
+      // 4. 处理事件间关系
+      for (final relationData in eventRelations) {
+        if (relationData is Map) {
+          final sourceEvent = relationData['source_event']?.toString() ?? '';
+          final targetEvent = relationData['target_event']?.toString() ?? '';
+          final relationType = relationData['relation_type']?.toString() ?? '';
+          final description = relationData['description']?.toString();
+
+          final sourceEventId = eventIdMap[sourceEvent];
+          final targetEventId = eventIdMap[targetEvent];
+
+          if (sourceEventId != null && targetEventId != null && relationType.isNotEmpty) {
+            objectBox.insertEventRelation(EventRelation(
+              sourceEventId: sourceEventId,
+              targetEventId: targetEventId,
+              relationType: relationType,
+              description: description,
+              lastUpdated: now,
+            ));
+          }
+        }
+      }
+
+      print('[KnowledgeGraphService] ✅ 共享实体处理完成');
+    } catch (e) {
+      print('[KnowledgeGraphService] ❌ 共享实体处理错误: $e');
+    }
+  }
+
+  // 🔥 第二步：实体类型推断辅助方法
+  static String _inferEntityType(String entityName) {
+    // 技术相关
+    if (entityName.contains('Flutter') || entityName.contains('AI') ||
+        entityName.contains('数据库') || entityName.contains('Bug')) {
+      return '技术概念';
+    }
+
+    // 工作相关
+    if (entityName.contains('项目') || entityName.contains('会议') ||
+        entityName.contains('团队') || entityName.contains('功能')) {
+      return '工作概念';
+    }
+
+    // 学习相关
+    if (entityName.contains('学习') || entityName.contains('研究')) {
+      return '学习概念';
+    }
+
+    // 生活相关
+    if (entityName.contains('饮食') || entityName.contains('运动') ||
+        entityName.contains('休息')) {
+      return '生活概念';
+    }
+
+    // 默认为概念类型
+    return '概念';
   }
 
   // 3. 图谱更新与演化机制

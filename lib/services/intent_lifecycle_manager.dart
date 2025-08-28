@@ -893,4 +893,37 @@ class IntentLifecycleManager {
     _initialized = false;
     print('[IntentLifecycleManager] 🔌 意图生命周期管理器已释放');
   }
+
+  /// 分析意图（新增方法）
+  Future<void> analyzeIntent(String content, String? intentHint) async {
+    if (!_initialized) await initialize();
+
+    try {
+      // 创建语义分析输入
+      final analysis = SemanticAnalysisInput(
+        content: content,
+        intent: intentHint ?? '',
+        entities: [],
+        emotion: 'neutral',
+        timestamp: DateTime.now(),
+        additionalContext: {},
+      );
+
+      // 处理语义分析
+      await processSemanticAnalysis(analysis);
+    } catch (e) {
+      print('[IntentLifecycleManager] ❌ 分析意图失败: $e');
+    }
+  }
+
+  /// 清除所有意图（新增方法）
+  Future<void> clearAllIntents() async {
+    try {
+      _activeIntents.clear();
+      _completedIntents.clear();
+      print('[IntentLifecycleManager] 🧹 已清除所有意图');
+    } catch (e) {
+      print('[IntentLifecycleManager] ❌ 清除意图失败: $e');
+    }
+  }
 }
