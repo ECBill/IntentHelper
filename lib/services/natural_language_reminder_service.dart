@@ -59,14 +59,14 @@ class NaturalLanguageReminderService {
         //       'isIntelligentReminder: ${todo.isIntelligentReminder}, reminderType: ${todo.reminderType}, '
         //       'status: ${todo.status}');
         // }
-        if (isIntelligent || isNaturalLanguage) {
-          print('[NLReminderService] 📝 Todo #${todo.id} | '
-              'title: ${todo.task}, '
-              'deadline: ${todo.deadline}, '
-              'isIntelligentReminder: ${todo.isIntelligentReminder}, '
-              'reminderType: ${todo.reminderType}, '
-              'status: ${todo.status}');
-        }
+        // if (isIntelligent || isNaturalLanguage) {
+        //   print('[NLReminderService] 📝 Todo #${todo.id} | '
+        //       'title: ${todo.task}, '
+        //       'deadline: ${todo.deadline}, '
+        //       'isIntelligentReminder: ${todo.isIntelligentReminder}, '
+        //       'reminderType: ${todo.reminderType}, '
+        //       'status: ${todo.status}');
+        // }
 
         return isIntelligent && isNaturalLanguage && isPendingReminder;
       }).toList();

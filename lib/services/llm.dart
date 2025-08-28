@@ -13,14 +13,69 @@ class LLM {
   // 使用你的代理服务器
   static final String defaultBaseUrl = 'https://xiaomi.dns.navy/v1/chat/completions';
 
+  // 静态缓存API key，避免后台任务中访问dotenv的问题
+  static String? _cachedApiKey;
+
   // 从环境变量获取API key，如果没有则使用本地备用key
-  static String get localApiKey => dotenv.env['OPENAI_API_KEY'] ?? '';
+  static String get localApiKey {
+    // 如果已经缓存，直接返回
+    if (_cachedApiKey != null) {
+      return _cachedApiKey!;
+    }
+
+    try {
+      // 检查dotenv是否已初始化
+      if (!dotenv.isInitialized) {
+        print('[LLM] dotenv未初始化，尝试重新加载');
+        // 在后台任务中，可能需要重新加载dotenv
+        return '';
+      }
+      final apiKey = dotenv.env['OPENAI_API_KEY'] ?? '';
+      // 缓存API key以供后续使用
+      if (apiKey.isNotEmpty) {
+        _cachedApiKey = apiKey;
+        print('[LLM] 成功从dotenv获取并缓存API key');
+      }
+      return apiKey;
+    } catch (e) {
+      print('[LLM] 获取API key时发生错误: $e');
+      return '';
+    }
+  }
+
+  // 手动设置API key（用于初始化时缓存）
+  static void cacheApiKey(String apiKey) {
+    _cachedApiKey = apiKey;
+    print('[LLM] API key已缓存');
+  }
 
   LLM._(this.modelName, this.apiKey, this.baseUrl, this.systemPrompt);
 
   static Future<LLM> create(String modelName, {String? systemPrompt}) async {
     final prompt = systemPrompt ?? systemPromptOfChat;
-    return LLM._(modelName, localApiKey, defaultBaseUrl, prompt);
+    final apiKey = localApiKey;
+
+    // 如果API key为空，尝试重新加载dotenv
+    if (apiKey.isEmpty) {
+      print('[LLM] API key为空，尝试重新加载dotenv...');
+      try {
+        await dotenv.load(fileName: ".env");
+        final retryApiKey = dotenv.env['OPENAI_API_KEY'] ?? '';
+        if (retryApiKey.isNotEmpty) {
+          _cachedApiKey = retryApiKey;
+          print('[LLM] 重新加载dotenv成功，获取到API key');
+          return LLM._(modelName, retryApiKey, defaultBaseUrl, prompt);
+        }
+      } catch (e) {
+        print('[LLM] 重新加载dotenv失败: $e');
+      }
+
+      print('[LLM] API key为空，无法创建LLM实例');
+      throw Exception('API key not available. Please check .env configuration.');
+    }
+
+    print('[LLM] 成功获取API key，创建LLM实例');
+    return LLM._(modelName, apiKey, defaultBaseUrl, prompt);
   }
 
   // Sends a request to the LLM with user input

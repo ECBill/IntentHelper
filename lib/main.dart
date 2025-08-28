@@ -1,4 +1,5 @@
 import 'package:app/controllers/style_controller.dart';
+import 'package:app/services/llm.dart';
 import 'package:app/services/objectbox_service.dart';
 import 'package:app/utils/route_utils.dart';
 import 'package:flutter/material.dart';
@@ -24,6 +25,16 @@ Future<void> main() async {
 
   // 加载 .env 文件
   await dotenv.load(fileName: ".env");
+
+  // 🔥 新增：在应用启动时缓存API key，解决后台任务访问环境变量的问题
+  final apiKey = dotenv.env['OPENAI_API_KEY'] ?? '';
+  if (apiKey.isNotEmpty) {
+    LLM.cacheApiKey(apiKey);
+    print('[Main] API key已缓存，自动总结功能可正常使用');
+  } else {
+    print('[Main] 警告：未找到API key，自动总结功能可能无法使用');
+  }
+
   await SystemChrome.setPreferredOrientations([
     DeviceOrientation.portraitUp,
   ]);

@@ -129,39 +129,56 @@ class DialogueSummary {
       chatHistoryBuffer.write("($formattedTime) ${record.role}: ${record.content}\n");
     }
 
-    if (contentLength < 150) {
+    if (contentLength < 100) {
       return null;
     }
 
     final chatHistory = chatHistoryBuffer.toString();
 
     try {
+      print('[DialogueSummary] 🧠 开始创建 LLM...');
       LLM summaryLlm = await LLM.create('gpt-4o-mini', systemPrompt: systemPromptOfSummary);
+      print('[DialogueSummary] ✅ LLM 创建成功');
       String summary = await summaryLlm.createRequest(content: getUserPromptOfSummaryGeneration(chatHistory));
-      print("Initial summary: $summary");
+      print("[DialogueSummary] Initial summary: $summary");
 
       summaryLlm.setSystemPrompt(systemPrompt: systemPromptOfSummaryReflection);
       String comments = await summaryLlm.createRequest(content: getUserPromptOfSummaryReflectionGeneration(chatHistory, summary));
-      print("Feedback: $comments");
+      print("[DialogueSummary] Feedback: $comments");
 
       summaryLlm.setSystemPrompt(systemPrompt: systemPromptOfNewSummary);
       summary = await summaryLlm.createRequest(content: getUserPromptOfNewSummaryGeneration(chatHistory, summary, comments));
-      print("Revised summary: $summary");
+      print("[DialogueSummary] Revised summary: $summary");
 
       // ========== 知识图谱处理 ==========
       // 在生成摘要后，利用已有的对话历史数据进行知识图谱事件提取
-      print("[DialogueSummary] 🔗 开始执行自动知识图��事件提取...");
+      // 改进错误处理，确保知识图谱处理失败不会影响摘要生成
+      print("[DialogueSummary] 🔗 开始执行自动知识图谱事件提取...");
       try {
-        print('[DialogueSummary] 调用 KnowledgeGraphService.processEventsFromConversation, chatHistory 长度: ${chatHistory.length}, contextId: ${DateTime.now().millisecondsSinceEpoch.toString()}');
-        await KnowledgeGraphService.processEventsFromConversation(chatHistory, contextId: DateTime.now().millisecondsSinceEpoch.toString());
-        print("[DialogueSummary] ✅ 知识图谱事件提取完成");
+        // 添加参数验证
+        if (chatHistory.trim().isEmpty) {
+          print("[DialogueSummary] ⚠️ 对话历史为空，跳过知识图谱处理");
+        } else {
+          // 使用实际的对话记录进行处理，而不是字符串
+          // 这样可以保持与手动处理一致的逻辑
+          print('[DialogueSummary] 使用分段处理方法处理知识图谱，记录数量: ${listRecords.length}');
+
+          // 添加超时控制，避免长时间阻塞
+          await KnowledgeGraphService.processEventsFromConversationBySegments(listRecords)
+              .timeout(Duration(minutes: 3)); // 3分钟超时
+
+          print("[DialogueSummary] ✅ 知识图谱事件提取完成");
+        }
       } catch (e) {
-        print("[DialogueSummary] ❌ 知识图谱处理失败: $e");
+        // 知识图谱处理失败不应该影响摘要生成
+        print("[DialogueSummary] ⚠️ 知识图谱处理失败，但摘要生成继续: $e");
+        // 不重新抛出异常，让摘要生成流程继续
       }
 
       return summary;
-    } catch (e) {
+    } catch (e, stack) {
       print("An error occurred while generating the summary: $e");
+      print("StackTrace: $stack");
       throw Exception("An error occurred while generating the summary");
     }
   }
