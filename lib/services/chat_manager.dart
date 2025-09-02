@@ -4,6 +4,7 @@ import 'dart:convert';
 import 'package:app/services/enhanced_kg_service.dart';
 import 'package:app/services/conversation_cache.dart';
 import 'package:app/services/personalized_understanding_service.dart';
+import 'package:app/services/human_understanding_system.dart'; // 🔥 新增：导入人类理解系统
 import 'package:intl/intl.dart';
 
 import '../models/chat_session.dart';
@@ -320,14 +321,25 @@ $kgInfo
     }
   }
 
-  // 🔥 新增：智能选择最佳输入构建方法
+  // 🔥 修复：智能选择最佳输入构建方法
   /// 智能选择使用哪种方法构建LLM输入
-  /// 优先使用语义理解，失败时降级到知识图谱缓存
+  /// 优先使用人类理解系统的用户状态信息，然后是语义理解，最后降级到知识图谱缓存
   Future<String> buildOptimalInput(String userInput) async {
     print('[ChatManager] 🎯 智能选择最佳输入构建方法...');
 
     try {
-      // 首先尝试使用人类理解系统
+      // 🔥 修复：首先尝试使用人类理解系统的用户状态信息
+      final userStateInput = await buildInputWithUserState(userInput);
+      if (userStateInput.isNotEmpty && !userStateInput.contains('基础输入')) {
+        print('[ChatManager] ✅ 使用人类理解系统用户状态构建输入');
+        return userStateInput;
+      }
+    } catch (e) {
+      print('[ChatManager] ⚠️ 人类理解系统构建失败，降级到语义理解: $e');
+    }
+
+    try {
+      // 降级到语义理解系统
       final semanticInput = await buildInputWithSemanticUnderstanding(userInput);
       if (semanticInput.isNotEmpty && !semanticInput.contains('基础输入')) {
         print('[ChatManager] ✅ 使用语义理解系统构建输入');
@@ -340,7 +352,7 @@ $kgInfo
     try {
       // 降级到知识图谱缓存方法
       final kgInput = await buildInputWithKG(userInput);
-      print('[ChatManager] ✅ 使用知识图谱缓存构建输���');
+      print('[ChatManager] ✅ 使用知识图谱缓存构建输入');
       return kgInput;
     } catch (e) {
       print('[ChatManager] ⚠️ 知识图谱方法也失败，使用基础输入: $e');
@@ -485,7 +497,7 @@ $contextHistory
 """;
   }
 
-  // 🔥 新增：构建主��响应提示
+  // 🔥 新增：构建主动响应提示
   String _buildProactivePrompt(personalizedContext) {
     final currentState = personalizedContext.currentSemanticState;
     final recommendations = personalizedContext.contextualRecommendations;
@@ -701,6 +713,86 @@ ${_formatRecommendations(recommendations)}
       return '${jsonString.substring(0, jsonString.length - 1)}}';
     } else {
       return '$jsonString"}';
+    }
+  }
+
+  // 🔥 新增：构建包含用户状态的聊天输入
+  /// 构建包含人类理解系统状态信息的聊天输入
+  Future<String> buildInputWithUserState(String userInput) async {
+    print('[ChatManager] 🧠 构建包含用户状态的聊天输入...');
+
+    try {
+      // 获取人类理解系统的当前状态
+      final humanUnderstanding = HumanUnderstandingSystem();
+      final currentState = humanUnderstanding.getCurrentState();
+
+      // 构建基本的对话历史
+      final contextHistory = chatSession.chatHistory.items.take(5).map((chat) {
+        return "${chat.role}: ${chat.txt}";
+      }).join('\n');
+
+      final timeContext = DateFormat('yyyy年MM月dd日 HH:mm').format(DateTime.now());
+
+      // 构建用户状态信息
+      final userStateBuffer = StringBuffer();
+
+      // 活跃意图信息
+      final activeIntents = currentState.activeIntents;
+      if (activeIntents.isNotEmpty) {
+        userStateBuffer.writeln('\n## 用户当前活跃意图:');
+        for (final intent in activeIntents.take(3)) {
+          userStateBuffer.writeln('- ${intent.description} (状态: ${intent.state.toString().split('.').last}, 类别: ${intent.category}, 置信度: ${intent.confidence.toStringAsFixed(2)})');
+        }
+      }
+
+      // 活跃主题信息
+      final activeTopics = currentState.activeTopics;
+      if (activeTopics.isNotEmpty) {
+        userStateBuffer.writeln('\n## 用户当前关注主题:');
+        for (final topic in activeTopics.take(3)) {
+          userStateBuffer.writeln('- ${topic.name} (类别: ${topic.category}, 相关性: ${topic.relevanceScore.toStringAsFixed(2)})');
+          if (topic.keywords.isNotEmpty) {
+            userStateBuffer.writeln('  关键词: ${topic.keywords.take(3).join('、')}');
+          }
+        }
+      }
+
+      // 认知负载信息
+      final cognitiveLoad = currentState.currentCognitiveLoad;
+      userStateBuffer.writeln('\n## 用户认知状态:');
+      userStateBuffer.writeln('- 认知负载级别: ${cognitiveLoad.level.toString().split('.').last}');
+      userStateBuffer.writeln('- 负载分数: ${cognitiveLoad.score.toStringAsFixed(2)}');
+      userStateBuffer.writeln('- 活跃意图数量: ${cognitiveLoad.activeIntentCount}');
+      userStateBuffer.writeln('- 活跃主题数量: ${cognitiveLoad.activeTopicCount}');
+
+      // 因果关系信息
+      final recentCausalChains = currentState.recentCausalChains;
+      if (recentCausalChains.isNotEmpty) {
+        userStateBuffer.writeln('\n## 最近的因果关系:');
+        for (final causal in recentCausalChains.take(2)) {
+          userStateBuffer.writeln('- ${causal.cause} → ${causal.effect} (置信度: ${causal.confidence.toStringAsFixed(2)})');
+        }
+      }
+
+      print('[ChatManager] ✅ 用户状态信息构建完成: ${activeIntents.length}个意图, ${activeTopics.length}个主题, 认知负载: ${cognitiveLoad.level}');
+
+      return """
+用户输入：$userInput
+
+对话历史：
+$contextHistory
+
+时间：$timeContext
+
+${userStateBuffer.toString()}
+
+请基于以上用户状态信息，提供个性化的、符合用户当前关注点和认知状态的回答。
+""";
+
+    } catch (e) {
+      print('[ChatManager] ❌ 构建用户状态输入失败: $e');
+      // 降级到基础输入
+      return _buildBasicInput(userInput);
     }
   }
 }

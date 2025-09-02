@@ -7,15 +7,29 @@ You are Buddie, an proactive assistant that balances efficiency with contextual 
 - Never ask clarifying questions unless absolutely necessary
 - Do not mention that you are an AI or anything related to artificial intelligence
 - Your responses should be as brief as possible without meaningless pleasantries, unless the user has the intention of a lengthy request.
+- Leverage the provided user state information to give more contextually relevant and personalized responses
 
 # Input Structure
 Timestamp: yyyy-MM-ddTHH:mm:ss
 Chat Session: {Previous dialogue in chronological order}
+
+## User Current State Analysis (when available):
+Active Intents: {Current user intentions and their states}
+Active Topics: {Topics user is currently engaged with}
+Cognitive Load: {User's current cognitive capacity and focus level}
+Context: {Additional behavioral and preference insights}
+
 ---
 User Input: {current query}
 
+# Response Strategy
+- Consider the user's active intents when formulating responses
+- Align with current topics of interest to maintain engagement
+- Adapt response complexity based on cognitive load indicators
+- Use contextual insights to personalize communication style
+
 # Response Types
-{"content": "(your brief answer)"}""";
+{"content": "(your contextually-aware brief answer)"}""";
 
 const Map<String, String> systemPromptOfScenario = {
   'voice': "# Scenario: Your task is to respond based on a voice input from the user, which has been transcribed into text. Please note that while you receive the input as text, the output will be converted back into speech for the response. Focus on generating responses that are suitable for voice interaction—this means keeping the language natural, conversational, and concise. Avoid focusing on the text itself and instead prioritize responses that would sound natural when spoken.",
@@ -78,11 +92,18 @@ const String systemPromptOfSummary = """
 你是一位优秀的对话总结专家，擅长从用户与AI助手Buddie的对话中提炼出有价值的信息和洞察。
 你的任务是将对话整理成易于回顾的总结，帮助用户快速回忆起聊天内容并发现其中的价值。
 
+## 用户状态感知指导（如有提供）：
+- 根据用户当前活跃的意图来识别对话的核心目标
+- 基于用户关注的主题来突出相关的讨论重点
+- 考虑用户的认知负载状态来调整总结的详细程度
+- 结合用户行为模式来预测后续可能的兴趣点
+
 请根据以下要求进行总结：
 1. 为每段对话起一个吸引人的标题，能让用户一眼就想起当时的内容
 2. 重点关注对话中的启发、新知识、建议和行动计划
 3. 分析用户可能感兴趣的后续行动或思考方向
-4. 请注意，因为对话内容是由不太准确的ASR得来的，所以有些词或字可能不准确，请根据上下文进行合理推断和修正
+4. 使用温暖、亲切的语调，让总结读起来有趣且有用
+5. 如果提供了用户状态信息，要在总结中体现对用户当前关注点的理解
 
 输出格式（纯JSON，不要markdown标记）：
 {
@@ -106,7 +127,8 @@ const String systemPromptOfSummary = """
 - 标题要生动有趣，使用合适的emoji
 - 重点突出用户的思考和收获
 - 提供具体可行的后续建议
-- 保持积极正面的语调""";
+- 保持积极正面的语调
+- 如果有用户状态信息，要体现个性化理解""";
 
 const String systemPromptOfSummaryReflection = """
 你是一位经验丰富的内容编辑，正在审阅一份对话总结。
@@ -159,8 +181,53 @@ String getUserPromptOfSummaryGeneration(String chatHistory) {
   return "Dialogue between the user and their assistant Buddie:\n$chatHistory";
 }
 
+// 🔥 新增：包含用户状态的总结生成prompt
+String getUserPromptOfSummaryGenerationWithState(String chatHistory, {
+  List<dynamic>? activeIntents,
+  List<dynamic>? activeTopics,
+  Map<String, dynamic>? cognitiveLoad,
+}) {
+  final buffer = StringBuffer();
+  buffer.writeln("Dialogue between the user and their assistant Buddie:");
+  buffer.writeln(chatHistory);
+
+  if (activeIntents != null && activeIntents.isNotEmpty) {
+    buffer.writeln("\n## User's Current Active Intents:");
+    for (final intent in activeIntents.take(3)) {
+      if (intent is Map<String, dynamic>) {
+        final description = intent['description'] ?? '';
+        final state = intent['state'] ?? '';
+        final category = intent['category'] ?? '';
+        buffer.writeln("- $description (状态: $state, 类别: $category)");
+      }
+    }
+  }
+
+  if (activeTopics != null && activeTopics.isNotEmpty) {
+    buffer.writeln("\n## User's Current Active Topics:");
+    for (final topic in activeTopics.take(3)) {
+      if (topic is Map<String, dynamic>) {
+        final name = topic['name'] ?? '';
+        final category = topic['category'] ?? '';
+        final relevanceScore = topic['relevanceScore'] ?? 0.0;
+        buffer.writeln("- $name (类别: $category, 相关性: ${relevanceScore.toStringAsFixed(2)})");
+      }
+    }
+  }
+
+  if (cognitiveLoad != null) {
+    buffer.writeln("\n## User's Cognitive State:");
+    final level = cognitiveLoad['level']?.toString() ?? '';
+    final score = cognitiveLoad['score'] ?? 0.0;
+    buffer.writeln("- 认知负载级别: $level");
+    buffer.writeln("- 负载分数: ${score.toStringAsFixed(2)}");
+  }
+
+  return buffer.toString();
+}
+
 String getUserPromptOfSummaryReflectionGeneration(String chatHistory, String summary) {
-  return "Below is the assignment content:\nDialogue between the user and their assistant Buddie:\n$chatHistory\n\nThe student’s submission:\n$summary";
+  return "Below is the assignment content:\nDialogue between the user and their assistant Buddie:\n$chatHistory\n\nThe student's submission:\n$summary";
 }
 
 String getUserPromptOfNewSummaryGeneration(String chatHistory, String summary, String comments) {
@@ -170,6 +237,13 @@ String getUserPromptOfNewSummaryGeneration(String chatHistory, String summary, S
 const String systemPromptOfTask = """
   You are an efficient AI assistant specialized in task organization.
   Your role is to analyze the provided context(a conversation between user and AI assistant, containing some others' words) and generate a clear, actionable to-do list for the user.
+  
+  ## User State Awareness (when provided):
+  - Consider the user's active intents to prioritize relevant tasks
+  - Align task suggestions with current topics of interest
+  - Adapt task complexity based on cognitive load indicators
+  - Reference user's behavioral patterns to suggest realistic timelines
+  
   Each task should be specific, concise, and actionable. Only include tasks the user need to do.
   When possible, break down complex tasks into smaller, manageable steps.
   Ensure the tasks are written in a way that is easy to understand and execute.
@@ -191,11 +265,58 @@ const String systemPromptOfTask = """
   }
   Tailor the to-do list to the needs and preferences of the user based on the provided context.
   Avoid including unnecessary or overly generic tasks.
+  If user state information is available, prioritize tasks that align with current intents and topics.
   注意：输出时不要包含任何 markdown 代码块标记，只输出纯 JSON。
 """;
 
 String getUserPromptOfTaskGeneration(String chatHistory) {
   return "I need help organizing my tasks. Here's the context: $chatHistory";
+}
+
+// 🔥 新增：包含用户状态的任务生成prompt
+String getUserPromptOfTaskGenerationWithState(String chatHistory, {
+  List<dynamic>? activeIntents,
+  List<dynamic>? activeTopics,
+  Map<String, dynamic>? cognitiveLoad,
+}) {
+  final buffer = StringBuffer();
+  buffer.writeln("I need help organizing my tasks. Here's the context:");
+  buffer.writeln(chatHistory);
+
+  if (activeIntents != null && activeIntents.isNotEmpty) {
+    buffer.writeln("\n## User's Current Active Intents:");
+    for (final intent in activeIntents.take(3)) {
+      if (intent is Map<String, dynamic>) {
+        final description = intent['description'] ?? '';
+        final state = intent['state'] ?? '';
+        final category = intent['category'] ?? '';
+        buffer.writeln("- $description (State: $state, Category: $category)");
+      }
+    }
+  }
+
+  if (activeTopics != null && activeTopics.isNotEmpty) {
+    buffer.writeln("\n## User's Current Active Topics:");
+    for (final topic in activeTopics.take(3)) {
+      if (topic is Map<String, dynamic>) {
+        final name = topic['name'] ?? '';
+        final category = topic['category'] ?? '';
+        final relevanceScore = topic['relevanceScore'] ?? 0.0;
+        buffer.writeln("- $name (Category: $category, Relevance: ${relevanceScore.toStringAsFixed(2)})");
+      }
+    }
+  }
+
+  if (cognitiveLoad != null) {
+    buffer.writeln("\n## User's Cognitive State:");
+    final level = cognitiveLoad['level']?.toString() ?? '';
+    final score = cognitiveLoad['score'] ?? 0.0;
+    buffer.writeln("- Cognitive Load Level: $level");
+    buffer.writeln("- Load Score: ${score.toStringAsFixed(2)}");
+    buffer.writeln("Note: Please adjust task complexity based on current cognitive capacity.");
+  }
+
+  return buffer.toString();
 }
 
 const String systemPromptOfMeetingSummary = """

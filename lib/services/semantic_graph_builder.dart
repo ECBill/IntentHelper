@@ -419,60 +419,6 @@ class SemanticGraphBuilder {
     _tripleUpdatesController.add(triple);
   }
 
-  /// 添加语义三元组（新增方法）
-  Future<void> addTriple(String subject, String predicate, String object) async {
-    if (!_initialized) await initialize();
-
-    try {
-      // 创建三元组
-      final triple = SemanticTriple(
-        subject: subject,
-        predicate: predicate,
-        object: object,
-        confidence: 0.8,
-        sourceContext: 'manual_add',
-        attributes: {'manual_add': true},
-      );
-
-      // 检查是否已存在
-      if (!_triples.containsKey(triple.id)) {
-        _triples[triple.id] = triple;
-
-        // 更新索引
-        _updateEntityIndex(subject, triple.id);
-        _updateEntityIndex(object, triple.id);
-        _updatePredicateIndex(predicate, triple.id);
-
-        _tripleUpdatesController.add(triple);
-        print('[SemanticGraphBuilder] ➕ 添加三元组: $subject -> $predicate -> $object');
-      }
-    } catch (e) {
-      print('[SemanticGraphBuilder] ❌ 添加三元组失败: $e');
-    }
-  }
-
-  /// 清除所有三元组（新增方法）
-  Future<void> clearAllTriples() async {
-    try {
-      _triples.clear();
-      _entityIndex.clear();
-      _predicateIndex.clear();
-      print('[SemanticGraphBuilder] 🧹 已清除所有三元组');
-    } catch (e) {
-      print('[SemanticGraphBuilder] ❌ 清除三元组失败: $e');
-    }
-  }
-
-  /// 更新实体索引
-  void _updateEntityIndex(String entity, String tripleId) {
-    _entityIndex.putIfAbsent(entity, () => <String>{}).add(tripleId);
-  }
-
-  /// 更新谓词索引
-  void _updatePredicateIndex(String predicate, String tripleId) {
-    _predicateIndex.putIfAbsent(predicate, () => <String>{}).add(tripleId);
-  }
-
   /// 检查是否为重复三元组
   bool _isDuplicateTriple(SemanticTriple newTriple) {
     return _triples.values.any((existing) {

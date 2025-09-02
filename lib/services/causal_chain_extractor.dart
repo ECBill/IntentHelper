@@ -73,39 +73,6 @@ class CausalChainExtractor {
     }
   }
 
-  /// 提取因果关系（简化版方法，接受字符串参数）
-  Future<List<CausalRelation>> extractCausalRelationsFromText(String content) async {
-    if (!_initialized) await initialize();
-
-    try {
-      // 创建简单的语义分析输入
-      final analysis = SemanticAnalysisInput(
-        content: content,
-        intent: '',
-        entities: [],
-        emotion: 'neutral',
-        timestamp: DateTime.now(), // 修复：添加必需的timestamp
-        additionalContext: {}, // 修复：使用正确的参数名
-      );
-
-      // 使用现有的处理方法
-      return await extractCausalRelations(analysis);
-    } catch (e) {
-      print('[CausalChainExtractor] ❌ 提取因果关系失败: $e');
-      return [];
-    }
-  }
-
-  /// 清除所有因果关系（新增方法）
-  Future<void> clearAllRelations() async {
-    try {
-      _causalRelations.clear();
-      print('[CausalChainExtractor] 🧹 已清除所有因果关系');
-    } catch (e) {
-      print('[CausalChainExtractor] ❌ 清除因果关系失败: $e');
-    }
-  }
-
   /// 提取显式因果关系
   Future<List<CausalRelation>> _extractExplicitCausalRelations(SemanticAnalysisInput analysis) async {
     final explicitCausalPrompt = '''

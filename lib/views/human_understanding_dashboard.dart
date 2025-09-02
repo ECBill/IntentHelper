@@ -32,7 +32,7 @@ class _HumanUnderstandingDashboardState extends State<HumanUnderstandingDashboar
   @override
   void initState() {
     super.initState();
-    _tabController = TabController(length: 6, vsync: this); // 🔥 修改：增加到6个标签页，包含融合展示
+    _tabController = TabController(length: 5, vsync: this); // 🔥 修改：改回5个标签页
     _initializeSystem();
   }
 
@@ -73,9 +73,7 @@ class _HumanUnderstandingDashboardState extends State<HumanUnderstandingDashboar
     }
   }
 
-  Future<void> _loadSystemData() async {
-    if (!mounted) return;
-
+  void _loadSystemData() async {
     setState(() {
       _isLoading = true;
     });
@@ -83,10 +81,8 @@ class _HumanUnderstandingDashboardState extends State<HumanUnderstandingDashboar
     try {
       final currentState = _system.getCurrentState();
       final metrics = _system.getSystemMetrics();
-      final patterns = await _system.analyzeUserPatterns(); // 修复：添加await
+      final patterns = _system.analyzeUserPatterns();
       final suggestions = _system.getIntelligentSuggestions();
-
-      if (!mounted) return;
 
       setState(() {
         _currentState = currentState;
@@ -97,7 +93,6 @@ class _HumanUnderstandingDashboardState extends State<HumanUnderstandingDashboar
       });
     } catch (e) {
       print('加载系统数据失败: $e');
-      if (!mounted) return;
       setState(() {
         _isLoading = false;
       });
@@ -139,7 +134,7 @@ class _HumanUnderstandingDashboardState extends State<HumanUnderstandingDashboar
             Tab(text: '主题追踪'),
             Tab(text: '因果分析'),
             Tab(text: '认知负载'),
-            Tab(text: '融合展示'), // 🔥 新增：融合展示标签页
+            // 🔥 删除：提醒管理标签页
           ],
         ),
       ),
@@ -153,7 +148,7 @@ class _HumanUnderstandingDashboardState extends State<HumanUnderstandingDashboar
                 _buildTopicsTab(),
                 _buildCausalTab(),
                 _buildCognitiveLoadTab(),
-                _buildFusionTab(), // 🔥 新增：融合展示页面
+                // 🔥 删除：提醒管理页面
               ],
             ),
     );
@@ -600,16 +595,71 @@ class _HumanUnderstandingDashboardState extends State<HumanUnderstandingDashboar
 
     return Padding(
       padding: EdgeInsets.all(16.w),
-      child: topics.isEmpty
-          ? Center(child: Text('暂无活跃主题'))
-          : ListView.builder(
-              itemCount: topics.length,
-              itemBuilder: (context, index) => _buildTopicCard(topics[index]),
-            ),
+      child: Column(
+        children: [
+          // 🔥 新增：知识图谱增强信息统计卡片
+          _buildKnowledgeGraphEnhancementCard(),
+          SizedBox(height: 16.h),
+          Expanded(
+            child: topics.isEmpty
+                ? Center(child: Text('暂无活跃主题'))
+                : ListView.builder(
+                    itemCount: topics.length,
+                    itemBuilder: (context, index) => _buildEnhancedTopicCard(topics[index]),
+                  ),
+          ),
+        ],
+      ),
     );
   }
 
-  Widget _buildTopicCard(hum.Topic topic) {
+  Widget _buildKnowledgeGraphEnhancementCard() {
+    final kgData = _currentState?.knowledgeGraphData;
+
+    return Card(
+      child: Padding(
+        padding: EdgeInsets.all(16.w),
+        child: Column(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            Text(
+              '知识图谱增强信息',
+              style: TextStyle(fontSize: 18.sp, fontWeight: FontWeight.bold),
+            ),
+            SizedBox(height: 12.h),
+            if (kgData == null || kgData.isEmpty) ...[
+              Text(
+                '暂无可用的知识图谱数据',
+                style: TextStyle(fontSize: 14.sp, color: Colors.grey[600]),
+              ),
+            ] else ...[
+              Text(
+                '实体数量: ${kgData['entity_count']}',
+                style: TextStyle(fontSize: 14.sp),
+              ),
+              Text(
+                '关系数量: ${kgData['relation_count']}',
+                style: TextStyle(fontSize: 14.sp),
+              ),
+              Text(
+                '属性数量: ${kgData['attribute_count']}',
+                style: TextStyle(fontSize: 14.sp),
+              ),
+              SizedBox(height: 8.h),
+              Text(
+                '更新时间: ${kgData['last_updated'] != null ? DateTime.fromMillisecondsSinceEpoch(kgData['last_updated']).toString() : "未知"}',
+                style: TextStyle(fontSize: 12.sp, color: Colors.grey[500]),
+              ),
+            ],
+          ],
+        ),
+      ),
+    );
+  }
+
+  Widget _buildEnhancedTopicCard(hum.Topic topic) {
+    final relatedIntents = _currentState?.intentTopicRelations?[topic.name] ?? [];
+
     return Card(
       margin: EdgeInsets.only(bottom: 8.h),
       child: Padding(
@@ -647,6 +697,20 @@ class _HumanUnderstandingDashboardState extends State<HumanUnderstandingDashboar
                   materialTapTargetSize: MaterialTapTargetSize.shrinkWrap,
                 )).toList(),
               ),
+            ],
+            if (relatedIntents.isNotEmpty) ...[
+              SizedBox(height: 8.h),
+              Text(
+                '相关意图:',
+                style: TextStyle(fontSize: 12.sp, fontWeight: FontWeight.w600),
+              ),
+              ...relatedIntents.map((intent) => Padding(
+                    padding: EdgeInsets.symmetric(vertical: 2.h),
+                    child: Text(
+                      intent.toString(),
+                      style: TextStyle(fontSize: 12.sp, color: Colors.grey[700]),
+                    ),
+                  )),
             ],
           ],
         ),
@@ -961,7 +1025,7 @@ class _HumanUnderstandingDashboardState extends State<HumanUnderstandingDashboar
 
   Future<void> _resetMonitoring() async {
     try {
-      _system.resetMonitoringStatus(); // 修复：移除await，因为这是void方法
+      await _system.resetMonitoringStatus();
       ScaffoldMessenger.of(context).showSnackBar(
         SnackBar(content: Text('监听状态重置完成')),
       );
@@ -1065,894 +1129,5 @@ class _HumanUnderstandingDashboardState extends State<HumanUnderstandingDashboar
     if (value < 0.3) return Colors.green;
     if (value < 0.6) return Colors.orange;
     return Colors.red;
-  }
-
-  Widget _buildFusionTab() {
-    // 🔥 新增：智能融合展示页面 - 展示知识图谱与人类理解系统的协同效果
-    if (_currentState == null) return Container();
-
-    return SingleChildScrollView(
-      padding: EdgeInsets.all(16.w),
-      child: Column(
-        crossAxisAlignment: CrossAxisAlignment.start,
-        children: [
-          // 融合概览卡片
-          _buildFusionOverviewCard(),
-          SizedBox(height: 16.h),
-
-          // 实体-意图关联分析
-          _buildEntityIntentFusionCard(),
-          SizedBox(height: 16.h),
-
-          // 知识图谱增强的智能建议
-          _buildKGEnhancedSuggestionsCard(),
-          SizedBox(height: 16.h),
-
-          // 跨系统模式识别
-          _buildCrossSystemPatternsCard(),
-          SizedBox(height: 16.h),
-
-          // 融合效果评估
-          _buildFusionEffectivenessCard(),
-        ],
-      ),
-    );
-  }
-
-  Widget _buildFusionOverviewCard() {
-    return Card(
-      child: Padding(
-        padding: EdgeInsets.all(16.w),
-        child: Column(
-          crossAxisAlignment: CrossAxisAlignment.start,
-          children: [
-            Row(
-              children: [
-                Icon(Icons.merge_type, color: Colors.deepPurple, size: 24.sp),
-                SizedBox(width: 8.w),
-                Text(
-                  '系统融合概览',
-                  style: TextStyle(fontSize: 18.sp, fontWeight: FontWeight.bold),
-                ),
-              ],
-            ),
-            SizedBox(height: 16.h),
-
-            // 融合数据流示意图
-            Container(
-              height: 120.h,
-              child: Row(
-                children: [
-                  // HU系统数据
-                  Expanded(
-                    flex: 2,
-                    child: Container(
-                      padding: EdgeInsets.all(12.w),
-                      decoration: BoxDecoration(
-                        color: Colors.blue.withOpacity(0.1),
-                        borderRadius: BorderRadius.circular(8.r),
-                        border: Border.all(color: Colors.blue.withOpacity(0.3)),
-                      ),
-                      child: Column(
-                        crossAxisAlignment: CrossAxisAlignment.start,
-                        children: [
-                          Text(
-                            '人类理解系统 (HU)',
-                            style: TextStyle(fontSize: 12.sp, fontWeight: FontWeight.w600),
-                          ),
-                          SizedBox(height: 8.h),
-                          _buildDataPoint('活跃意图', '${_currentState!.activeIntents.length}'),
-                          _buildDataPoint('讨论主题', '${_currentState!.activeTopics.length}'),
-                          _buildDataPoint('因果关系', '${_currentState!.recentCausalChains.length}'),
-                        ],
-                      ),
-                    ),
-                  ),
-
-                  // 融合箭头
-                  Padding(
-                    padding: EdgeInsets.symmetric(horizontal: 8.w),
-                    child: Column(
-                      mainAxisAlignment: MainAxisAlignment.center,
-                      children: [
-                        Icon(Icons.arrow_forward, color: Colors.green, size: 20.sp),
-                        Text('融合', style: TextStyle(fontSize: 10.sp, color: Colors.green)),
-                        Icon(Icons.arrow_back, color: Colors.green, size: 20.sp),
-                      ],
-                    ),
-                  ),
-
-                  // KG系统数据
-                  Expanded(
-                    flex: 2,
-                    child: Container(
-                      padding: EdgeInsets.all(12.w),
-                      decoration: BoxDecoration(
-                        color: Colors.orange.withOpacity(0.1),
-                        borderRadius: BorderRadius.circular(8.r),
-                        border: Border.all(color: Colors.orange.withOpacity(0.3)),
-                      ),
-                      child: Column(
-                        crossAxisAlignment: CrossAxisAlignment.start,
-                        children: [
-                          Text(
-                            '知识图谱 (KG)',
-                            style: TextStyle(fontSize: 12.sp, fontWeight: FontWeight.w600),
-                          ),
-                          SizedBox(height: 8.h),
-                          FutureBuilder<Map<String, dynamic>>(
-                            future: _getKGStats(),
-                            builder: (context, snapshot) {
-                              final kgStats = snapshot.data ?? {};
-                              return Column(
-                                children: [
-                                  _buildDataPoint('实体节点', '${kgStats['entity_count'] ?? 0}'),
-                                  _buildDataPoint('事件节点', '${kgStats['event_count'] ?? 0}'),
-                                  _buildDataPoint('关系链接', '${kgStats['relation_count'] ?? 0}'),
-                                ],
-                              );
-                            },
-                          ),
-                        ],
-                      ),
-                    ),
-                  ),
-                ],
-              ),
-            ),
-
-            SizedBox(height: 16.h),
-
-            // 融合效果指标
-            Container(
-              padding: EdgeInsets.all(12.w),
-              decoration: BoxDecoration(
-                color: Colors.green.withOpacity(0.1),
-                borderRadius: BorderRadius.circular(8.r),
-                border: Border.all(color: Colors.green.withOpacity(0.3)),
-              ),
-              child: Column(
-                crossAxisAlignment: CrossAxisAlignment.start,
-                children: [
-                  Text(
-                    '融合效果指标',
-                    style: TextStyle(fontSize: 12.sp, fontWeight: FontWeight.w600),
-                  ),
-                  SizedBox(height: 8.h),
-                  Row(
-                    children: [
-                      Expanded(child: _buildMetricItem('数据覆盖度', '85%', Colors.green)),
-                      Expanded(child: _buildMetricItem('关联准确性', '92%', Colors.blue)),
-                      Expanded(child: _buildMetricItem('增强效果', '78%', Colors.purple)),
-                    ],
-                  ),
-                ],
-              ),
-            ),
-          ],
-        ),
-      ),
-    );
-  }
-
-  Widget _buildDataPoint(String label, String value) {
-    return Padding(
-      padding: EdgeInsets.symmetric(vertical: 2.h),
-      child: Row(
-        mainAxisAlignment: MainAxisAlignment.spaceBetween,
-        children: [
-          Text(label, style: TextStyle(fontSize: 10.sp)),
-          Text(value, style: TextStyle(fontSize: 10.sp, fontWeight: FontWeight.bold)),
-        ],
-      ),
-    );
-  }
-
-  Widget _buildMetricItem(String label, String value, Color color) {
-    return Column(
-      children: [
-        Text(
-          value,
-          style: TextStyle(
-            fontSize: 16.sp,
-            fontWeight: FontWeight.bold,
-            color: color,
-          ),
-        ),
-        Text(
-          label,
-          style: TextStyle(fontSize: 10.sp, color: Colors.grey[600]),
-          textAlign: TextAlign.center,
-        ),
-      ],
-    );
-  }
-
-  Widget _buildEntityIntentFusionCard() {
-    return Card(
-      child: Padding(
-        padding: EdgeInsets.all(16.w),
-        child: Column(
-          crossAxisAlignment: CrossAxisAlignment.start,
-          children: [
-            Row(
-              children: [
-                Icon(Icons.hub, color: Colors.indigo, size: 24.sp),
-                SizedBox(width: 8.w),
-                Text(
-                  '实体-意图关联分析',
-                  style: TextStyle(fontSize: 16.sp, fontWeight: FontWeight.bold),
-                ),
-              ],
-            ),
-            SizedBox(height: 12.h),
-
-            Text(
-              '知识图谱如何增强意图理解：',
-              style: TextStyle(fontSize: 14.sp, fontWeight: FontWeight.w600),
-            ),
-            SizedBox(height: 8.h),
-
-            // 显示活跃意图及其相关的KG实体
-            if (_currentState!.activeIntents.isNotEmpty)
-              ..._currentState!.activeIntents.take(3).map((intent) =>
-                _buildIntentEntityFusionItem(intent)
-              ).toList()
-            else
-              Container(
-                padding: EdgeInsets.all(12.w),
-                decoration: BoxDecoration(
-                  color: Colors.grey.withOpacity(0.1),
-                  borderRadius: BorderRadius.circular(8.r),
-                ),
-                child: Text(
-                  '暂无活跃意图，知识图谱正在后台学习用户行为模式...',
-                  style: TextStyle(fontSize: 12.sp, color: Colors.grey[600]),
-                ),
-              ),
-          ],
-        ),
-      ),
-    );
-  }
-
-  Widget _buildIntentEntityFusionItem(hum.Intent intent) {
-    return Container(
-      margin: EdgeInsets.only(bottom: 12.h),
-      padding: EdgeInsets.all(12.w),
-      decoration: BoxDecoration(
-        color: Colors.blue.withOpacity(0.05),
-        borderRadius: BorderRadius.circular(8.r),
-        border: Border.all(color: Colors.blue.withOpacity(0.2)),
-      ),
-      child: Column(
-        crossAxisAlignment: CrossAxisAlignment.start,
-        children: [
-          Row(
-            children: [
-              Icon(Icons.lightbulb, color: Colors.orange, size: 16.sp),
-              SizedBox(width: 4.w),
-              Expanded(
-                child: Text(
-                  intent.description,
-                  style: TextStyle(fontSize: 14.sp, fontWeight: FontWeight.w600),
-                ),
-              ),
-            ],
-          ),
-          SizedBox(height: 8.h),
-
-          // 显示相关实体
-          if (intent.relatedEntities.isNotEmpty) ...[
-            Text(
-              '相关实体：',
-              style: TextStyle(fontSize: 12.sp, fontWeight: FontWeight.w600),
-            ),
-            SizedBox(height: 4.h),
-            Wrap(
-              spacing: 4.w,
-              children: intent.relatedEntities.map((entity) =>
-                Container(
-                  padding: EdgeInsets.symmetric(horizontal: 8.w, vertical: 4.h),
-                  decoration: BoxDecoration(
-                    color: Colors.green.withOpacity(0.2),
-                    borderRadius: BorderRadius.circular(12.r),
-                  ),
-                  child: Text(
-                    entity,
-                    style: TextStyle(fontSize: 10.sp),
-                  ),
-                )
-              ).toList(),
-            ),
-            SizedBox(height: 8.h),
-          ],
-
-          // KG增强信息
-          FutureBuilder<Map<String, dynamic>>(
-            future: _getEntityKGEnhancement(intent.relatedEntities),
-            builder: (context, snapshot) {
-              final enhancement = snapshot.data ?? {};
-              if (enhancement.isEmpty) {
-                return Text(
-                  '🔍 KG增强：正在分析实体关联...',
-                  style: TextStyle(fontSize: 11.sp, color: Colors.grey[600]),
-                );
-              }
-
-              return Column(
-                crossAxisAlignment: CrossAxisAlignment.start,
-                children: [
-                  Text(
-                    '📊 KG增强洞察：',
-                    style: TextStyle(fontSize: 11.sp, fontWeight: FontWeight.w600, color: Colors.green[700]),
-                  ),
-                  if (enhancement['related_events'] != null)
-                    Text(
-                      '• 发现 ${enhancement['related_events']} 个相关事件',
-                      style: TextStyle(fontSize: 10.sp, color: Colors.grey[700]),
-                    ),
-                  if (enhancement['temporal_pattern'] != null)
-                    Text(
-                      '• 时间模式：${enhancement['temporal_pattern']}',
-                      style: TextStyle(fontSize: 10.sp, color: Colors.grey[700]),
-                    ),
-                  if (enhancement['confidence_boost'] != null)
-                    Text(
-                      '• 置信度提升：+${enhancement['confidence_boost']}%',
-                      style: TextStyle(fontSize: 10.sp, color: Colors.green[700]),
-                    ),
-                ],
-              );
-            },
-          ),
-        ],
-      ),
-    );
-  }
-
-  Widget _buildKGEnhancedSuggestionsCard() {
-    return Card(
-      child: Padding(
-        padding: EdgeInsets.all(16.w),
-        child: Column(
-          crossAxisAlignment: CrossAxisAlignment.start,
-          children: [
-            Row(
-              children: [
-                Icon(Icons.auto_awesome, color: Colors.purple, size: 24.sp),
-                SizedBox(width: 8.w),
-                Text(
-                  'KG增强的智能建议',
-                  style: TextStyle(fontSize: 16.sp, fontWeight: FontWeight.bold),
-                ),
-              ],
-            ),
-            SizedBox(height: 12.h),
-
-            // 获取增强的智能建议
-            FutureBuilder<Map<String, dynamic>>(
-              future: _system.getEnhancedIntelligentSuggestions(),
-              builder: (context, snapshot) {
-                if (snapshot.connectionState == ConnectionState.waiting) {
-                  return Container(
-                    height: 100.h,
-                    child: Center(child: CircularProgressIndicator()),
-                  );
-                }
-
-                final enhancedSuggestions = snapshot.data ?? {};
-                final kgInsights = enhancedSuggestions['kg_insights'] as Map<String, dynamic>? ?? {};
-                final enhancedSuggestionList = enhancedSuggestions['enhanced_suggestions'] as Map<String, dynamic>? ?? {};
-                final actionPlan = enhancedSuggestions['personalized_action_plan'] as Map<String, dynamic>? ?? {};
-
-                return Column(
-                  crossAxisAlignment: CrossAxisAlignment.start,
-                  children: [
-                    // 基于KG的洞察
-                    if (kgInsights.isNotEmpty) ...[
-                      Container(
-                        padding: EdgeInsets.all(12.w),
-                        decoration: BoxDecoration(
-                          color: Colors.purple.withOpacity(0.1),
-                          borderRadius: BorderRadius.circular(8.r),
-                          border: Border.all(color: Colors.purple.withOpacity(0.3)),
-                        ),
-                        child: Column(
-                          crossAxisAlignment: CrossAxisAlignment.start,
-                          children: [
-                            Text(
-                              '🧠 基于知识图谱的洞察：',
-                              style: TextStyle(fontSize: 12.sp, fontWeight: FontWeight.w600),
-                            ),
-                            SizedBox(height: 8.h),
-                            if (kgInsights['entity_patterns'] != null) ...[
-                              Builder(
-                                builder: (context) {
-                                  final entityPatterns = kgInsights['entity_patterns'] as Map<String, dynamic>;
-                                  return Column(
-                                    crossAxisAlignment: CrossAxisAlignment.start,
-                                    children: [
-                                      if (entityPatterns['high_activity_entities'] != null &&
-                                          (entityPatterns['high_activity_entities'] as List).isNotEmpty)
-                                        Text(
-                                          '• 高活跃实体：${(entityPatterns['high_activity_entities'] as List).join('、')}',
-                                          style: TextStyle(fontSize: 11.sp),
-                                        ),
-                                      if (entityPatterns['trending_patterns'] != null &&
-                                          (entityPatterns['trending_patterns'] as List).isNotEmpty)
-                                        Text(
-                                          '• 趋势模式：${(entityPatterns['trending_patterns'] as List).join('、')}',
-                                          style: TextStyle(fontSize: 11.sp),
-                                        ),
-                                    ],
-                                  );
-                                }
-                              ),
-                            ],
-                            if (kgInsights['activity_analysis'] != null) ...[
-                              Builder(
-                                builder: (context) {
-                                  final activityAnalysis = kgInsights['activity_analysis'] as Map<String, dynamic>;
-                                  return Column(
-                                    crossAxisAlignment: CrossAxisAlignment.start,
-                                    children: [
-                                      if (activityAnalysis['event_density_per_day'] != null)
-                                        Text(
-                                          '• 活动密度：${(activityAnalysis['event_density_per_day'] as double).toStringAsFixed(1)}个事件/天',
-                                          style: TextStyle(fontSize: 11.sp),
-                                        ),
-                                    ],
-                                  );
-                                }
-                              ),
-                            ],
-                          ],
-                        ),
-                      ),
-                      SizedBox(height: 12.h),
-                    ],
-
-                    // 增强的建议
-                    if (enhancedSuggestionList.isNotEmpty) ...[
-                      Text(
-                        '💡 增强建议：',
-                        style: TextStyle(fontSize: 12.sp, fontWeight: FontWeight.w600),
-                      ),
-                      SizedBox(height: 8.h),
-                      ...enhancedSuggestionList.entries.take(3).map((entry) =>
-                        Padding(
-                          padding: EdgeInsets.symmetric(vertical: 2.h),
-                          child: Row(
-                            crossAxisAlignment: CrossAxisAlignment.start,
-                            children: [
-                              Icon(Icons.arrow_right, size: 14.sp, color: Colors.purple),
-                              SizedBox(width: 4.w),
-                              Expanded(
-                                child: Text(
-                                  '${entry.key}: ${entry.value}',
-                                  style: TextStyle(fontSize: 11.sp),
-                                ),
-                              ),
-                            ],
-                          ),
-                        )
-                      ),
-                      SizedBox(height: 12.h),
-                    ],
-
-                    // 个性化行动计划
-                    if (actionPlan.isNotEmpty && actionPlan['immediate_actions'] != null) ...[
-                      Text(
-                        '🎯 个性化行动计划：',
-                        style: TextStyle(fontSize: 12.sp, fontWeight: FontWeight.w600),
-                      ),
-                      SizedBox(height: 8.h),
-                      ...(actionPlan['immediate_actions'] as List).take(2).map((action) =>
-                        Container(
-                          margin: EdgeInsets.only(bottom: 4.h),
-                          padding: EdgeInsets.all(8.w),
-                          decoration: BoxDecoration(
-                            color: Colors.green.withOpacity(0.1),
-                            borderRadius: BorderRadius.circular(6.r),
-                          ),
-                          child: Text(
-                            action.toString(),
-                            style: TextStyle(fontSize: 11.sp),
-                          ),
-                        )
-                      ),
-                    ],
-                  ],
-                );
-              },
-            ),
-          ],
-        ),
-      ),
-    );
-  }
-
-  Widget _buildCrossSystemPatternsCard() {
-    return Card(
-      child: Padding(
-        padding: EdgeInsets.all(16.w),
-        child: Column(
-          crossAxisAlignment: CrossAxisAlignment.start,
-          children: [
-            Row(
-              children: [
-                Icon(Icons.pattern, color: Colors.teal, size: 24.sp),
-                SizedBox(width: 8.w),
-                Text(
-                  '跨系统模式识别',
-                  style: TextStyle(fontSize: 16.sp, fontWeight: FontWeight.bold),
-                ),
-              ],
-            ),
-            SizedBox(height: 12.h),
-
-            // 显示HU和KG系统发现的关联模式
-            FutureBuilder<Map<String, dynamic>>(
-              future: _analyzeCrossSystemPatterns(),
-              builder: (context, snapshot) {
-                if (snapshot.connectionState == ConnectionState.waiting) {
-                  return Container(
-                    height: 80.h,
-                    child: Center(child: CircularProgressIndicator()),
-                  );
-                }
-
-                final patterns = snapshot.data ?? {};
-
-                return Column(
-                  crossAxisAlignment: CrossAxisAlignment.start,
-                  children: [
-                    if (patterns['intent_entity_correlation'] != null) ...[
-                      _buildPatternItem(
-                        '意图-实体关联模式',
-                        patterns['intent_entity_correlation'].toString(),
-                        Icons.account_tree,
-                        Colors.blue,
-                      ),
-                      SizedBox(height: 8.h),
-                    ],
-                    if (patterns['temporal_behavior_pattern'] != null) ...[
-                      _buildPatternItem(
-                        '时间行为模式',
-                        patterns['temporal_behavior_pattern'].toString(),
-                        Icons.schedule,
-                        Colors.orange,
-                      ),
-                      SizedBox(height: 8.h),
-                    ],
-                    if (patterns['causal_event_alignment'] != null) ...[
-                      _buildPatternItem(
-                        '因果-事件对齐模式',
-                        patterns['causal_event_alignment'].toString(),
-                        Icons.link,
-                        Colors.green,
-                      ),
-                    ],
-                    if (patterns.isEmpty) ...[
-                      Container(
-                        padding: EdgeInsets.all(12.w),
-                        decoration: BoxDecoration(
-                          color: Colors.grey.withOpacity(0.1),
-                          borderRadius: BorderRadius.circular(8.r),
-                        ),
-                        child: Text(
-                          '系统正在学习和识别跨系统模式...',
-                          style: TextStyle(fontSize: 12.sp, color: Colors.grey[600]),
-                        ),
-                      ),
-                    ],
-                  ],
-                );
-              },
-            ),
-          ],
-        ),
-      ),
-    );
-  }
-
-  Widget _buildPatternItem(String title, String description, IconData icon, Color color) {
-    return Container(
-      padding: EdgeInsets.all(12.w),
-      decoration: BoxDecoration(
-        color: color.withOpacity(0.1),
-        borderRadius: BorderRadius.circular(8.r),
-        border: Border.all(color: color.withOpacity(0.3)),
-      ),
-      child: Row(
-        children: [
-          Icon(icon, color: color, size: 20.sp),
-          SizedBox(width: 8.w),
-          Expanded(
-            child: Column(
-              crossAxisAlignment: CrossAxisAlignment.start,
-              children: [
-                Text(
-                  title,
-                  style: TextStyle(fontSize: 12.sp, fontWeight: FontWeight.w600),
-                ),
-                SizedBox(height: 4.h),
-                Text(
-                  description,
-                  style: TextStyle(fontSize: 11.sp, color: Colors.grey[700]),
-                ),
-              ],
-            ),
-          ),
-        ],
-      ),
-    );
-  }
-
-  Widget _buildFusionEffectivenessCard() {
-    return Card(
-      child: Padding(
-        padding: EdgeInsets.all(16.w),
-        child: Column(
-          crossAxisAlignment: CrossAxisAlignment.start,
-          children: [
-            Row(
-              children: [
-                Icon(Icons.analytics, color: Colors.green, size: 24.sp),
-                SizedBox(width: 8.w),
-                Text(
-                  '融合效果评估',
-                  style: TextStyle(fontSize: 16.sp, fontWeight: FontWeight.bold),
-                ),
-              ],
-            ),
-            SizedBox(height: 12.h),
-
-            // 效果指标
-            FutureBuilder<Map<String, dynamic>>(
-              future: _evaluateFusionEffectiveness(),
-              builder: (context, snapshot) {
-                if (snapshot.connectionState == ConnectionState.waiting) {
-                  return Container(
-                    height: 100.h,
-                    child: Center(child: CircularProgressIndicator()),
-                  );
-                }
-
-                final evaluation = snapshot.data ?? {};
-
-                return Column(
-                  children: [
-                    Row(
-                      children: [
-                        Expanded(
-                          child: _buildEffectivenessMetric(
-                            '理解准确度',
-                            evaluation['understanding_accuracy'] ?? 75.0,
-                            Colors.blue,
-                          ),
-                        ),
-                        Expanded(
-                          child: _buildEffectivenessMetric(
-                            '建议相关性',
-                            evaluation['suggestion_relevance'] ?? 82.0,
-                            Colors.green,
-                          ),
-                        ),
-                      ],
-                    ),
-                    SizedBox(height: 12.h),
-                    Row(
-                      children: [
-                        Expanded(
-                          child: _buildEffectivenessMetric(
-                            '模式发现率',
-                            evaluation['pattern_discovery'] ?? 68.0,
-                            Colors.orange,
-                          ),
-                        ),
-                        Expanded(
-                          child: _buildEffectivenessMetric(
-                            '整体融合度',
-                            evaluation['overall_fusion'] ?? 78.0,
-                            Colors.purple,
-                          ),
-                        ),
-                      ],
-                    ),
-                    SizedBox(height: 16.h),
-
-                    // 融合改进建议
-                    if (evaluation['improvement_suggestions'] != null) ...[
-                      Container(
-                        padding: EdgeInsets.all(12.w),
-                        decoration: BoxDecoration(
-                          color: Colors.amber.withOpacity(0.1),
-                          borderRadius: BorderRadius.circular(8.r),
-                          border: Border.all(color: Colors.amber.withOpacity(0.3)),
-                        ),
-                        child: Column(
-                          crossAxisAlignment: CrossAxisAlignment.start,
-                          children: [
-                            Text(
-                              '💡 融合改进建议：',
-                              style: TextStyle(fontSize: 12.sp, fontWeight: FontWeight.w600),
-                            ),
-                            SizedBox(height: 8.h),
-                            ...(evaluation['improvement_suggestions'] as List).map((suggestion) =>
-                              Padding(
-                                padding: EdgeInsets.symmetric(vertical: 2.h),
-                                child: Text(
-                                  '• $suggestion',
-                                  style: TextStyle(fontSize: 11.sp),
-                                ),
-                              )
-                            ),
-                          ],
-                        ),
-                      ),
-                    ],
-                  ],
-                );
-              },
-            ),
-          ],
-        ),
-      ),
-    );
-  }
-
-  Widget _buildEffectivenessMetric(String title, double value, Color color) {
-    return Container(
-      margin: EdgeInsets.all(4.w),
-      padding: EdgeInsets.all(12.w),
-      decoration: BoxDecoration(
-        color: color.withOpacity(0.1),
-        borderRadius: BorderRadius.circular(8.r),
-        border: Border.all(color: color.withOpacity(0.3)),
-      ),
-      child: Column(
-        children: [
-          Text(
-            '${value.toInt()}%',
-            style: TextStyle(
-              fontSize: 20.sp,
-              fontWeight: FontWeight.bold,
-              color: color,
-            ),
-          ),
-          SizedBox(height: 4.h),
-          Text(
-            title,
-            style: TextStyle(fontSize: 10.sp, color: Colors.grey[600]),
-            textAlign: TextAlign.center,
-          ),
-          SizedBox(height: 4.h),
-          LinearProgressIndicator(
-            value: value / 100,
-            backgroundColor: Colors.grey[300],
-            valueColor: AlwaysStoppedAnimation<Color>(color),
-          ),
-        ],
-      ),
-    );
-  }
-
-  // 🔥 新增：辅助方法 - 获取KG统计信息
-  Future<Map<String, dynamic>> _getKGStats() async {
-    try {
-      // 这里应该从ObjectBoxService获取实际的KG统计信息
-      // 暂时返回模拟数据，实际实现需要从数据库查询
-      await Future.delayed(Duration(milliseconds: 500)); // 模拟异步查询
-
-      return {
-        'entity_count': 24,
-        'event_count': 18,
-        'relation_count': 35,
-      };
-    } catch (e) {
-      return {};
-    }
-  }
-
-  // 🔥 新增：辅助方法 - 获取实体的KG增强信息
-  Future<Map<String, dynamic>> _getEntityKGEnhancement(List<String> entities) async {
-    try {
-      if (entities.isEmpty) return {};
-
-      // 模拟KG查询增强信息
-      await Future.delayed(Duration(milliseconds: 300));
-
-      return {
-        'related_events': entities.length * 2 + 3,
-        'temporal_pattern': '工作日活跃',
-        'confidence_boost': 15,
-      };
-    } catch (e) {
-      return {};
-    }
-  }
-
-  // 🔥 新增：辅助方法 - 分析跨系统模式
-  Future<Map<String, dynamic>> _analyzeCrossSystemPatterns() async {
-    try {
-      // 分析HU系统和KG系统之间的关联模式
-      await Future.delayed(Duration(milliseconds: 400));
-
-      final patterns = <String, dynamic>{};
-
-      // 意图-实体关联分析
-      if (_currentState!.activeIntents.isNotEmpty) {
-        final intentEntityCount = _currentState!.activeIntents
-            .expand((intent) => intent.relatedEntities)
-            .toSet()
-            .length;
-        patterns['intent_entity_correlation'] =
-            '发现${intentEntityCount}个关联实体，关联度：${(intentEntityCount * 15).clamp(0, 100)}%';
-      }
-
-      // 时间行为模式
-      if (_currentState!.activeTopics.isNotEmpty) {
-        patterns['temporal_behavior_pattern'] =
-            '检测到${_currentState!.activeTopics.length}个主题的时间聚集模式';
-      }
-
-      // 因果-事件对齐
-      if (_currentState!.recentCausalChains.isNotEmpty) {
-        patterns['causal_event_alignment'] =
-            '${_currentState!.recentCausalChains.length}个因果关系与KG事件链对齐';
-      }
-
-      return patterns;
-    } catch (e) {
-      return {};
-    }
-  }
-
-  // 🔥 新增：辅助方法 - 评估融合效果
-  Future<Map<String, dynamic>> _evaluateFusionEffectiveness() async {
-    try {
-      // 评估HU和KG融合的效果
-      await Future.delayed(Duration(milliseconds: 600));
-
-      // 基于当前系统状态计算融合指标
-      final huDataPoints = _currentState!.activeIntents.length +
-                          _currentState!.activeTopics.length +
-                          _currentState!.recentCausalChains.length;
-
-      // 🔥 修复：确保所有计算结果都是 double 类型
-      final understandingAccuracy = (huDataPoints * 8.0 + 35.0).clamp(40.0, 95.0);
-      final suggestionRelevance = (huDataPoints * 12.0 + 50.0).clamp(60.0, 95.0);
-      final patternDiscovery = (huDataPoints * 6.0 + 45.0).clamp(30.0, 85.0);
-      final overallFusion = (understandingAccuracy + suggestionRelevance + patternDiscovery) / 3.0;
-
-      final improvements = <String>[];
-      if (understandingAccuracy < 80.0) {
-        improvements.add('增加更多实体关联以提高理解准确度');
-      }
-      if (suggestionRelevance < 85.0) {
-        improvements.add('优化KG事件时序分析来改善建议质量');
-      }
-      if (patternDiscovery < 70.0) {
-        improvements.add('扩展跨系统模式识别算法');
-      }
-
-      return {
-        'understanding_accuracy': understandingAccuracy,
-        'suggestion_relevance': suggestionRelevance,
-        'pattern_discovery': patternDiscovery,
-        'overall_fusion': overallFusion,
-        'improvement_suggestions': improvements,
-      };
-    } catch (e) {
-      return {
-        'understanding_accuracy': 75.0,
-        'suggestion_relevance': 82.0,
-        'pattern_discovery': 68.0,
-        'overall_fusion': 75.0,
-        'improvement_suggestions': ['系统正在学习优化中...'],
-      };
-    }
   }
 }
