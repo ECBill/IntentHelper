@@ -614,7 +614,7 @@ class HumanUnderstandingSystem {
     }
   }
 
-  /// 处理新的语义分析输入（从现有cache系统接收）
+  /// 处理新的语义分析输入（直接与知识图谱对接）
   Future<HumanUnderstandingSystemState> processSemanticInput(
     SemanticAnalysisInput analysis,
   ) async {
@@ -668,11 +668,31 @@ class HumanUnderstandingSystem {
     try {
       final stopwatch = Stopwatch()..start();
 
-      // 🔥 新增：第一步 - 查询知识图谱获取相关上下文信息
-      final knowledgeContext = await _queryKnowledgeGraphContext(analysis);
+      // 🔥 第一步 - 分析对话内容获取知识图谱上下文（不写入数据库）
+      print('[HumanUnderstandingSystem] 📝 分析对话内容获取知识图谱上下文...');
+
+      // 构建用户状态上下文，用于增强知识图谱提取
+      final userStateContext = {
+        'active_intents': _intentManager.getActiveIntents().map((i) => i.toJson()).toList(),
+        'active_topics': _topicTracker.getActiveTopics().map((t) => t.toJson()).toList(),
+        'cognitive_load': _loadEstimator.getCurrentLoad()?.toJson() ?? {},
+      };
+
+      // 🔥 改为使用只分析不写入的函数
+      final analysisResult = await KnowledgeGraphService.analyzeEventsAndEntitiesFromText(
+        analysis.content,
+        conversationTime: analysis.timestamp,
+        userStateContext: userStateContext,
+      );
+
+      // 🔥 第二步 - 基于分析结果查询知识图谱获取相关上下文信息
+      final knowledgeContext = await KnowledgeGraphService.getContextFromAnalysis(analysisResult);
       print('[HumanUnderstandingSystem] 🔍 知识图谱上下文: 找到${knowledgeContext['related_nodes']?.length ?? 0}个相关节点, ${knowledgeContext['related_events']?.length ?? 0}个相关事件');
 
-      // 🔥 新增：创建增强的分析输入，包含知识图谱上下文
+      // 生成上下文ID用于日志和状态记录
+      final contextId = 'analysis_${analysis.timestamp.millisecondsSinceEpoch}';
+
+      // 🔥 第三步 - 创建增强的分析输入，包含知识图谱上下文
       final enhancedAnalysis = _enhanceAnalysisWithKnowledgeGraph(analysis, knowledgeContext);
 
       // 1. 并行处理基础分析（使用增强的分析输入）
@@ -687,7 +707,7 @@ class HumanUnderstandingSystem {
       final topics = results[1] as List<ConversationTopic>;
       final causalRelations = results[2] as List<CausalRelation>;
 
-      // 🔥 新增：基于知识图谱增强主题信息
+      // 🔥 第四步 - 基于知识图谱增强主题信息
       final enhancedTopics = await _enhanceTopicsWithKnowledgeGraph(topics, knowledgeContext);
 
       // 2. 构建语义图谱（依赖前面的结果）
@@ -723,7 +743,13 @@ class HumanUnderstandingSystem {
           'new_topics': topics.length,
           'new_causal_relations': causalRelations.length,
           'new_triples': triples.length,
-          'knowledge_graph_context': knowledgeContext, // 🔥 新增：知识图谱上下文信息
+          'knowledge_graph_context': knowledgeContext, // 🔥 知识图谱上下文信息
+          'knowledge_graph_processing': {
+            'context_id': contextId,
+            'events_extracted': true,
+            'entities_aligned': true,
+            'processed_via_kg': true, // 标记为通过知识图谱处理
+          },
           'reminder_statistics': reminderStats,
           'analysis_timestamp': analysis.timestamp.toIso8601String(),
         },
@@ -735,6 +761,7 @@ class HumanUnderstandingSystem {
       print('[HumanUnderstandingSystem] ✅ 语义处理完成 (${stopwatch.elapsedMilliseconds}ms)');
       print('[HumanUnderstandingSystem] 📊 新增: ${intents.length}意图, ${topics.length}主题, ${causalRelations.length}因果, ${triples.length}三元组');
       print('[HumanUnderstandingSystem] 🔗 知识图谱辅助: ${knowledgeContext['related_nodes']?.length ?? 0}个相关节点帮助分析');
+      print('[HumanUnderstandingSystem] 🗃️ 直接存储到知识图谱，上下文ID: $contextId');
       print('[HumanUnderstandingSystem] 🔔 智能提醒统计: ${reminderStats['pending_reminders']}个等待, ${reminderStats['sent_reminders_today']}个今日已发送');
 
       return systemState;

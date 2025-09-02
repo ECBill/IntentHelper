@@ -198,12 +198,13 @@ ${_generateUserStatePromptContext(userStateContext)}
   // 3. 图谱更新与演化机制
   static Future<void> processEventsFromConversation(
     String conversationText,
-    {required String contextId, DateTime? conversationTime}
+    {required String contextId, DateTime? conversationTime, Map<String, dynamic>? userStateContext}
   ) async {
     try {
       final result = await extractEventsAndEntitiesFromText(
         conversationText,
-        conversationTime: conversationTime
+        conversationTime: conversationTime,
+        userStateContext: userStateContext,
       );
 
       final events = result['events'] ?? [];
@@ -524,72 +525,121 @@ ${_generateUserStatePromptContext(userStateContext)}
   static Future<List<EventNode>> getRelatedEvents(String entityId) async {
     try {
       final objectBox = ObjectBoxService();
-      final relations = objectBox.queryEventEntityRelations(entityId: entityId);
-      final eventIds = relations.map((r) => r.eventId).toSet();
-      final events = <EventNode>[];
+      final relatedEvents = <EventNode>[];
+      final eventIds = <String>{};
 
-      for (final eventId in eventIds) {
-        final event = objectBox.findEventNodeById(eventId);
-        if (event != null) events.add(event);
+      print('[KnowledgeGraphService] 🔍 通过实体 "$entityId" 查询相关事件...');
+
+      // 第一步：直接查找与该实体相关的事件
+      final directRelations = objectBox.queryEventEntityRelations(entityId: entityId);
+      for (final relation in directRelations) {
+        final event = objectBox.findEventNodeById(relation.eventId);
+        if (event != null && !eventIds.contains(event.id)) {
+          relatedEvents.add(event);
+          eventIds.add(event.id);
+        }
       }
 
-      return events;
+      print('[KnowledgeGraphService] 📊 找到 ${relatedEvents.length} 个直接相关事件');
+
+      // 第二步：通过共同实体关联找到更多相关事件
+      // 获取所有与已找到事件相关的其他实体
+      final relatedEntityIds = <String>{};
+      for (final event in relatedEvents) {
+        final eventEntityRelations = objectBox.queryEventEntityRelations(eventId: event.id);
+        for (final relation in eventEntityRelations) {
+          if (relation.entityId != entityId) { // 排除原始实体
+            relatedEntityIds.add(relation.entityId);
+          }
+        }
+      }
+
+      // 第三步：通过这些相关实体查找更多事件（扩展关联网络）
+      for (final relatedEntityId in relatedEntityIds) {
+        final entityEvents = objectBox.queryEventEntityRelations(entityId: relatedEntityId);
+        for (final relation in entityEvents) {
+          if (!eventIds.contains(relation.eventId)) {
+            final event = objectBox.findEventNodeById(relation.eventId);
+            if (event != null) {
+              relatedEvents.add(event);
+              eventIds.add(event.id);
+            }
+          }
+        }
+      }
+
+      // 第四步：根据时间和相关性对事件进行排序
+      relatedEvents.sort((a, b) {
+        // 优先按时间排序（最近的在前）
+        final timeA = a.startTime?.millisecondsSinceEpoch ?? a.lastUpdated.millisecondsSinceEpoch;
+        final timeB = b.startTime?.millisecondsSinceEpoch ?? b.lastUpdated.millisecondsSinceEpoch;
+        return timeB.compareTo(timeA);
+      });
+
+      print('[KnowledgeGraphService] 🔗 总共找到 ${relatedEvents.length} 个相关事件');
+      print('[KnowledgeGraphService] 🌐 通过 ${relatedEntityIds.length} 个关联实体扩展了事件网络');
+
+      // 限制返回数量，避免结果过多
+      return relatedEvents.take(20).toList();
+
     } catch (e) {
       print('[KnowledgeGraphService] ❌ 查询相关事件错误: $e');
       return [];
     }
   }
 
-  // 根据关键词查找相关节点
-  static Future<List<Node>> getRelatedNodesByKeywords(List<String> keywords) async {
+  // 🔥 新增：根据实体名称和类型查找相关事件（支持模糊匹配）
+  static Future<List<EventNode>> getRelatedEventsByEntityNameAndType(
+    String entityName,
+    String? entityType,
+    {int limit = 10}
+  ) async {
     try {
       final objectBox = ObjectBoxService();
+
+      // 1. 先找到匹配的实体
+      final matchingEntities = <Node>[];
       final allNodes = objectBox.queryNodes();
-      final Set<Node> result = {};
 
-      for (final keyword in keywords) {
-        for (final node in allNodes) {
-          // 检查节点名称是否包含关键词
-          if (node.name.contains(keyword)) {
-            result.add(node);
-            // 查找与该节点直接关联的节点
-            final edges = objectBox.queryEdges(source: node.id);
-            for (final edge in edges) {
-              final related = allNodes.where((n) => n.id == edge.target).firstOrNull;
-              if (related != null) result.add(related);
-            }
+      for (final node in allNodes) {
+        bool nameMatch = node.name.toLowerCase().contains(entityName.toLowerCase()) ||
+                        node.canonicalName.toLowerCase().contains(entityName.toLowerCase()) ||
+                        node.aliases.any((alias) => alias.toLowerCase().contains(entityName.toLowerCase()));
 
-            // 查找指向该节点的边
-            final incomingEdges = objectBox.queryEdges(target: node.id);
-            for (final edge in incomingEdges) {
-              final related = allNodes.where((n) => n.id == edge.source).firstOrNull;
-              if (related != null) result.add(related);
-            }
-          }
+        bool typeMatch = entityType == null || node.type.toLowerCase() == entityType.toLowerCase();
 
-          // 检查节点属性是否包含关键词
-          final attributes = node.attributes;
-          for (final value in attributes.values) {
-            if (value.contains(keyword)) {
-              result.add(node);
-              break;
-            }
-          }
+        if (nameMatch && typeMatch) {
+          matchingEntities.add(node);
+        }
+      }
 
-          // 检查别名是否包含关键词
-          final aliases = node.aliases;
-          for (final alias in aliases) {
-            if (alias.contains(keyword)) {
-              result.add(node);
-              break;
-            }
+      print('[KnowledgeGraphService] 🎯 找到 ${matchingEntities.length} 个匹配的实体');
+
+      // 2. 获取所有匹配实体的相关事件
+      final allRelatedEvents = <EventNode>[];
+      final eventIds = <String>{};
+
+      for (final entity in matchingEntities) {
+        final entityEvents = await getRelatedEvents(entity.id);
+        for (final event in entityEvents) {
+          if (!eventIds.contains(event.id)) {
+            allRelatedEvents.add(event);
+            eventIds.add(event.id);
           }
         }
       }
 
-      return result.toList();
+      // 3. 按时间排序并限制数量
+      allRelatedEvents.sort((a, b) {
+        final timeA = a.startTime?.millisecondsSinceEpoch ?? a.lastUpdated.millisecondsSinceEpoch;
+        final timeB = b.startTime?.millisecondsSinceEpoch ?? b.lastUpdated.millisecondsSinceEpoch;
+        return timeB.compareTo(timeA);
+      });
+
+      return allRelatedEvents.take(limit).toList();
+
     } catch (e) {
-      print('[KnowledgeGraphService] ❌ 根据关键词查找相关节点错误: $e');
+      print('[KnowledgeGraphService] ❌ 根据实体名称查找相关事件错误: $e');
       return [];
     }
   }
@@ -812,5 +862,235 @@ ${_generateUserStatePromptContext(userStateContext)}
 
     buffer.writeln('');
     return buffer.toString();
+  }
+
+  // 🔥 新增：根据关键词查找相关节点
+  static Future<List<Node>> getRelatedNodesByKeywords(List<String> keywords) async {
+    try {
+      final objectBox = ObjectBoxService();
+      final relatedNodes = <Node>[];
+      final nodeIds = <String>{};
+
+      print('[KnowledgeGraphService] 🔍 通过关键词查找相关节点: ${keywords.join(', ')}');
+
+      // 获取所有节点
+      final allNodes = objectBox.queryNodes();
+
+      for (final node in allNodes) {
+        bool isRelevant = false;
+
+        // 检查节点名称是否包含关键词
+        for (final keyword in keywords) {
+          if (node.name.toLowerCase().contains(keyword.toLowerCase()) ||
+              node.canonicalName.toLowerCase().contains(keyword.toLowerCase())) {
+            isRelevant = true;
+            break;
+          }
+
+          // 检查节点别名是否包含关键词
+          for (final alias in node.aliases) {
+            if (alias.toLowerCase().contains(keyword.toLowerCase())) {
+              isRelevant = true;
+              break;
+            }
+          }
+
+          // 检查节点属性值是否包含关键词
+          for (final value in node.attributes.values) {
+            if (value.toLowerCase().contains(keyword.toLowerCase())) {
+              isRelevant = true;
+              break;
+            }
+          }
+
+          if (isRelevant) break;
+        }
+
+        if (isRelevant && !nodeIds.contains(node.id)) {
+          relatedNodes.add(node);
+          nodeIds.add(node.id);
+        }
+      }
+
+      // 按相关性排序（优先匹配节点名称的）
+      relatedNodes.sort((a, b) {
+        int scoreA = 0;
+        int scoreB = 0;
+
+        for (final keyword in keywords) {
+          // 名称完全匹配得分最高
+          if (a.name.toLowerCase() == keyword.toLowerCase()) scoreA += 10;
+          if (b.name.toLowerCase() == keyword.toLowerCase()) scoreB += 10;
+
+          // 名称包含关键词得分较高
+          if (a.name.toLowerCase().contains(keyword.toLowerCase())) scoreA += 5;
+          if (b.name.toLowerCase().contains(keyword.toLowerCase())) scoreB += 5;
+
+          // 别名匹配得分中等
+          if (a.aliases.any((alias) => alias.toLowerCase().contains(keyword.toLowerCase()))) scoreA += 3;
+          if (b.aliases.any((alias) => alias.toLowerCase().contains(keyword.toLowerCase()))) scoreB += 3;
+
+          // 属性匹配得分较低
+          if (a.attributes.values.any((value) => value.toLowerCase().contains(keyword.toLowerCase()))) scoreA += 1;
+          if (b.attributes.values.any((value) => value.toLowerCase().contains(keyword.toLowerCase()))) scoreB += 1;
+        }
+
+        return scoreB.compareTo(scoreA); // 降序排列
+      });
+
+      print('[KnowledgeGraphService] 📊 找到 ${relatedNodes.length} 个相关节点');
+
+      // 限制返回数量
+      return relatedNodes.take(20).toList();
+
+    } catch (e) {
+      print('[KnowledgeGraphService] ❌ 根据关键词查找节点错误: $e');
+      return [];
+    }
+  }
+
+  // 🔥 新增：只提取事件和实体信息，不写入数据库（用于上下文分析）
+  static Future<Map<String, dynamic>> analyzeEventsAndEntitiesFromText(
+    String conversationText,
+    {DateTime? conversationTime, Map<String, dynamic>? userStateContext}
+  ) async {
+    print('[KnowledgeGraphService] 🔍 分析事件和实体（仅提取，不写入）...');
+
+    // 直接调用现有的提取函数，但不进行数据库操作
+    return await extractEventsAndEntitiesFromText(
+      conversationText,
+      conversationTime: conversationTime,
+      userStateContext: userStateContext,
+    );
+  }
+
+  // 🔥 新增：基于分析结果查找相关的历史事件和实体（用于上下文增强）
+  static Future<Map<String, dynamic>> getContextFromAnalysis(
+    Map<String, dynamic> analysisResult
+  ) async {
+    try {
+      print('[KnowledgeGraphService] 🔍 基于分析结果查找历史上下文...');
+
+      final entities = analysisResult['entities'] as List? ?? [];
+      final events = analysisResult['events'] as List? ?? [];
+
+      final relatedNodes = <Node>[];
+      final relatedEvents = <EventNode>[];
+      final nodeIds = <String>{};
+      final eventIds = <String>{};
+
+      // 1. 基于提取的实体查找历史实体节点
+      for (final entityData in entities) {
+        if (entityData is Map) {
+          final name = entityData['name']?.toString() ?? '';
+          final type = entityData['type']?.toString() ?? '';
+
+          if (name.isNotEmpty && type.isNotEmpty) {
+            // 查找相似的历史实体
+            final entityKeywords = [name];
+            final matchingNodes = await getRelatedNodesByKeywords(entityKeywords);
+
+            for (final node in matchingNodes) {
+              if (!nodeIds.contains(node.id)) {
+                relatedNodes.add(node);
+                nodeIds.add(node.id);
+              }
+            }
+          }
+        }
+      }
+
+      // 2. 基于找到的实体节点查找相关历史事件
+      for (final node in relatedNodes) {
+        final nodeEvents = await getRelatedEvents(node.id);
+        for (final event in nodeEvents) {
+          if (!eventIds.contains(event.id)) {
+            relatedEvents.add(event);
+            eventIds.add(event.id);
+          }
+        }
+      }
+
+      // 3. 按时间排序，最近的在前
+      relatedEvents.sort((a, b) {
+        final timeA = a.startTime?.millisecondsSinceEpoch ?? a.lastUpdated.millisecondsSinceEpoch;
+        final timeB = b.startTime?.millisecondsSinceEpoch ?? b.lastUpdated.millisecondsSinceEpoch;
+        return timeB.compareTo(timeA);
+      });
+
+      print('[KnowledgeGraphService] 📊 上下文查找结果: ${relatedNodes.length}个相关节点, ${relatedEvents.length}个相关事件');
+
+      return {
+        'related_nodes': relatedNodes.take(10).toList(), // 限制数量避免过多
+        'related_events': relatedEvents.take(15).toList(),
+        'analysis_entities': entities,
+        'analysis_events': events,
+        'context_summary': _summarizeContext(relatedNodes, relatedEvents, entities, events),
+      };
+
+    } catch (e) {
+      print('[KnowledgeGraphService] ❌ 获取分析上下文失败: $e');
+      return {
+        'related_nodes': <Node>[],
+        'related_events': <EventNode>[],
+        'analysis_entities': [],
+        'analysis_events': [],
+        'context_summary': '',
+        'error': e.toString(),
+      };
+    }
+  }
+
+  // 🔥 新增：总结上下文信息
+  static String _summarizeContext(
+    List<Node> relatedNodes,
+    List<EventNode> relatedEvents,
+    List<dynamic> analysisEntities,
+    List<dynamic> analysisEvents
+  ) {
+    final summary = StringBuffer();
+
+    // 当前分析到的内容
+    if (analysisEntities.isNotEmpty || analysisEvents.isNotEmpty) {
+      summary.write('当前对话涉及: ');
+      if (analysisEntities.isNotEmpty) {
+        summary.write('${analysisEntities.length}个实体 ');
+      }
+      if (analysisEvents.isNotEmpty) {
+        summary.write('${analysisEvents.length}个事件 ');
+      }
+    }
+
+    // 历史相关内容
+    if (relatedNodes.isNotEmpty || relatedEvents.isNotEmpty) {
+      if (summary.isNotEmpty) summary.write('; ');
+      summary.write('历史相关: ');
+
+      if (relatedNodes.isNotEmpty) {
+        final nodesByType = <String, List<Node>>{};
+        for (final node in relatedNodes.take(5)) { // 限制显示数量
+          nodesByType.putIfAbsent(node.type, () => []).add(node);
+        }
+
+        final nodeTypesSummary = nodesByType.entries
+            .map((e) => '${e.key}(${e.value.length}个)')
+            .join('、');
+        summary.write('$nodeTypesSummary ');
+      }
+
+      if (relatedEvents.isNotEmpty) {
+        final eventsByType = <String, List<EventNode>>{};
+        for (final event in relatedEvents.take(5)) { // 限制显示数量
+          eventsByType.putIfAbsent(event.type, () => []).add(event);
+        }
+
+        final eventTypesSummary = eventsByType.entries
+            .map((e) => '${e.key}事件(${e.value.length}个)')
+            .join('、');
+        summary.write('$eventTypesSummary');
+      }
+    }
+
+    return summary.toString().isEmpty ? '未找到相关历史信息' : summary.toString();
   }
 }
