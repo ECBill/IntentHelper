@@ -1,6 +1,5 @@
 import 'package:flutter/material.dart';
 import 'package:flutter_screenutil/flutter_screenutil.dart';
-import 'package:app/services/chat_manager.dart';
 import 'package:app/services/objectbox_service.dart';
 import 'package:app/services/knowledge_graph_service.dart';
 import 'package:app/models/graph_models.dart';
@@ -16,13 +15,10 @@ class KGTestPage extends StatefulWidget {
 
 class _KGTestPageState extends State<KGTestPage> with TickerProviderStateMixin {
   late TabController _tabController;
-  final TextEditingController _inputController = TextEditingController();
   final TextEditingController _searchController = TextEditingController();
-  final ChatManager _chatManager = ChatManager();
 
   String _result = '';
   List<Node> _allNodes = [];
-  List<Edge> _allEdges = [];
   List<EventNode> _allEventNodes = [];
   List<EventEntityRelation> _allEventRelations = [];
   bool _isLoading = false;
@@ -39,7 +35,6 @@ class _KGTestPageState extends State<KGTestPage> with TickerProviderStateMixin {
     super.initState();
     _tabController = TabController(length: 4, vsync: this);
     _loadKGData();
-    _initChatManager();
 
     // 默认设置为最近一周
     _selectedEndDate = DateTime.now();
@@ -49,17 +44,8 @@ class _KGTestPageState extends State<KGTestPage> with TickerProviderStateMixin {
   @override
   void dispose() {
     _tabController.dispose();
-    _inputController.dispose();
     _searchController.dispose();
     super.dispose();
-  }
-
-  Future<void> _initChatManager() async {
-    try {
-      await _chatManager.init(selectedModel: 'gpt-4o-mini', systemPrompt: '你是一个知识图谱测试助手');
-    } catch (e) {
-      print('初始化ChatManager失败: $e');
-    }
   }
 
   Future<void> _loadKGData() async {
@@ -67,7 +53,6 @@ class _KGTestPageState extends State<KGTestPage> with TickerProviderStateMixin {
     try {
       final objectBox = ObjectBoxService();
       _allNodes = objectBox.queryNodes();
-      _allEdges = objectBox.queryEdges();
       _allEventNodes = objectBox.queryEventNodes();
       _allEventRelations = objectBox.queryEventEntityRelations();
     } catch (e) {
@@ -86,10 +71,10 @@ class _KGTestPageState extends State<KGTestPage> with TickerProviderStateMixin {
           controller: _tabController,
           isScrollable: true,
           tabs: [
-            Tab(text: '对话测试'),
             Tab(text: '数据浏览'),
             Tab(text: '图谱维护'),
-            Tab(text: '性能分析'),
+            Tab(text: '数据验证'),
+            Tab(text: '图谱清理'),
           ],
         ),
         actions: [
@@ -104,113 +89,16 @@ class _KGTestPageState extends State<KGTestPage> with TickerProviderStateMixin {
           : TabBarView(
               controller: _tabController,
               children: [
-                _buildConversationTestTab(),
                 _buildDataBrowseTab(),
                 _buildMaintenanceTab(),
-                _buildAnalysisTab(),
+                _buildValidationTab(),
+                _buildCleanupTab(),
               ],
             ),
     );
   }
 
-  // Tab 1: 对话测试 - 测试知识图谱抽取功能
-  Widget _buildConversationTestTab() {
-    return Padding(
-      padding: EdgeInsets.all(16.w),
-      child: Column(
-        crossAxisAlignment: CrossAxisAlignment.start,
-        children: [
-          Text('测试对话知识图谱抽取', style: TextStyle(fontSize: 18.sp, fontWeight: FontWeight.bold)),
-          SizedBox(height: 16.h),
-
-          // 预设测试用例
-          Text('快速测试用例：', style: TextStyle(fontSize: 14.sp, fontWeight: FontWeight.bold)),
-          SizedBox(height: 8.h),
-          Wrap(
-            spacing: 8.w,
-            children: [
-              _buildTestCaseChip('我今天去苹果店买了一台iPhone 15 Pro'),
-              _buildTestCaseChip('明天下午2点要和张总开会讨论新项目'),
-              _buildTestCaseChip('我用ChatGPT写了一个Flutter应用'),
-              _buildTestCaseChip('周末计划和朋友去看电影《沙丘2》'),
-            ],
-          ),
-
-          SizedBox(height: 16.h),
-
-          // 输入框
-          TextField(
-            controller: _inputController,
-            maxLines: 4,
-            decoration: InputDecoration(
-              labelText: '输入测试对话',
-              hintText: '输入一段对话，测试知识图谱抽取效果...',
-              border: OutlineInputBorder(),
-            ),
-          ),
-          SizedBox(height: 16.h),
-
-          // 操作按钮
-          Row(
-            children: [
-              ElevatedButton.icon(
-                onPressed: _isLoading ? null : _testKGExtraction,
-                icon: Icon(Icons.psychology),
-                label: Text('测试抽取'),
-              ),
-              SizedBox(width: 8.w),
-              ElevatedButton.icon(
-                onPressed: _isLoading ? null : _testChatWithKG,
-                icon: Icon(Icons.chat),
-                label: Text('测试对话'),
-              ),
-              SizedBox(width: 8.w),
-              OutlinedButton(
-                onPressed: () {
-                  _inputController.clear();
-                  setState(() => _result = '');
-                },
-                child: Text('清空'),
-              ),
-            ],
-          ),
-
-          SizedBox(height: 16.h),
-
-          // 结果显示
-          if (_result.isNotEmpty) ...[
-            Text('测试结果：', style: TextStyle(fontSize: 14.sp, fontWeight: FontWeight.bold)),
-            SizedBox(height: 8.h),
-            Expanded(
-              child: Container(
-                width: double.infinity,
-                padding: EdgeInsets.all(12.w),
-                decoration: BoxDecoration(
-                  border: Border.all(color: Colors.grey[300]!),
-                  borderRadius: BorderRadius.circular(8.r),
-                  color: Colors.grey[50],
-                ),
-                child: SingleChildScrollView(
-                  child: Text(_result, style: TextStyle(fontSize: 12.sp)),
-                ),
-              ),
-            ),
-          ],
-        ],
-      ),
-    );
-  }
-
-  Widget _buildTestCaseChip(String text) {
-    return ActionChip(
-      label: Text(text, style: TextStyle(fontSize: 11.sp)),
-      onPressed: () {
-        _inputController.text = text;
-      },
-    );
-  }
-
-  // Tab 2: 数据浏览 - 浏览现有的知识图谱数据
+  // Tab 1: 数据浏览 - 类似knowledge_graph_page的展示方式
   Widget _buildDataBrowseTab() {
     return Column(
       children: [
@@ -241,10 +129,9 @@ class _KGTestPageState extends State<KGTestPage> with TickerProviderStateMixin {
           child: Row(
             mainAxisAlignment: MainAxisAlignment.spaceAround,
             children: [
-              _buildStatItem('实体', _allNodes.length, Icons.account_circle),
-              _buildStatItem('关系', _allEdges.length, Icons.link),
               _buildStatItem('事件', _allEventNodes.length, Icons.event),
-              _buildStatItem('事件关系', _allEventRelations.length, Icons.hub),
+              _buildStatItem('实体', _allNodes.length, Icons.account_circle),
+              _buildStatItem('关联关系', _allEventRelations.length, Icons.hub),
             ],
           ),
         ),
@@ -259,15 +146,15 @@ class _KGTestPageState extends State<KGTestPage> with TickerProviderStateMixin {
               children: [
                 TabBar(
                   tabs: [
-                    Tab(text: '实体 (${_filteredNodes.length})'),
                     Tab(text: '事件 (${_filteredEvents.length})'),
+                    Tab(text: '实体 (${_filteredNodes.length})'),
                   ],
                 ),
                 Expanded(
                   child: TabBarView(
                     children: [
-                      _buildNodesList(),
                       _buildEventsList(),
+                      _buildNodesList(),
                     ],
                   ),
                 ),
@@ -307,16 +194,150 @@ class _KGTestPageState extends State<KGTestPage> with TickerProviderStateMixin {
     ).toList();
   }
 
+  Widget _buildEventsList() {
+    if (_filteredEvents.isEmpty) {
+      return _buildEmptyState(
+        icon: Icons.event_busy,
+        title: '暂无事件记录',
+        subtitle: '与AI聊天后，事件会自动记录到知识图谱中',
+      );
+    }
+
+    // 按时间排序
+    final sortedEvents = List<EventNode>.from(_filteredEvents);
+    sortedEvents.sort((a, b) {
+      final timeA = a.startTime ?? a.lastUpdated;
+      final timeB = b.startTime ?? b.lastUpdated;
+      return timeB.compareTo(timeA);
+    });
+
+    return ListView.builder(
+      padding: EdgeInsets.all(16.w),
+      itemCount: sortedEvents.length,
+      itemBuilder: (context, index) => _buildEventCard(sortedEvents[index]),
+    );
+  }
+
+  Widget _buildEventCard(EventNode event) {
+    // 获取参与的实体
+    final participantRelations = _allEventRelations
+        .where((r) => r.eventId == event.id)
+        .toList();
+
+    final participants = participantRelations
+        .map((r) => _allNodes.firstWhere(
+            (e) => e.id == r.entityId,
+            orElse: () => Node(id: r.entityId, name: r.entityId, type: '未知')))
+        .toList();
+
+    return Card(
+      margin: EdgeInsets.only(bottom: 16.h),
+      child: InkWell(
+        onTap: () => _showEventDetails(event, participants),
+        child: Padding(
+          padding: EdgeInsets.all(16.w),
+          child: Column(
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              // 事件标题和类型
+              Row(
+                children: [
+                  Container(
+                    padding: EdgeInsets.symmetric(horizontal: 8.w, vertical: 4.h),
+                    decoration: BoxDecoration(
+                      color: _getEventTypeColor(event.type),
+                      borderRadius: BorderRadius.circular(12.r),
+                    ),
+                    child: Text(
+                      event.type,
+                      style: TextStyle(color: Colors.white, fontSize: 12.sp),
+                    ),
+                  ),
+                  SizedBox(width: 12.w),
+                  Expanded(
+                    child: Text(
+                      event.name,
+                      style: TextStyle(fontSize: 16.sp, fontWeight: FontWeight.bold),
+                    ),
+                  ),
+                  if (event.startTime != null)
+                    Text(
+                      DateFormat('MM/dd HH:mm').format(event.startTime!),
+                      style: TextStyle(color: Colors.grey[600], fontSize: 12.sp),
+                    ),
+                ],
+              ),
+
+              if (event.description != null) ...[
+                SizedBox(height: 8.h),
+                Text(
+                  event.description!,
+                  style: TextStyle(color: Colors.grey[700]),
+                  maxLines: 2,
+                  overflow: TextOverflow.ellipsis,
+                ),
+              ],
+
+              // 地点和目的
+              if (event.location != null || event.purpose != null) ...[
+                SizedBox(height: 8.h),
+                Row(
+                  children: [
+                    if (event.location != null) ...[
+                      Icon(Icons.location_on, size: 16, color: Colors.grey[600]),
+                      SizedBox(width: 4.w),
+                      Text(event.location!, style: TextStyle(fontSize: 12.sp, color: Colors.grey[600])),
+                      SizedBox(width: 16.w),
+                    ],
+                    if (event.purpose != null) ...[
+                      Icon(Icons.flag, size: 16, color: Colors.grey[600]),
+                      SizedBox(width: 4.w),
+                      Expanded(
+                        child: Text(
+                          event.purpose!,
+                          style: TextStyle(fontSize: 12.sp, color: Colors.grey[600]),
+                          overflow: TextOverflow.ellipsis,
+                        ),
+                      ),
+                    ],
+                  ],
+                ),
+              ],
+
+              // 参与者
+              if (participants.isNotEmpty) ...[
+                SizedBox(height: 8.h),
+                Wrap(
+                  spacing: 4.w,
+                  children: participants.take(3).map((participant) =>
+                    Chip(
+                      label: Text(participant.name, style: TextStyle(fontSize: 10.sp)),
+                      materialTapTargetSize: MaterialTapTargetSize.shrinkWrap,
+                      visualDensity: VisualDensity.compact,
+                    )
+                  ).toList()
+                    ..addAll(participants.length > 3 ? [
+                      Chip(
+                        label: Text('+${participants.length - 3}', style: TextStyle(fontSize: 10.sp)),
+                        materialTapTargetSize: MaterialTapTargetSize.shrinkWrap,
+                        visualDensity: VisualDensity.compact,
+                      )
+                    ] : []),
+                ),
+              ],
+            ],
+          ),
+        ),
+      ),
+    );
+  }
+
   Widget _buildNodesList() {
     if (_filteredNodes.isEmpty) {
-      return Center(
-        child: Column(
-          mainAxisAlignment: MainAxisAlignment.center,
-          children: [
-            Icon(Icons.search_off, size: 64, color: Colors.grey),
-            Text('没有找到匹配的实体'),
-          ],
-        ),
+      return _buildEmptyState(
+        icon: Icons.search_off,
+        title: '没有找到匹配的实体',
+        subtitle: '尝试使用不同的搜索关键词',
       );
     }
 
@@ -325,25 +346,38 @@ class _KGTestPageState extends State<KGTestPage> with TickerProviderStateMixin {
       itemCount: _filteredNodes.length,
       itemBuilder: (context, index) {
         final node = _filteredNodes[index];
+        final relatedEventCount = _allEventRelations
+            .where((r) => r.entityId == node.id)
+            .length;
+
         return Card(
           margin: EdgeInsets.only(bottom: 8.h),
-          child: ListTile(
-            leading: CircleAvatar(
-              backgroundColor: _getEntityTypeColor(node.type),
-              child: Text(node.type[0], style: TextStyle(color: Colors.white)),
-            ),
-            title: Text(node.name),
-            subtitle: Column(
-              crossAxisAlignment: CrossAxisAlignment.start,
-              children: [
-                Text('类型: ${node.type}'),
-                if (node.attributes.isNotEmpty)
-                  Text('属性: ${node.attributes.entries.take(2).map((e) => '${e.key}: ${e.value}').join(', ')}'),
-              ],
-            ),
-            trailing: IconButton(
-              icon: Icon(Icons.info_outline),
-              onPressed: () => _showNodeDetails(node),
+          child: InkWell(
+            onTap: () => _showEntityDetails(node),
+            child: ListTile(
+              leading: Container(
+                padding: EdgeInsets.all(8.w),
+                decoration: BoxDecoration(
+                  color: _getEntityTypeColor(node.type),
+                  borderRadius: BorderRadius.circular(8.r),
+                ),
+                child: Icon(
+                  _getEntityTypeIcon(node.type),
+                  color: Colors.white,
+                  size: 20,
+                ),
+              ),
+              title: Text(node.name),
+              subtitle: Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  Text('类型: ${node.type}'),
+                  Text('关联事件: $relatedEventCount 个'),
+                  if (node.attributes.isNotEmpty)
+                    Text('属性: ${node.attributes.entries.take(2).map((e) => '${e.key}: ${e.value}').join(', ')}'),
+                ],
+              ),
+              trailing: Icon(Icons.arrow_forward_ios, size: 16),
             ),
           ),
         );
@@ -351,53 +385,240 @@ class _KGTestPageState extends State<KGTestPage> with TickerProviderStateMixin {
     );
   }
 
-  Widget _buildEventsList() {
-    if (_filteredEvents.isEmpty) {
-      return Center(
-        child: Column(
-          mainAxisAlignment: MainAxisAlignment.center,
-          children: [
-            Icon(Icons.event_busy, size: 64, color: Colors.grey),
-            Text('没有找到匹配的事件'),
-          ],
+  Widget _buildEmptyState({
+    required IconData icon,
+    required String title,
+    required String subtitle,
+  }) {
+    return Center(
+      child: Column(
+        mainAxisAlignment: MainAxisAlignment.center,
+        children: [
+          Icon(icon, size: 64, color: Colors.grey[400]),
+          SizedBox(height: 16.h),
+          Text(title, style: TextStyle(fontSize: 18.sp, color: Colors.grey[600])),
+          SizedBox(height: 8.h),
+          Text(subtitle, style: TextStyle(fontSize: 14.sp, color: Colors.grey[500])),
+        ],
+      ),
+    );
+  }
+
+  void _showEventDetails(EventNode event, List<Node> participants) {
+    showModalBottomSheet(
+      context: context,
+      isScrollControlled: true,
+      builder: (context) => DraggableScrollableSheet(
+        expand: false,
+        initialChildSize: 0.6,
+        minChildSize: 0.3,
+        maxChildSize: 0.9,
+        builder: (context, scrollController) => Container(
+          padding: EdgeInsets.all(16.w),
+          child: ListView(
+            controller: scrollController,
+            children: [
+              Text(event.name, style: TextStyle(fontSize: 20.sp, fontWeight: FontWeight.bold)),
+              SizedBox(height: 8.h),
+              if (event.description != null)
+                Text(event.description!, style: TextStyle(color: Colors.grey[700])),
+              SizedBox(height: 16.h),
+              _buildDetailRow('类型', event.type),
+              if (event.location != null) _buildDetailRow('地点', event.location!),
+              if (event.purpose != null) _buildDetailRow('目的', event.purpose!),
+              if (event.result != null) _buildDetailRow('结果', event.result!),
+              if (event.startTime != null)
+                _buildDetailRow('时间', DateFormat('yyyy-MM-dd HH:mm').format(event.startTime!)),
+              SizedBox(height: 16.h),
+              Text('参与实体', style: TextStyle(fontWeight: FontWeight.bold)),
+              SizedBox(height: 8.h),
+              ...participants.map((p) => ListTile(
+                dense: true,
+                leading: Container(
+                  width: 8.w,
+                  height: 8.h,
+                  decoration: BoxDecoration(
+                    color: _getEntityTypeColor(p.type),
+                    shape: BoxShape.circle,
+                  ),
+                ),
+                title: Text(p.name),
+                subtitle: Text(p.type),
+              )),
+            ],
+          ),
         ),
-      );
-    }
-
-    return ListView.builder(
-      padding: EdgeInsets.all(16.w),
-      itemCount: _filteredEvents.length,
-      itemBuilder: (context, index) {
-        final event = _filteredEvents[index];
-        return Card(
-          margin: EdgeInsets.only(bottom: 8.h),
-          child: ListTile(
-            leading: CircleAvatar(
-              backgroundColor: _getEventTypeColor(event.type),
-              child: Icon(Icons.event, color: Colors.white, size: 20),
-            ),
-            title: Text(event.name),
-            subtitle: Column(
-              crossAxisAlignment: CrossAxisAlignment.start,
-              children: [
-                Text('类型: ${event.type}'),
-                if (event.startTime != null)
-                  Text('时间: ${DateFormat('MM-dd HH:mm').format(event.startTime!)}'),
-                if (event.location != null)
-                  Text('地点: ${event.location}'),
-              ],
-            ),
-            trailing: IconButton(
-              icon: Icon(Icons.info_outline),
-              onPressed: () => _showEventDetails(event),
-            ),
-          ),
-        );
-      },
+      ),
     );
   }
 
-  // Tab 3: 图谱维护 - 手动整理知识图谱
+  void _showEntityDetails(Node entity) {
+    // 查找与该实体相关的所有事件
+    final relatedEventRelations = _allEventRelations
+        .where((r) => r.entityId == entity.id)
+        .toList();
+
+    final relatedEvents = relatedEventRelations
+        .map((r) => _allEventNodes.firstWhere(
+            (e) => e.id == r.eventId,
+            orElse: () => EventNode(id: r.eventId, name: '未知事件', type: '未知')))
+        .toList();
+
+    showModalBottomSheet(
+      context: context,
+      isScrollControlled: true,
+      builder: (context) => DraggableScrollableSheet(
+        expand: false,
+        initialChildSize: 0.6,
+        minChildSize: 0.3,
+        maxChildSize: 0.9,
+        builder: (context, scrollController) => Container(
+          padding: EdgeInsets.all(16.w),
+          child: ListView(
+            controller: scrollController,
+            children: [
+              // 实体信息
+              Row(
+                children: [
+                  Container(
+                    padding: EdgeInsets.all(8.w),
+                    decoration: BoxDecoration(
+                      color: _getEntityTypeColor(entity.type),
+                      borderRadius: BorderRadius.circular(8.r),
+                    ),
+                    child: Icon(
+                      _getEntityTypeIcon(entity.type),
+                      color: Colors.white,
+                      size: 20,
+                    ),
+                  ),
+                  SizedBox(width: 12.w),
+                  Expanded(
+                    child: Column(
+                      crossAxisAlignment: CrossAxisAlignment.start,
+                      children: [
+                        Text(
+                          entity.name,
+                          style: TextStyle(fontSize: 18.sp, fontWeight: FontWeight.bold),
+                        ),
+                        Text(
+                          entity.type,
+                          style: TextStyle(fontSize: 14.sp, color: Colors.grey[600]),
+                        ),
+                      ],
+                    ),
+                  ),
+                ],
+              ),
+
+              SizedBox(height: 16.h),
+
+              // 属性信息
+              if (entity.attributes.isNotEmpty) ...[
+                Text('属性信息', style: TextStyle(fontWeight: FontWeight.bold)),
+                SizedBox(height: 8.h),
+                ...entity.attributes.entries.map((attr) =>
+                  Padding(
+                    padding: EdgeInsets.symmetric(vertical: 2.h),
+                    child: Row(
+                      children: [
+                        Text('${attr.key}: ', style: TextStyle(color: Colors.grey[600])),
+                        Expanded(child: Text(attr.value)),
+                      ],
+                    ),
+                  )
+                ),
+                SizedBox(height: 16.h),
+              ],
+
+              // 相关事件
+              Text('相关事件 (${relatedEvents.length})', style: TextStyle(fontWeight: FontWeight.bold)),
+              SizedBox(height: 8.h),
+              if (relatedEvents.isEmpty) ...[
+                Container(
+                  padding: EdgeInsets.all(16.w),
+                  decoration: BoxDecoration(
+                    color: Colors.grey[100],
+                    borderRadius: BorderRadius.circular(8.r),
+                  ),
+                  child: Text(
+                    '该实体暂未关联任何事件',
+                    style: TextStyle(color: Colors.grey[600]),
+                    textAlign: TextAlign.center,
+                  ),
+                ),
+              ] else ...[
+                ...relatedEvents.asMap().entries.map((entry) {
+                  final index = entry.key;
+                  final event = entry.value;
+                  final relation = relatedEventRelations[index];
+
+                  return Card(
+                    margin: EdgeInsets.only(bottom: 8.h),
+                    child: ListTile(
+                      leading: Container(
+                        padding: EdgeInsets.all(4.w),
+                        decoration: BoxDecoration(
+                          color: _getEventTypeColor(event.type),
+                          borderRadius: BorderRadius.circular(4.r),
+                        ),
+                        child: Icon(Icons.event, color: Colors.white, size: 16),
+                      ),
+                      title: Text(event.name),
+                      subtitle: Text('${event.type} • ${relation.role}'),
+                      trailing: event.startTime != null
+                        ? Text(
+                            DateFormat('MM/dd').format(event.startTime!),
+                            style: TextStyle(fontSize: 11.sp, color: Colors.grey[600]),
+                          )
+                        : null,
+                      onTap: () {
+                        Navigator.pop(context);
+                        final participants = [entity]; // 至少包含当前实体
+                        _showEventDetails(event, participants);
+                      },
+                    ),
+                  );
+                }),
+              ],
+            ],
+          ),
+        ),
+      ),
+    );
+  }
+
+  Widget _buildDetailRow(String label, String value) {
+    return Padding(
+      padding: EdgeInsets.symmetric(vertical: 4.h),
+      child: Row(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          SizedBox(
+            width: 60.w,
+            child: Text(label, style: TextStyle(color: Colors.grey[600])),
+          ),
+          Expanded(child: Text(value)),
+        ],
+      ),
+    );
+  }
+
+  IconData _getEntityTypeIcon(String type) {
+    switch (type.toLowerCase()) {
+      case '人': case 'person': case '人物': return Icons.person;
+      case '地点': case 'location': return Icons.location_on;
+      case '工具': case 'tool': return Icons.build;
+      case '物品': case 'item': return Icons.inventory;
+      case '概念': case 'concept': return Icons.lightbulb;
+      case '组织': case 'organization': return Icons.business;
+      case '技能': case 'skill': return Icons.star;
+      case '状态': case 'state': return Icons.circle;
+      default: return Icons.help_outline;
+    }
+  }
+
+  // Tab 2: 图谱维护 - 手动整理知识图谱
   Widget _buildMaintenanceTab() {
     return Padding(
       padding: EdgeInsets.all(16.w),
@@ -841,201 +1062,385 @@ class _KGTestPageState extends State<KGTestPage> with TickerProviderStateMixin {
     );
   }
 
-  // Tab 4: 性能分析
-  Widget _buildAnalysisTab() {
+  // Tab 3: 数据验证 - 改为图谱分析
+  Widget _buildValidationTab() {
     return Padding(
       padding: EdgeInsets.all(16.w),
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
-          Text('知识图谱性能分析', style: TextStyle(fontSize: 18.sp, fontWeight: FontWeight.bold)),
+          Text('图谱分析与统计', style: TextStyle(fontSize: 18.sp, fontWeight: FontWeight.bold)),
           SizedBox(height: 16.h),
 
-          _buildAnalysisCard('实体类型分布', _buildEntityTypeAnalysis()),
+          // 功能按钮组
+          Wrap(
+            spacing: 8.w,
+            runSpacing: 8.h,
+            children: [
+              ElevatedButton.icon(
+                onPressed: _analyzeGraphStructure,
+                icon: Icon(Icons.analytics),
+                label: Text('结构分析'),
+              ),
+              ElevatedButton.icon(
+                onPressed: _analyzeEntityRelations,
+                icon: Icon(Icons.hub),
+                label: Text('实体关联分析'),
+              ),
+              ElevatedButton.icon(
+                onPressed: _analyzeTimePatterns,
+                icon: Icon(Icons.timeline),
+                label: Text('时间模式分析'),
+              ),
+              ElevatedButton.icon(
+                onPressed: _validateGraphIntegrity,
+                icon: Icon(Icons.check_circle),
+                label: Text('完整性检查'),
+              ),
+            ],
+          ),
+
           SizedBox(height: 16.h),
-          _buildAnalysisCard('事件类型分布', _buildEventTypeAnalysis()),
+
+          // 实时统计面板
+          _buildRealTimeStats(),
+
           SizedBox(height: 16.h),
-          _buildAnalysisCard('连接度分析', _buildConnectivityAnalysis()),
+
+          // 结果显示
+          if (_result.isNotEmpty) ...[
+            Text('分析结果：', style: TextStyle(fontSize: 14.sp, fontWeight: FontWeight.bold)),
+            SizedBox(height: 8.h),
+            Expanded(
+              child: Container(
+                width: double.infinity,
+                padding: EdgeInsets.all(12.w),
+                decoration: BoxDecoration(
+                  border: Border.all(color: Colors.grey[300]!),
+                  borderRadius: BorderRadius.circular(8.r),
+                  color: Colors.grey[50],
+                ),
+                child: SingleChildScrollView(
+                  child: Text(_result, style: TextStyle(fontSize: 12.sp)),
+                ),
+              ),
+            ),
+          ],
         ],
       ),
     );
   }
 
-  Widget _buildAnalysisCard(String title, Widget content) {
-    return Card(
-      child: Padding(
-        padding: EdgeInsets.all(16.w),
-        child: Column(
-          crossAxisAlignment: CrossAxisAlignment.start,
-          children: [
-            Text(title, style: TextStyle(fontSize: 16.sp, fontWeight: FontWeight.bold)),
-            SizedBox(height: 12.h),
-            content,
-          ],
-        ),
+  Widget _buildRealTimeStats() {
+    return Container(
+      padding: EdgeInsets.all(12.w),
+      decoration: BoxDecoration(
+        color: Colors.blue[50],
+        borderRadius: BorderRadius.circular(8.r),
+        border: Border.all(color: Colors.blue[200]!),
+      ),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Text('实时统计', style: TextStyle(fontWeight: FontWeight.bold, fontSize: 14.sp)),
+          SizedBox(height: 8.h),
+          Row(
+            children: [
+              Expanded(
+                child: _buildQuickStat('事件节点', _allEventNodes.length, Icons.event, Colors.blue),
+              ),
+              Expanded(
+                child: _buildQuickStat('实体节点', _allNodes.length, Icons.account_circle, Colors.green),
+              ),
+            ],
+          ),
+          SizedBox(height: 8.h),
+          Row(
+            children: [
+              Expanded(
+                child: _buildQuickStat('关联关系', _allEventRelations.length, Icons.link, Colors.orange),
+              ),
+              Expanded(
+                child: _buildQuickStat('孤立实体', _getOrphanedEntitiesCount(), Icons.warning, Colors.red),
+              ),
+            ],
+          ),
+          SizedBox(height: 8.h),
+          _buildGraphDensityIndicator(),
+        ],
       ),
     );
   }
 
-  Widget _buildEntityTypeAnalysis() {
-    final typeStats = <String, int>{};
-    for (final node in _allNodes) {
-      typeStats[node.type] = (typeStats[node.type] ?? 0) + 1;
-    }
+  Widget _buildQuickStat(String label, int value, IconData icon, Color color) {
+    return Container(
+      margin: EdgeInsets.symmetric(horizontal: 4.w),
+      padding: EdgeInsets.all(8.w),
+      decoration: BoxDecoration(
+        color: Colors.white,
+        borderRadius: BorderRadius.circular(6.r),
+        border: Border.all(color: color.withOpacity(0.3)),
+      ),
+      child: Column(
+        children: [
+          Icon(icon, color: color, size: 20),
+          SizedBox(height: 4.h),
+          Text(value.toString(), style: TextStyle(fontSize: 16.sp, fontWeight: FontWeight.bold)),
+          Text(label, style: TextStyle(fontSize: 10.sp, color: Colors.grey[600])),
+        ],
+      ),
+    );
+  }
 
-    if (typeStats.isEmpty) {
-      return Text('暂无数据');
-    }
+  Widget _buildGraphDensityIndicator() {
+    final density = _calculateGraphDensity();
+    final densityText = density > 0.7 ? '密集' : density > 0.4 ? '适中' : '稀疏';
+    final densityColor = density > 0.7 ? Colors.red : density > 0.4 ? Colors.orange : Colors.green;
 
-    return Column(
-      children: typeStats.entries.map((entry) =>
-        Padding(
-          padding: EdgeInsets.symmetric(vertical: 4.h),
-          child: Row(
-            children: [
-              Container(
-                width: 12.w,
-                height: 12.h,
-                decoration: BoxDecoration(
-                  color: _getEntityTypeColor(entry.key),
-                  shape: BoxShape.circle,
-                ),
-              ),
-              SizedBox(width: 8.w),
-              Text(entry.key),
-              Spacer(),
-              Text('${entry.value}'),
-            ],
+    return Container(
+      padding: EdgeInsets.all(8.w),
+      decoration: BoxDecoration(
+        color: Colors.white,
+        borderRadius: BorderRadius.circular(6.r),
+      ),
+      child: Row(
+        children: [
+          Icon(Icons.device_hub, color: densityColor, size: 20),
+          SizedBox(width: 8.w),
+          Text('图谱密度: ', style: TextStyle(fontSize: 12.sp)),
+          Container(
+            padding: EdgeInsets.symmetric(horizontal: 8.w, vertical: 2.h),
+            decoration: BoxDecoration(
+              color: densityColor.withOpacity(0.2),
+              borderRadius: BorderRadius.circular(10.r),
+            ),
+            child: Text(
+              '$densityText (${(density * 100).toStringAsFixed(1)}%)',
+              style: TextStyle(fontSize: 11.sp, color: densityColor, fontWeight: FontWeight.bold),
+            ),
           ),
-        )
-      ).toList(),
+        ],
+      ),
     );
   }
 
-  Widget _buildEventTypeAnalysis() {
-    final typeStats = <String, int>{};
-    for (final event in _allEventNodes) {
-      typeStats[event.type] = (typeStats[event.type] ?? 0) + 1;
-    }
-
-    if (typeStats.isEmpty) {
-      return Text('暂无数据');
-    }
-
-    return Column(
-      children: typeStats.entries.map((entry) =>
-        Padding(
-          padding: EdgeInsets.symmetric(vertical: 4.h),
-          child: Row(
-            children: [
-              Container(
-                width: 12.w,
-                height: 12.h,
-                decoration: BoxDecoration(
-                  color: _getEventTypeColor(entry.key),
-                  shape: BoxShape.circle,
-                ),
-              ),
-              SizedBox(width: 8.w),
-              Text(entry.key),
-              Spacer(),
-              Text('${entry.value}'),
-            ],
-          ),
-        )
-      ).toList(),
-    );
+  int _getOrphanedEntitiesCount() {
+    return _allNodes.where((node) =>
+      !_allEventRelations.any((rel) => rel.entityId == node.id)
+    ).length;
   }
 
-  Widget _buildConnectivityAnalysis() {
-    final entityConnections = <String, int>{};
-    for (final relation in _allEventRelations) {
-      entityConnections[relation.entityId] = (entityConnections[relation.entityId] ?? 0) + 1;
-    }
-
-    final avgConnections = entityConnections.isEmpty ? 0 :
-        entityConnections.values.reduce((a, b) => a + b) / entityConnections.length;
-
-    final maxConnections = entityConnections.isEmpty ? 0 :
-        entityConnections.values.reduce((a, b) => a > b ? a : b);
-
-    return Column(
-      crossAxisAlignment: CrossAxisAlignment.start,
-      children: [
-        Text('平均连接度: ${avgConnections.toStringAsFixed(1)}'),
-        Text('最大连接度: $maxConnections'),
-        Text('已连接实体: ${entityConnections.length}'),
-        Text('孤立实体: ${_allNodes.length - entityConnections.length}'),
-      ],
-    );
+  double _calculateGraphDensity() {
+    if (_allNodes.isEmpty || _allEventNodes.isEmpty) return 0.0;
+    final maxPossibleRelations = _allNodes.length * _allEventNodes.length;
+    return _allEventRelations.length / maxPossibleRelations;
   }
 
-  // 测试功能实现
-  Future<void> _testKGExtraction() async {
-    if (_inputController.text.trim().isEmpty) {
-      setState(() => _result = '请输入测试文本');
-      return;
-    }
-
+  Future<void> _analyzeGraphStructure() async {
     setState(() => _isLoading = true);
     try {
-      final startTime = DateTime.now();
+      final buffer = StringBuffer();
+      buffer.writeln('📊 知识图谱结构分析报告\n');
+      buffer.writeln('=' * 40);
 
-      // 调用知识图谱抽取
-      await KnowledgeGraphService.processEventsFromConversation(
-        _inputController.text,
-        contextId: 'test_${startTime.millisecondsSinceEpoch}',
-        conversationTime: startTime,
-      );
+      // 基础统计
+      buffer.writeln('\n🔢 基础统计:');
+      buffer.writeln('• 事件节点: ${_allEventNodes.length} 个');
+      buffer.writeln('• 实体节点: ${_allNodes.length} 个');
+      buffer.writeln('• 关联关系: ${_allEventRelations.length} 个');
 
-      final endTime = DateTime.now();
-      final duration = endTime.difference(startTime);
+      // 事件类型分布
+      final eventTypeStats = <String, int>{};
+      for (final event in _allEventNodes) {
+        eventTypeStats[event.type] = (eventTypeStats[event.type] ?? 0) + 1;
+      }
 
-      // 重新加载数据
-      await _loadKGData();
+      buffer.writeln('\n📋 事件类型分布:');
+      eventTypeStats.entries.toList()
+        ..sort((a, b) => b.value.compareTo(a.value))
+        ..forEach((entry) {
+          buffer.writeln('• ${entry.key}: ${entry.value} 个');
+        });
 
-      setState(() {
-        _result = '''测试完成！
-        
-处理时间: ${duration.inMilliseconds}ms
-        
-抽取的数据已保存到知识图谱中。
-请切换到"数据浏览"标签查看结果。
+      // 实体类型分布
+      final entityTypeStats = <String, int>{};
+      for (final entity in _allNodes) {
+        entityTypeStats[entity.type] = (entityTypeStats[entity.type] ?? 0) + 1;
+      }
 
-统计信息:
-- 总实体数: ${_allNodes.length}
-- 总事件数: ${_allEventNodes.length}
-- 事件-实体关系: ${_allEventRelations.length}
-''';
-      });
+      buffer.writeln('\n👥 实体类型分布:');
+      entityTypeStats.entries.toList()
+        ..sort((a, b) => b.value.compareTo(a.value))
+        ..forEach((entry) {
+          buffer.writeln('• ${entry.key}: ${entry.value} 个');
+        });
+
+      // 图谱健康度评估
+      buffer.writeln('\n💊 图谱健康度评估:');
+      final orphanedEntities = _getOrphanedEntitiesCount();
+      final density = _calculateGraphDensity();
+
+      buffer.writeln('• 孤立实体: ${orphanedEntities} 个 ${orphanedEntities > 0 ? "⚠️" : "✅"}');
+      buffer.writeln('• 图谱密度: ${(density * 100).toStringAsFixed(1)}%');
+      buffer.writeln('• 平均每事件关联实体: ${_allEventRelations.isEmpty ? 0 : (_allEventRelations.length / _allEventNodes.length).toStringAsFixed(1)} 个');
+
+      // 时间分布
+      if (_allEventNodes.where((e) => e.startTime != null).isNotEmpty) {
+        buffer.writeln('\n📅 时间分布分析:');
+        final now = DateTime.now();
+        final today = _allEventNodes.where((e) =>
+          (e.startTime ?? e.lastUpdated).isAfter(DateTime(now.year, now.month, now.day))
+        ).length;
+        final thisWeek = _allEventNodes.where((e) =>
+          (e.startTime ?? e.lastUpdated).isAfter(now.subtract(Duration(days: 7)))
+        ).length;
+        final thisMonth = _allEventNodes.where((e) =>
+          (e.startTime ?? e.lastUpdated).isAfter(now.subtract(Duration(days: 30)))
+        ).length;
+
+        buffer.writeln('• 今日事件: $today 个');
+        buffer.writeln('• 本周事件: $thisWeek 个');
+        buffer.writeln('• 本月事件: $thisMonth 个');
+      }
+
+      setState(() => _result = buffer.toString());
     } catch (e) {
-      setState(() => _result = '抽取失败: $e');
+      setState(() => _result = '分析失败: $e');
     } finally {
       setState(() => _isLoading = false);
     }
   }
 
-  Future<void> _testChatWithKG() async {
-    if (_inputController.text.trim().isEmpty) {
-      setState(() => _result = '请输入测试文本');
-      return;
-    }
-
+  Future<void> _analyzeEntityRelations() async {
     setState(() => _isLoading = true);
     try {
-      final response = await _chatManager.createRequest(text: _inputController.text);
-      setState(() {
-        _result = '''对话测试完成！
+      final buffer = StringBuffer();
+      buffer.writeln('🔗 实体关联关系分析报告\n');
+      buffer.writeln('=' * 40);
 
-用户输入: ${_inputController.text}
+      // 实体连接度分析
+      final entityConnections = <String, int>{};
+      for (final relation in _allEventRelations) {
+        entityConnections[relation.entityId] = (entityConnections[relation.entityId] ?? 0) + 1;
+      }
 
-AI回复: $response
+      final sortedEntities = entityConnections.entries.toList()
+        ..sort((a, b) => b.value.compareTo(a.value));
 
-此测试会自动使用知识图谱中的相关信息来增强回复。
-''';
-      });
+      buffer.writeln('\n🌟 核心实体排行 (按关联事件数):');
+      for (int i = 0; i < sortedEntities.take(10).length; i++) {
+        final entry = sortedEntities[i];
+        final entity = _allNodes.firstWhere(
+          (e) => e.id == entry.key,
+          orElse: () => Node(id: entry.key, name: entry.key, type: '未知'),
+        );
+        buffer.writeln('${i + 1}. ${entity.name} (${entity.type}) - ${entry.value} 个事件');
+      }
+
+      // 角色分析
+      final roleStats = <String, int>{};
+      for (final relation in _allEventRelations) {
+        roleStats[relation.role] = (roleStats[relation.role] ?? 0) + 1;
+      }
+
+      buffer.writeln('\n🎭 角色分布统计:');
+      roleStats.entries.toList()
+        ..sort((a, b) => b.value.compareTo(a.value))
+        ..forEach((entry) {
+          buffer.writeln('• ${entry.key}: ${entry.value} 次');
+        });
+
+      // 孤立实体详情
+      final orphanedEntities = _allNodes.where((node) =>
+        !_allEventRelations.any((rel) => rel.entityId == node.id)
+      ).toList();
+
+      if (orphanedEntities.isNotEmpty) {
+        buffer.writeln('\n⚠️ 孤立实体列表:');
+        for (final entity in orphanedEntities.take(20)) {
+          buffer.writeln('• ${entity.name} (${entity.type})');
+        }
+        if (orphanedEntities.length > 20) {
+          buffer.writeln('... 还有 ${orphanedEntities.length - 20} 个孤立实体');
+        }
+      }
+
+      setState(() => _result = buffer.toString());
     } catch (e) {
-      setState(() => _result = '对话测试失败: $e');
+      setState(() => _result = '分析失败: $e');
+    } finally {
+      setState(() => _isLoading = false);
+    }
+  }
+
+  Future<void> _analyzeTimePatterns() async {
+    setState(() => _isLoading = true);
+    try {
+      final buffer = StringBuffer();
+      buffer.writeln('⏰ 时间模式分析报告\n');
+      buffer.writeln('=' * 40);
+
+      final eventsWithTime = _allEventNodes.where((e) => e.startTime != null).toList();
+
+      if (eventsWithTime.isEmpty) {
+        buffer.writeln('\n❌ 没有找到包含时间信息的事件');
+        setState(() => _result = buffer.toString());
+        return;
+      }
+
+      // 按小时分布
+      final hourStats = <int, int>{};
+      for (final event in eventsWithTime) {
+        final hour = event.startTime!.hour;
+        hourStats[hour] = (hourStats[hour] ?? 0) + 1;
+      }
+
+      buffer.writeln('\n🕐 小时分布统计:');
+      for (int hour = 0; hour < 24; hour++) {
+        final count = hourStats[hour] ?? 0;
+        if (count > 0) {
+          final percentage = (count / eventsWithTime.length * 100).toStringAsFixed(1);
+          buffer.writeln('${hour.toString().padLeft(2, '0')}:00 - ${count} 个事件 ($percentage%)');
+        }
+      }
+
+      // 按星期分布
+      final weekdayStats = <int, int>{};
+      final weekdayNames = ['周一', '周二', '周三', '周四', '周五', '周六', '周日'];
+
+      for (final event in eventsWithTime) {
+        final weekday = event.startTime!.weekday - 1; // 0-6
+        weekdayStats[weekday] = (weekdayStats[weekday] ?? 0) + 1;
+      }
+
+      buffer.writeln('\n📅 星期分布统计:');
+      for (int i = 0; i < 7; i++) {
+        final count = weekdayStats[i] ?? 0;
+        if (count > 0) {
+          final percentage = (count / eventsWithTime.length * 100).toStringAsFixed(1);
+          buffer.writeln('${weekdayNames[i]} - ${count} 个事件 ($percentage%)');
+        }
+      }
+
+      // 最活跃的时间段
+      final maxHour = hourStats.entries.reduce((a, b) => a.value > b.value ? a : b);
+      final maxWeekday = weekdayStats.entries.reduce((a, b) => a.value > b.value ? a : b);
+
+      buffer.writeln('\n🎯 活跃时间总结:');
+      buffer.writeln('• 最活跃小时: ${maxHour.key}:00 (${maxHour.value} 个事件)');
+      buffer.writeln('• 最活跃星期: ${weekdayNames[maxWeekday.key]} (${maxWeekday.value} 个事件)');
+
+      // 时间跨度分析
+      final sortedByTime = eventsWithTime..sort((a, b) => a.startTime!.compareTo(b.startTime!));
+      if (sortedByTime.length >= 2) {
+        final timeSpan = sortedByTime.last.startTime!.difference(sortedByTime.first.startTime!);
+        buffer.writeln('• 数据时间跨度: ${timeSpan.inDays} 天');
+        buffer.writeln('• 平均每天事件: ${(eventsWithTime.length / (timeSpan.inDays + 1)).toStringAsFixed(1)} 个');
+      }
+
+      setState(() => _result = buffer.toString());
+    } catch (e) {
+      setState(() => _result = '分析失败: $e');
     } finally {
       setState(() => _isLoading = false);
     }
@@ -1192,39 +1597,6 @@ AI回复: $response
     );
   }
 
-  void _showEventDetails(EventNode event) {
-    showDialog(
-      context: context,
-      builder: (context) => AlertDialog(
-        title: Text(event.name),
-        content: Column(
-          crossAxisAlignment: CrossAxisAlignment.start,
-          mainAxisSize: MainAxisSize.min,
-          children: [
-            Text('类型: ${event.type}'),
-            if (event.description != null)
-              Text('描述: ${event.description}'),
-            if (event.location != null)
-              Text('地点: ${event.location}'),
-            if (event.purpose != null)
-              Text('目的: ${event.purpose}'),
-            if (event.result != null)
-              Text('结果: ${event.result}'),
-            if (event.startTime != null)
-              Text('开始时间: ${DateFormat('yyyy-MM-dd HH:mm').format(event.startTime!)}'),
-            Text('更新时间: ${DateFormat('yyyy-MM-dd HH:mm').format(event.lastUpdated)}'),
-          ],
-        ),
-        actions: [
-          TextButton(
-            onPressed: () => Navigator.of(context).pop(),
-            child: Text('关闭'),
-          ),
-        ],
-      ),
-    );
-  }
-
   Color _getEntityTypeColor(String type) {
     switch (type.toLowerCase()) {
       case '人': case 'person': return Colors.red[300]!;
@@ -1248,5 +1620,130 @@ AI回复: $response
       case '讨论': case 'discussion': return Colors.amber;
       default: return Colors.grey;
     }
+  }
+
+  // Tab 4: 图谱清理
+  Widget _buildCleanupTab() {
+    return Padding(
+      padding: EdgeInsets.all(16.w),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Text('知识图谱清理', style: TextStyle(fontSize: 18.sp, fontWeight: FontWeight.bold)),
+          SizedBox(height: 16.h),
+
+          // 清理选项
+          Card(
+            child: Padding(
+              padding: EdgeInsets.all(16.w),
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  Text('清理选项', style: TextStyle(fontSize: 16.sp, fontWeight: FontWeight.bold)),
+                  SizedBox(height: 12.h),
+
+                  ListTile(
+                    leading: Icon(Icons.delete_outline, color: Colors.orange),
+                    title: Text('清空事件数据'),
+                    subtitle: Text('清除所有事件、事件关系数据，但保留基础实体'),
+                    trailing: ElevatedButton(
+                      onPressed: _clearEventData,
+                      style: ElevatedButton.styleFrom(backgroundColor: Colors.orange),
+                      child: Text('清空', style: TextStyle(color: Colors.white)),
+                    ),
+                  ),
+
+                  Divider(),
+
+                  ListTile(
+                    leading: Icon(Icons.delete_forever, color: Colors.red),
+                    title: Text('完全重置图谱'),
+                    subtitle: Text('清除所有知识图谱数据，此操作不可恢复'),
+                    trailing: ElevatedButton(
+                      onPressed: _clearAllData,
+                      style: ElevatedButton.styleFrom(backgroundColor: Colors.red),
+                      child: Text('重置', style: TextStyle(color: Colors.white)),
+                    ),
+                  ),
+                ],
+              ),
+            ),
+          ),
+
+          SizedBox(height: 16.h),
+
+          // 测试数据生成
+          Card(
+            child: Padding(
+              padding: EdgeInsets.all(16.w),
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  Text('测试数据', style: TextStyle(fontSize: 16.sp, fontWeight: FontWeight.bold)),
+                  SizedBox(height: 12.h),
+
+                  ListTile(
+                    leading: Icon(Icons.data_object, color: Colors.blue),
+                    title: Text('生成测试数据'),
+                    subtitle: Text('创建一些示例事件和实体用于测试'),
+                    trailing: ElevatedButton(
+                      onPressed: _generateTestData,
+                      style: ElevatedButton.styleFrom(backgroundColor: Colors.blue),
+                      child: Text('生成', style: TextStyle(color: Colors.white)),
+                    ),
+                  ),
+                ],
+              ),
+            ),
+          ),
+
+          SizedBox(height: 16.h),
+
+          // 安全提示
+          Container(
+            padding: EdgeInsets.all(12.w),
+            decoration: BoxDecoration(
+              color: Colors.red[50],
+              borderRadius: BorderRadius.circular(8.r),
+              border: Border.all(color: Colors.red[200]!),
+            ),
+            child: Row(
+              children: [
+                Icon(Icons.warning, color: Colors.red[700]),
+                SizedBox(width: 8.w),
+                Expanded(
+                  child: Text(
+                    '注意：清空操作不可恢复，请谨慎操作！建议在清空前先进行数据备份。',
+                    style: TextStyle(color: Colors.red[700], fontSize: 13.sp),
+                  ),
+                ),
+              ],
+            ),
+          ),
+
+          SizedBox(height: 16.h),
+
+          // 结果显示
+          if (_result.isNotEmpty) ...[
+            Text('操作结果：', style: TextStyle(fontSize: 14.sp, fontWeight: FontWeight.bold)),
+            SizedBox(height: 8.h),
+            Expanded(
+              child: Container(
+                width: double.infinity,
+                padding: EdgeInsets.all(12.w),
+                decoration: BoxDecoration(
+                  border: Border.all(color: Colors.grey[300]!),
+                  borderRadius: BorderRadius.circular(8.r),
+                  color: Colors.grey[50],
+                ),
+                child: SingleChildScrollView(
+                  child: Text(_result, style: TextStyle(fontSize: 12.sp)),
+                ),
+              ),
+            ),
+          ],
+        ],
+      ),
+    );
   }
 }

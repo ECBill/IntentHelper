@@ -1000,38 +1000,72 @@ class _KnowledgeGraphPageState extends State<KnowledgeGraphPage> with TickerProv
       isScrollControlled: true,
       builder: (context) => DraggableScrollableSheet(
         expand: false,
+        initialChildSize: 0.6,
+        minChildSize: 0.3,
+        maxChildSize: 0.9,
         builder: (context, scrollController) => Container(
-          padding: EdgeInsets.all(16.w),
+          decoration: BoxDecoration(
+            color: Colors.white,
+            borderRadius: BorderRadius.only(
+              topLeft: Radius.circular(16.r),
+              topRight: Radius.circular(16.r),
+            ),
+          ),
           child: Column(
-            crossAxisAlignment: CrossAxisAlignment.start,
             children: [
-              Text(event.name, style: TextStyle(fontSize: 20.sp, fontWeight: FontWeight.bold)),
-              SizedBox(height: 8.h),
-              if (event.description != null)
-                Text(event.description!, style: TextStyle(color: Colors.grey[700])),
-              SizedBox(height: 16.h),
-              _buildDetailRow('类型', event.type),
-              if (event.location != null) _buildDetailRow('地点', event.location!),
-              if (event.purpose != null) _buildDetailRow('目的', event.purpose!),
-              if (event.result != null) _buildDetailRow('结果', event.result!),
-              if (event.startTime != null)
-                _buildDetailRow('时间', DateFormat('yyyy-MM-dd HH:mm').format(event.startTime!)),
-              SizedBox(height: 16.h),
-              Text('参与实体', style: TextStyle(fontWeight: FontWeight.bold)),
-              SizedBox(height: 8.h),
-              ...participants.map((p) => ListTile(
-                dense: true,
-                leading: Container(
-                  width: 8.w,
-                  height: 8.h,
-                  decoration: BoxDecoration(
-                    color: _getEntityTypeColor(p.type),
-                    shape: BoxShape.circle,
+              // 拖拽指示器
+              Container(
+                margin: EdgeInsets.only(top: 8.h, bottom: 8.h),
+                width: 40.w,
+                height: 4.h,
+                decoration: BoxDecoration(
+                  color: Colors.grey[300],
+                  borderRadius: BorderRadius.circular(2.r),
+                ),
+              ),
+
+              // 可滚动内容
+              Expanded(
+                child: SingleChildScrollView(
+                  controller: scrollController,
+                  padding: EdgeInsets.all(16.w),
+                  child: Column(
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    children: [
+                      Text(event.name, style: TextStyle(fontSize: 20.sp, fontWeight: FontWeight.bold)),
+                      SizedBox(height: 8.h),
+                      if (event.description != null)
+                        Text(event.description!, style: TextStyle(color: Colors.grey[700])),
+                      SizedBox(height: 16.h),
+                      _buildDetailRow('类型', event.type),
+                      if (event.location != null) _buildDetailRow('地点', event.location!),
+                      if (event.purpose != null) _buildDetailRow('目的', event.purpose!),
+                      if (event.result != null) _buildDetailRow('结果', event.result!),
+                      if (event.startTime != null)
+                        _buildDetailRow('时间', DateFormat('yyyy-MM-dd HH:mm').format(event.startTime!)),
+                      SizedBox(height: 16.h),
+                      Text('参与实体', style: TextStyle(fontWeight: FontWeight.bold)),
+                      SizedBox(height: 8.h),
+                      ...participants.map((p) => ListTile(
+                        dense: true,
+                        contentPadding: EdgeInsets.zero,
+                        leading: Container(
+                          width: 8.w,
+                          height: 8.h,
+                          decoration: BoxDecoration(
+                            color: _getEntityTypeColor(p.type),
+                            shape: BoxShape.circle,
+                          ),
+                        ),
+                        title: Text(p.name),
+                        subtitle: Text(p.type),
+                      )),
+                      // 添加底部安全间距
+                      SizedBox(height: MediaQuery.of(context).padding.bottom + 20.h),
+                    ],
                   ),
                 ),
-                title: Text(p.name),
-                subtitle: Text(p.type),
-              )),
+              ),
             ],
           ),
         ),
