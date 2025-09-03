@@ -13,7 +13,7 @@ import 'package:flutter_sound/flutter_sound.dart';
 import 'latency_logger.dart';
 
 class CloudTts {
-  late String _openaiApiKey;
+  String _openaiApiKey = ''; // 改为可空字符串，提供默认值
   static const String defaultBaseUrl = 'https://one-api.bud.inc/v1/audio/speech';
 
   final FlutterSoundPlayer _audioPlayer = FlutterSoundPlayer(logLevel: Level.error);
@@ -29,16 +29,35 @@ class CloudTts {
   bool get isAvailable => _openaiApiKey.isNotEmpty;
 
   Future<void> init() async {
-    LlmConfigEntity? config = ObjectBoxService().getConfigsByProvider("OpenAI");
-    if (config != null && config.apiKey != null && config.baseUrl != null) {
-      _openaiApiKey = config.apiKey!;
-    } else {
-      _openaiApiKey = await FlutterForegroundTask.getData(key: 'llmToken');
-    }
-    if (Platform.isAndroid) {
-      await _audioPlayer.openPlayer(isBGService: true);
-    } else {
-      await _audioPlayer.openPlayer();
+    try {
+      print('[CloudTts] 🔄 开始初始化 CloudTts...');
+
+      LlmConfigEntity? config = ObjectBoxService().getConfigsByProvider("OpenAI");
+      if (config != null && config.apiKey != null && config.baseUrl != null) {
+        _openaiApiKey = config.apiKey!;
+        print('[CloudTts] ✅ 从数据库获取到 OpenAI API Key');
+      } else {
+        // 添加null检查和默认值处理
+        final tokenData = await FlutterForegroundTask.getData(key: 'llmToken');
+        _openaiApiKey = tokenData ?? ''; // 如果为null，使用空字符串
+
+        if (_openaiApiKey.isEmpty) {
+          print('[CloudTts] ⚠️ 未找到 OpenAI API Key，CloudTts 将不可用');
+        } else {
+          print('[CloudTts] ✅ 从 FlutterForegroundTask 获取到 API Key');
+        }
+      }
+
+      if (Platform.isAndroid) {
+        await _audioPlayer.openPlayer(isBGService: true);
+      } else {
+        await _audioPlayer.openPlayer();
+      }
+
+      print('[CloudTts] ✅ CloudTts 初始化完成，isAvailable: $isAvailable');
+    } catch (e) {
+      print('[CloudTts] ❌ CloudTts 初始化失败: $e');
+      _openaiApiKey = ''; // 出错时设置为空字符串
     }
   }
 

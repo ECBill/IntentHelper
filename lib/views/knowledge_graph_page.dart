@@ -1118,6 +1118,13 @@ class _KnowledgeGraphPageState extends State<KnowledgeGraphPage> with TickerProv
       default: return Colors.grey[300]!;
     }
   }
+
+  int _getOrphanedEntitiesCount() {
+    // 修正：使用新的事件中心结构来检测孤立节点
+    return _entities.where((node) =>
+      !_eventEntityRelations.any((rel) => rel.entityId == node.id)
+    ).length;
+  }
 }
 
 // 连接线绘制器

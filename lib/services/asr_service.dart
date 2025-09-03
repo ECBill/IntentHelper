@@ -152,7 +152,12 @@ class RecordServiceHandler extends TaskHandler {
       _isUsingCloudServices = _cloudAsr.isAvailable && _cloudTts.isAvailable;
       print('[onStart] 🌐 Using cloud services: $_isUsingCloudServices');
 
-      _summaryTimer = Timer.periodic(Duration(seconds: 30), (_) => _checkAndSummarizeDialogue());
+      print('[onStart] ⏰ Creating summary timer...');
+      _summaryTimer = Timer.periodic(Duration(seconds: 30), (_) {
+        print('[onStart] ⏰ Timer triggered - calling _checkAndSummarizeDialogue()');
+        _checkAndSummarizeDialogue();
+      });
+      print('[onStart] ✅ Summary timer created successfully');
 
       print('[onStart] 🎉 === FOREGROUND SERVICE STARTED SUCCESSFULLY ===');
     } catch (e) {
@@ -1162,7 +1167,7 @@ class RecordServiceHandler extends TaskHandler {
     // 2. 正常对话分段逻辑
     if (_currentDialogueCharCount >= minCharLimit &&
         _lastSpeechTimestamp > 0 &&
-        now - _lastSpeechTimestamp > 1 * 60 * 1000) {
+        now - _lastSpeechTimestamp > 0.5 * 60 * 1000) {
       print('[自动总结] 满足条件，开始自动整理对话内容...');
       DialogueSummary.start(
         startTime: _currentDialogueStartTime,

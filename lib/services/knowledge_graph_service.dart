@@ -76,6 +76,20 @@ class KnowledgeGraphService {
       return alignments.first.canonicalId;
     }
 
+    // 🔥 修复：如果实体不存在，立即创建它
+    final newNode = Node(
+      id: candidateId,
+      name: name,
+      type: type,
+      canonicalName: normalizedName,
+      attributes: <String, String>{},
+      lastUpdated: DateTime.now(),
+      sourceContext: contextId,
+      aliases: [name],
+    );
+    objectBox.insertNode(newNode);
+    print('[KnowledgeGraphService] 🆕 alignEntity创建新实体: $name ($type) -> $candidateId');
+
     return candidateId;
   }
 
@@ -215,8 +229,39 @@ ${_generateUserStatePromptContext(userStateContext)}
 
       print('[KnowledgeGraphService] 📊 提取结果: ${events.length}个事件, ${entities.length}个实体');
 
-      // 1. 处理实体（实体对齐）
+      // 1. 处理实体（实体对齐）- 优化逻辑，确保与事件关联
       final Map<String, String> entityIdMap = {};
+
+      // 🔥 修复：智能实体类型推断函数 - 修复变量作用域和返回类型问题
+      String getSmartEntityType(String entityName, String suggestedType) {
+        // 优先使用已经在entityIdMap中的实体类型
+        for (final entry in entityIdMap.entries) {
+          final key = entry.key;
+          final id = entry.value;
+          // 检查是否是同一个实体的不同表达
+          if (key == entityName || key.contains('${entityName}_')) {
+            // 从ID中提取实体类型
+            final parts = id.split('_');
+            if (parts.length >= 2) {
+              return parts.last; // 返回实际的类型
+            }
+          }
+        }
+
+        // 如果没找到，尝试从已存在的实体中查找
+        final existingNode = objectBox.queryNodes().cast<Node?>().firstWhere(
+          (node) => node != null && (node.name == entityName || node.aliases.contains(entityName)),
+          orElse: () => null,
+        );
+
+        if (existingNode != null) {
+          return existingNode.type;
+        }
+
+        // 最后使用建议的类型
+        return suggestedType;
+      }
+
       for (final entityData in entities) {
         if (entityData is Map) {
           final name = entityData['name']?.toString() ?? '';
@@ -230,6 +275,8 @@ ${_generateUserStatePromptContext(userStateContext)}
 
           if (name.isNotEmpty && type.isNotEmpty) {
             final entityId = await alignEntity(name, type, contextId);
+            // 🔥 修复：使用原始名称+类型作为key，确保事件关联时能找到
+            entityIdMap[name] = entityId;
             entityIdMap['${name}_$type'] = entityId;
 
             // 检查是否需要更新或创建实体
@@ -263,21 +310,8 @@ ${_generateUserStatePromptContext(userStateContext)}
                 existingNode.sourceContext = contextId;
                 objectBox.updateNode(existingNode);
               }
-            } else {
-              // 创建新实体
-              final allAliases = [name, ...aliases].toSet().toList();
-              final newNode = Node(
-                id: entityId,
-                name: name,
-                type: type,
-                canonicalName: _normalizeEntityName(name),
-                attributes: attributes,
-                lastUpdated: now,
-                sourceContext: contextId,
-                aliases: allAliases,
-              );
-              objectBox.insertNode(newNode);
             }
+            // 注意：这里不需要再创建新实体，因为alignEntity已经会创建了
           }
         }
       }
@@ -327,58 +361,101 @@ ${_generateUserStatePromptContext(userStateContext)}
             );
             objectBox.insertEventNode(eventNode);
 
+            print('[KnowledgeGraphService] 📝 创建事件: $name -> $eventId');
+
             // 3. 建立事件-实体关系
+            final relationCount = StringBuffer('关联实体: ');
+
             // 参与者
             final participants = eventData['participants'] as List? ?? [];
             for (final participant in participants) {
               final participantStr = participant.toString();
-              final participantId = await alignEntity(participantStr, '人物', contextId);
+
+              // 🔥 修复：优先使用entityIdMap中的ID，确保关联正确
+              String? participantId = entityIdMap[participantStr];
+              if (participantId == null) {
+                // 智能获取实体类型，避免类型不匹配
+                final smartType = getSmartEntityType(participantStr, '人物');
+                participantId = await alignEntity(participantStr, smartType, contextId);
+                entityIdMap[participantStr] = participantId; // 缓存新创建的ID
+              }
+
               objectBox.insertEventEntityRelation(EventEntityRelation(
                 eventId: eventId,
                 entityId: participantId,
                 role: '参与者',
                 lastUpdated: now,
               ));
+              relationCount.write('参与者($participantStr->$participantId) ');
             }
 
             // 使用的工具或物品
             final toolsUsed = eventData['tools_used'] as List? ?? [];
             for (final tool in toolsUsed) {
               final toolStr = tool.toString();
-              final toolId = await alignEntity(toolStr, '物品', contextId);
+
+              String? toolId = entityIdMap[toolStr];
+              if (toolId == null) {
+                // 智能获取实体类型，避免类型不匹配
+                final smartType = getSmartEntityType(toolStr, '物品');
+                toolId = await alignEntity(toolStr, smartType, contextId);
+                entityIdMap[toolStr] = toolId;
+              }
+
               objectBox.insertEventEntityRelation(EventEntityRelation(
                 eventId: eventId,
                 entityId: toolId,
                 role: '使用物品',
                 lastUpdated: now,
               ));
+              relationCount.write('物品($toolStr->$toolId) ');
             }
 
             // 相关地点
             final relatedLocations = eventData['related_locations'] as List? ?? [];
             for (final location in relatedLocations) {
               final locationStr = location.toString();
-              final locationId = await alignEntity(locationStr, '地点', contextId);
+
+              String? locationId = entityIdMap[locationStr];
+              if (locationId == null) {
+                // 智能获取实体类型，避免类型不匹配
+                final smartType = getSmartEntityType(locationStr, '地点');
+                locationId = await alignEntity(locationStr, smartType, contextId);
+                entityIdMap[locationStr] = locationId;
+              }
+
               objectBox.insertEventEntityRelation(EventEntityRelation(
                 eventId: eventId,
                 entityId: locationId,
                 role: '发生地点',
                 lastUpdated: now,
               ));
+              relationCount.write('地点($locationStr->$locationId) ');
             }
 
-            // 新增：相关概念（状态、活动、技能等）
+            // 相关概念（状态、活动、技能等）
             final relatedConcepts = eventData['related_concepts'] as List? ?? [];
             for (final concept in relatedConcepts) {
               final conceptStr = concept.toString();
-              final conceptId = await alignEntity(conceptStr, '概念', contextId);
+
+              String? conceptId = entityIdMap[conceptStr];
+              if (conceptId == null) {
+                // 智能获取实体类型，避免类型不匹配
+                final smartType = getSmartEntityType(conceptStr, '概念');
+                conceptId = await alignEntity(conceptStr, smartType, contextId);
+                entityIdMap[conceptStr] = conceptId;
+              }
+
               objectBox.insertEventEntityRelation(EventEntityRelation(
                 eventId: eventId,
                 entityId: conceptId,
                 role: '相关概念',
                 lastUpdated: now,
               ));
+              relationCount.write('概念($conceptStr->$conceptId) ');
             }
+
+            print('[KnowledgeGraphService] 🔗 ${relationCount.toString()}');
           }
         }
       }

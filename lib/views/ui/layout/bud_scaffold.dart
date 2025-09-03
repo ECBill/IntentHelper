@@ -47,7 +47,6 @@ class BudScaffold extends StatelessWidget {
           children: [
             if (automaticallyImplyLeading)
               GestureDetectorHitTestWithoutSizeLimit(
-                debugHitTestAreaColor: Colors.red.withOpacity(0.5),
                 extraHitTestArea: EdgeInsets.all(20.sp),
                 onTap: () => context.pop(),
                 child: Padding(

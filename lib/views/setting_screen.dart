@@ -212,13 +212,13 @@ class _SettingScreenState extends State<SettingScreen> {
                 onTap: _onClickHeadphoneUpgrade,
               ),
               SettingListTile(
-                leading: AssetsUtil.icon_feedback, // ���时使用现有图标
+                leading: AssetsUtil.icon_feedback, // 临时使用现有图标
                 title: 'Cache Debug',
                 subtitle: 'Debugging tools for cache',
                 onTap: _onClickCacheDebug,
               ),
               SettingListTile(
-                leading: AssetsUtil.icon_feedback, // 临时��用现有图标
+                leading: AssetsUtil.icon_feedback, // 临时使用现有图标
                 title: 'Summary List',
                 subtitle: 'View and manage your summaries',
                 onTap: _onClickSummaryList,
@@ -251,6 +251,8 @@ class _SettingScreenState extends State<SettingScreen> {
               onTap: _onClickHelpAndFeedback,
             ),
           ]),
+          // 添加底部安全区域
+          SizedBox(height: MediaQuery.of(context).padding.bottom + 20.h),
         ],
       ),
     );
@@ -310,7 +312,8 @@ class SettingListTile extends StatelessWidget {
     return InkWell(
       onTap: onTap,
       child: Container(
-        height: 70.sp,
+        // 移除固定高度，使用动态高度
+        constraints: BoxConstraints(minHeight: 70.sp),
         padding: EdgeInsets.symmetric(vertical: 14.sp),
         child: Row(
           children: [
@@ -339,7 +342,8 @@ class SettingListTile extends StatelessWidget {
                       color: isLightMode ? Colors.black : Colors.white,
                     ),
                   ),
-                  if (subtitle != null)
+                  if (subtitle != null) ...[
+                    SizedBox(height: 4.h),
                     Text(
                       subtitle!,
                       style: TextStyle(
@@ -349,7 +353,10 @@ class SettingListTile extends StatelessWidget {
                             ? const Color(0xFF999999)
                             : const Color(0x99FFFFFF),
                       ),
-                    )
+                      maxLines: 2,
+                      overflow: TextOverflow.ellipsis,
+                    ),
+                  ]
                 ],
               ),
             ),

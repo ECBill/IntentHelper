@@ -1093,6 +1093,11 @@ class _KGTestPageState extends State<KGTestPage> with TickerProviderStateMixin {
                 label: Text('时间模式分析'),
               ),
               ElevatedButton.icon(
+                onPressed: _analyzeOrphanedEntities,
+                icon: Icon(Icons.warning_amber),
+                label: Text('孤立实体分析'),
+              ),
+              ElevatedButton.icon(
                 onPressed: _validateGraphIntegrity,
                 icon: Icon(Icons.check_circle),
                 label: Text('完整性检查'),
@@ -1225,6 +1230,7 @@ class _KGTestPageState extends State<KGTestPage> with TickerProviderStateMixin {
   }
 
   int _getOrphanedEntitiesCount() {
+    // 修正：使用新的事件中心结构来检测孤立节点
     return _allNodes.where((node) =>
       !_allEventRelations.any((rel) => rel.entityId == node.id)
     ).length;
@@ -1624,7 +1630,7 @@ class _KGTestPageState extends State<KGTestPage> with TickerProviderStateMixin {
 
   // Tab 4: 图谱清理
   Widget _buildCleanupTab() {
-    return Padding(
+    return SingleChildScrollView(
       padding: EdgeInsets.all(16.w),
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
@@ -1641,6 +1647,20 @@ class _KGTestPageState extends State<KGTestPage> with TickerProviderStateMixin {
                 children: [
                   Text('清理选项', style: TextStyle(fontSize: 16.sp, fontWeight: FontWeight.bold)),
                   SizedBox(height: 12.h),
+
+                  // 新增：清除孤立节点
+                  ListTile(
+                    leading: Icon(Icons.cleaning_services, color: Colors.amber),
+                    title: Text('清除孤立节点'),
+                    subtitle: Text('删除所有没有与事件关联的孤立实体节点'),
+                    trailing: ElevatedButton(
+                      onPressed: _clearOrphanedNodes,
+                      style: ElevatedButton.styleFrom(backgroundColor: Colors.amber),
+                      child: Text('清除', style: TextStyle(color: Colors.white)),
+                    ),
+                  ),
+
+                  Divider(),
 
                   ListTile(
                     leading: Icon(Icons.delete_outline, color: Colors.orange),
@@ -1723,27 +1743,229 @@ class _KGTestPageState extends State<KGTestPage> with TickerProviderStateMixin {
 
           SizedBox(height: 16.h),
 
-          // 结果显示
+          // 结果显示 - 修复溢出问题
           if (_result.isNotEmpty) ...[
             Text('操作结果：', style: TextStyle(fontSize: 14.sp, fontWeight: FontWeight.bold)),
             SizedBox(height: 8.h),
-            Expanded(
-              child: Container(
-                width: double.infinity,
-                padding: EdgeInsets.all(12.w),
-                decoration: BoxDecoration(
-                  border: Border.all(color: Colors.grey[300]!),
-                  borderRadius: BorderRadius.circular(8.r),
-                  color: Colors.grey[50],
-                ),
-                child: SingleChildScrollView(
-                  child: Text(_result, style: TextStyle(fontSize: 12.sp)),
-                ),
+            Container(
+              constraints: BoxConstraints(
+                maxHeight: 300.h, // 限制最大高度
+              ),
+              width: double.infinity,
+              padding: EdgeInsets.all(12.w),
+              decoration: BoxDecoration(
+                border: Border.all(color: Colors.grey[300]!),
+                borderRadius: BorderRadius.circular(8.r),
+                color: Colors.grey[50],
+              ),
+              child: SingleChildScrollView(
+                child: Text(_result, style: TextStyle(fontSize: 12.sp)),
               ),
             ),
           ],
+
+          // 添加底部安全间距
+          SizedBox(height: MediaQuery.of(context).padding.bottom + 20.h),
         ],
       ),
     );
+  }
+
+  // 新增：分析孤立实体的详细调试方法
+  Future<void> _analyzeOrphanedEntities() async {
+    setState(() => _isLoading = true);
+    try {
+      final buffer = StringBuffer();
+      buffer.writeln('🔍 孤立实体详细分析报告\n');
+      buffer.writeln('=' * 50);
+
+      final objectBox = ObjectBoxService();
+      final allNodes = objectBox.queryNodes();
+      final allEventRelations = objectBox.queryEventEntityRelations();
+      final allEvents = objectBox.queryEventNodes();
+      final allEdges = objectBox.queryEdges(); // 旧的边数据
+
+      buffer.writeln('\n📊 数据总览:');
+      buffer.writeln('• 总实体数: ${allNodes.length}');
+      buffer.writeln('• 总事件数: ${allEvents.length}');
+      buffer.writeln('• 事件-实体关系数: ${allEventRelations.length}');
+      buffer.writeln('• 旧边数据数: ${allEdges.length}');
+
+      // 分析孤立实体
+      final orphanedEntities = allNodes.where((node) =>
+        !allEventRelations.any((rel) => rel.entityId == node.id)
+      ).toList();
+
+      buffer.writeln('\n⚠️ 孤立实体分析:');
+      buffer.writeln('• 孤立实体总数: ${orphanedEntities.length}');
+
+      // 按类型分组孤立实体
+      final orphanedByType = <String, List<Node>>{};
+      for (final entity in orphanedEntities) {
+        orphanedByType.putIfAbsent(entity.type, () => []).add(entity);
+      }
+
+      buffer.writeln('\n📋 按类型分布:');
+      orphanedByType.entries.toList()
+        ..sort((a, b) => b.value.length.compareTo(a.value.length))
+        ..forEach((entry) {
+          buffer.writeln('• ${entry.key}: ${entry.value.length} 个');
+        });
+
+      // 检查是否有旧的Edge数据关联
+      final entitiesWithOldEdges = <String>[];
+      for (final entity in orphanedEntities) {
+        final hasOldEdge = allEdges.any((edge) =>
+          edge.source == entity.id || edge.target == entity.id);
+        if (hasOldEdge) {
+          entitiesWithOldEdges.add(entity.id);
+        }
+      }
+
+      buffer.writeln('\n🔗 旧数据结构关联:');
+      buffer.writeln('• 有旧Edge关联的孤立实体: ${entitiesWithOldEdges.length} 个');
+
+      // 显示一些具体的孤立实体示例
+      buffer.writeln('\n📝 孤立实体示例 (前20个):');
+      for (int i = 0; i < orphanedEntities.take(20).length; i++) {
+        final entity = orphanedEntities[i];
+        final hasOldEdge = entitiesWithOldEdges.contains(entity.id);
+        final lastUpdated = entity.lastUpdated;
+        buffer.writeln('${i + 1}. ${entity.name} (${entity.type})');
+        buffer.writeln('   ID: ${entity.id}');
+        buffer.writeln('   更新时间: ${DateFormat('yyyy-MM-dd HH:mm').format(lastUpdated)}');
+        buffer.writeln('   有旧Edge: ${hasOldEdge ? "是" : "否"}');
+        if (entity.sourceContext != null) {
+          buffer.writeln('   来源: ${entity.sourceContext}');
+        }
+        buffer.writeln('');
+      }
+
+      // 检查最近创建的孤立实体
+      final now = DateTime.now();
+      final recentOrphaned = orphanedEntities.where((entity) =>
+        entity.lastUpdated.isAfter(now.subtract(Duration(days: 7)))
+      ).toList();
+
+      buffer.writeln('\n⏰ 最近一周的孤立实体:');
+      buffer.writeln('• 数量: ${recentOrphaned.length}');
+
+      if (recentOrphaned.isNotEmpty) {
+        buffer.writeln('• 示例:');
+        for (final entity in recentOrphaned.take(10)) {
+          buffer.writeln('  - ${entity.name} (${entity.type}) - ${DateFormat('MM-dd HH:mm').format(entity.lastUpdated)}');
+        }
+      }
+
+      setState(() => _result = buffer.toString());
+    } catch (e) {
+      setState(() => _result = '分析失败: $e');
+    } finally {
+      setState(() => _isLoading = false);
+    }
+  }
+
+  // 新增：清除孤立节点功能
+  Future<void> _clearOrphanedNodes() async {
+    final confirmed = await _showConfirmDialog(
+      '清除孤立节点',
+      '这将删除所有没有与事件关联的孤立实体节点。\n\n注意：此操作不可恢复，建议先进行"孤立实体分析"确认要删除的节点。\n\n确定继续吗？'
+    );
+    if (!confirmed) return;
+
+    setState(() => _isLoading = true);
+    try {
+      final objectBox = ObjectBoxService();
+
+      // 查找所有孤立节点
+      final allNodes = objectBox.queryNodes();
+      final allEventRelations = objectBox.queryEventEntityRelations();
+
+      final orphanedEntities = allNodes.where((node) =>
+        !allEventRelations.any((rel) => rel.entityId == node.id)
+      ).toList();
+
+      if (orphanedEntities.isEmpty) {
+        setState(() => _result = '✅ 没有发现孤立节点，图谱状态良好！');
+        return;
+      }
+
+      // 记录清除前的统计信息
+      final orphanedByType = <String, List<Node>>{};
+      for (final entity in orphanedEntities) {
+        orphanedByType.putIfAbsent(entity.type, () => []).add(entity);
+      }
+
+      // 删除孤立节点 - 🔥 修复：使用正确的删除方法
+      int deletedCount = 0;
+      final deleteErrors = <String>[];
+
+      for (final entity in orphanedEntities) {
+        try {
+          // 使用ObjectBox的remove方法删除节点（通过数据库ID）
+          if (entity.obxId != null && entity.obxId! > 0) {
+            final success = ObjectBoxService.nodeBox.remove(entity.obxId!);
+            if (success) {
+              deletedCount++;
+            } else {
+              deleteErrors.add('删除 ${entity.name} (${entity.id}) 失败');
+            }
+          } else {
+            deleteErrors.add('删除 ${entity.name} 失败: 无效的数据库ID');
+          }
+        } catch (e) {
+          deleteErrors.add('删除 ${entity.name} 时出错: $e');
+        }
+      }
+
+      // 刷新数据
+      await _loadKGData();
+
+      // 生成结果报告
+      final buffer = StringBuffer();
+      buffer.writeln('🧹 孤立节点清除完成！\n');
+      buffer.writeln('=' * 40);
+
+      buffer.writeln('\n📊 清除统计:');
+      buffer.writeln('• 发现孤立节点: ${orphanedEntities.length} 个');
+      buffer.writeln('• 成功删除: $deletedCount 个');
+      buffer.writeln('• 删除失败: ${deleteErrors.length} 个');
+
+      if (orphanedByType.isNotEmpty) {
+        buffer.writeln('\n📋 按类型清除统计:');
+        orphanedByType.entries.toList()
+          ..sort((a, b) => b.value.length.compareTo(a.value.length))
+          ..forEach((entry) {
+            final deletedInType = entry.value.where((entity) =>
+              !_allNodes.any((node) => node.id == entity.id)
+            ).length;
+            buffer.writeln('• ${entry.key}: 清除 $deletedInType/${entry.value.length} 个');
+          });
+      }
+
+      if (deleteErrors.isNotEmpty) {
+        buffer.writeln('\n❌ 删除失败的节点:');
+        for (final error in deleteErrors.take(10)) {
+          buffer.writeln('• $error');
+        }
+        if (deleteErrors.length > 10) {
+          buffer.writeln('... 还有 ${deleteErrors.length - 10} 个错误');
+        }
+      }
+
+      buffer.writeln('\n📈 清除后状态:');
+      buffer.writeln('• 当前实体总数: ${_allNodes.length}');
+      buffer.writeln('• 当前事件总数: ${_allEventNodes.length}');
+      buffer.writeln('• 当前关联关系: ${_allEventRelations.length}');
+
+      final remainingOrphaned = _getOrphanedEntitiesCount();
+      buffer.writeln('• 剩余孤立节点: $remainingOrphaned 个 ${remainingOrphaned == 0 ? "✅" : "⚠️"}');
+
+      setState(() => _result = buffer.toString());
+    } catch (e) {
+      setState(() => _result = '清除孤立节点失败: $e');
+    } finally {
+      setState(() => _isLoading = false);
+    }
   }
 }

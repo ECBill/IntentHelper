@@ -13,17 +13,35 @@ import 'package:wav/wav.dart';
 
 
 class CloudAsr {
-  late String _openaiApiKey;
+  String _openaiApiKey = ''; // 改为可空字符串，提供默认值
   static const String defaultBaseUrl = 'https://one-api.bud.inc/v1/audio/transcriptions';
 
   bool get isAvailable => _openaiApiKey.isNotEmpty;
 
   Future<void> init() async {
-    LlmConfigEntity? config = ObjectBoxService().getConfigsByProvider("OpenAI");
-    if (config != null && config.apiKey != null && config.baseUrl != null) {
-      _openaiApiKey = config.apiKey!;
-    } else {
-      _openaiApiKey = await FlutterForegroundTask.getData(key: 'llmToken');
+    try {
+      print('[CloudAsr] 🔄 开始初始化 CloudAsr...');
+
+      LlmConfigEntity? config = ObjectBoxService().getConfigsByProvider("OpenAI");
+      if (config != null && config.apiKey != null && config.baseUrl != null) {
+        _openaiApiKey = config.apiKey!;
+        print('[CloudAsr] ✅ 从数据库获取到 OpenAI API Key');
+      } else {
+        // 添加null检查和默认值处理
+        final tokenData = await FlutterForegroundTask.getData(key: 'llmToken');
+        _openaiApiKey = tokenData ?? ''; // 如果为null，使用空字符串
+
+        if (_openaiApiKey.isEmpty) {
+          print('[CloudAsr] ⚠️ 未找到 OpenAI API Key，CloudAsr 将不可用');
+        } else {
+          print('[CloudAsr] ✅ 从 FlutterForegroundTask 获取到 API Key');
+        }
+      }
+
+      print('[CloudAsr] ✅ CloudAsr 初始化完成，isAvailable: $isAvailable');
+    } catch (e) {
+      print('[CloudAsr] ❌ CloudAsr 初始化失败: $e');
+      _openaiApiKey = ''; // 出错时设置为空字符串
     }
   }
 
