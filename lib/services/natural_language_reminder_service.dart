@@ -68,7 +68,7 @@ class NaturalLanguageReminderService {
         //       'status: ${todo.status}');
         // }
 
-        return isIntelligent && isNaturalLanguage && isPendingReminder;
+        return isNaturalLanguage && isPendingReminder;
       }).toList();
 
       print('[NLReminderService] 📊 过滤结果: ${filtered.length}/${allTodos.length} 条智能提醒');
@@ -108,7 +108,14 @@ class NaturalLanguageReminderService {
       }
       _processingTexts.add(contentKey);
 
-      // 🔥 新增：预过滤，排除明显不需要提醒的内容
+      // 🔥 修复：简单重复检测 - 避免app启动时重复处理历史内容
+      if (_processedTexts.contains(analysis.content)) {
+        print('[NLReminderService] ⚠️ 内容已处理过，跳过: "${analysis.content.length > 30 ? analysis.content.substring(0, 30) + '...' : analysis.content}"');
+        _processingTexts.remove(contentKey);
+        return;
+      }
+
+      // 🔥 新增：预过滤，排除明显不需���提醒的内容
       if (!_shouldProcessForReminder(analysis.content)) {
         _processingTexts.remove(contentKey);
         return;
@@ -120,6 +127,9 @@ class NaturalLanguageReminderService {
         _processingTexts.remove(contentKey);
         return;
       }
+
+      // 🔥 修复：提前记录已处理内容，防止重复
+      _recordProcessedContent(analysis.content);
 
       // 使用LLM分析是否包含时间相关的提醒信息
       final reminderInfo = await _extractReminderFromText(analysis.content);
@@ -149,8 +159,7 @@ class NaturalLanguageReminderService {
         }
       }
 
-      // 记录已处理的内容
-      _recordProcessedContent(analysis.content);
+      // 🔥 移除：删除重复的记录操作
       _processingTexts.remove(contentKey);
 
     } catch (e) {
@@ -180,7 +189,7 @@ class NaturalLanguageReminderService {
 ✅ 明确任务（如：开会、面试、买东西）
 ✅ 明确意图（表达出想要提醒的意图）
 
-【不应创建提醒的情况】：
+【��应创建提醒的情况】：
 - 没有具体任务
 - 时间模糊（如“每小时”、“定时”、“以后”）
 - 在回顾过去或假设性表述
@@ -188,7 +197,7 @@ class NaturalLanguageReminderService {
 
 【时间处理说明】：
 - 你必须将所有时间解析为绝对时间（ISO 8601 格式）
-- 即使用户说的是“59分钟后”，也要根据当前时间算出目标时间，并格式化为 `2025-08-27T12:00:00Z` 这种格式
+- 即使用户说的是“59分钟后”，也要根据当前时间算出目标时��，并格式化为 `2025-08-27T12:00:00Z` 这种格式
 - **输出的 parsed_time 必须统一为精确到分钟的绝对时间，秒和毫秒一律设为00**
 
 【事件识别】：
@@ -260,7 +269,7 @@ class NaturalLanguageReminderService {
       final confidence = (info['confidence'] as num?)?.toDouble() ?? 0.5;
 
       if (eventDescription.isEmpty || parsedTimeStr.isEmpty) {
-        print('[NLReminderService] ⚠️ 事件描述或时间为空');
+        print('[NLReminderService] ⚠️ 事件描述或���间为空');
         return null;
       }
 
@@ -281,7 +290,7 @@ class NaturalLanguageReminderService {
 
         // 如果LLM给出的UTC时间与当前UTC时间差距过大，说明LLM理解错误，使用自然语言解析
         final timeDiffHours = parsedUtcTime.difference(nowUtc).inHours.abs();
-        if (timeDiffHours > 24) {
+        if (timeDiffHours > 2400) {
           print('[NLReminderService] ⚠️ LLM时间差距过大(${timeDiffHours}小时)，使用自然语言解析');
           reminderTime = await _parseNaturalLanguageTime(timeExpression);
         } else {
@@ -313,7 +322,7 @@ class NaturalLanguageReminderService {
           0  // 毫秒设为0
       );
 
-      // 🔥 修复：如果时间已过且是今天，自动调整到明天同一时间
+      // 🔥 修��：如果时间已过且是今天，自动调整到明天同一时间
       final now = DateTime.now();
       if (reminderTime.isBefore(now)) {
         if (reminderTime.day == now.day && reminderTime.month == now.month && reminderTime.year == now.year) {
@@ -374,7 +383,7 @@ class NaturalLanguageReminderService {
         int hour = int.parse(timeMatch.group(1)!);
         int minute = timeMatch.group(2) != null ? 30 : 0; // 🔥 修复：正确处理"半"字
 
-        // 判断是上午还是下午
+        // 判断是上午还是��午
         if (lowerExpression.contains('晚上') || lowerExpression.contains('晚')) {
           if (hour < 12) hour += 12; // 晚上时间
         } else if (lowerExpression.contains('下午')) {
@@ -636,12 +645,36 @@ class NaturalLanguageReminderService {
   Future<void> _sendConfirmationMessage(TodoEntity reminder) async {
     try {
       if (_chatController != null) {
-        final timeStr = _formatReminderTime(DateTime.fromMillisecondsSinceEpoch(reminder.deadline!));
+        final timeStr = _formatAbsoluteReminderTime(DateTime.fromMillisecondsSinceEpoch(reminder.deadline!));
         final message = '✅ 已为您创建事件提醒：${reminder.task}\n⏰ 提醒时间：$timeStr';
         await _chatController!.sendSystemMessage(message);
       }
     } catch (e) {
       print('[NLReminderService] ❌ 发送确认消息失败: $e');
+    }
+  }
+
+
+  /// 🔥 新增：格式化绝对时间显示
+  String _formatAbsoluteReminderTime(DateTime dateTime) {
+    final now = DateTime.now();
+    final month = dateTime.month;
+    final day = dateTime.day;
+    final hour = dateTime.hour.toString().padLeft(2, '0');
+    final minute = dateTime.minute.toString().padLeft(2, '0');
+
+    // 判断是今天、明天还是其他日期
+    if (dateTime.year == now.year && dateTime.month == now.month && dateTime.day == now.day) {
+      return '今天 $hour:$minute';
+    } else if (dateTime.difference(now).inDays == 1 ||
+        (dateTime.day == now.day + 1 && dateTime.month == now.month && dateTime.year == now.year)) {
+      return '明天 $hour:$minute';
+    } else if (dateTime.year == now.year) {
+      // 同一年，显示月日
+      return '${month}月${day}日 $hour:$minute';
+    } else {
+      // 不同年，显示年月日
+      return '${dateTime.year}年${month}月${day}日 $hour:$minute';
     }
   }
 
@@ -705,7 +738,7 @@ class NaturalLanguageReminderService {
     };
   }
 
-  /// 🔥 修改：手动创建提醒
+  /// �� 修改：手动创建提醒
   Future<TodoEntity?> createManualReminder({
     required String title,
     String? description,
@@ -813,7 +846,7 @@ class NaturalLanguageReminderService {
     // 排除周期性时间表达
     final periodicExpressions = ['每小时', '定时', '每天', '每周', '每月', '定期', '周期性'];
     if (periodicExpressions.any((expr) => lowerContent.contains(expr))) {
-      print('[NLReminderService] ⚠️ 检测到周期性时间表达，跳过处理');
+      print('[NLReminderService] ⚠️ 检测到周期性时间表��，跳过处理');
       return false;
     }
 
@@ -826,7 +859,7 @@ class NaturalLanguageReminderService {
     }
 
     // 排除过去时表达
-    final pastExpressions = ['昨天', '前天', '上周', '上个月', '之前', '已经', '刚才'];
+    final pastExpressions = ['昨天', '前天', '上���', '上个月', '之前', '已经', '刚才'];
     if (pastExpressions.any((expr) => lowerContent.contains(expr))) {
       print('[NLReminderService] ⚠️ 检测到过去时表达，跳过处理');
       return false;

@@ -8,9 +8,12 @@ import 'package:app/services/conversation_topic_tracker.dart';
 import 'package:app/services/causal_chain_extractor.dart';
 import 'package:app/services/semantic_graph_builder.dart';
 import 'package:app/services/cognitive_load_estimator.dart';
+import 'package:app/services/intelligent_reminder_manager.dart';
 import 'package:app/services/objectbox_service.dart';
 import 'package:app/services/knowledge_graph_service.dart'; // 🔥 新增：知识图谱服务
 import 'package:app/models/graph_models.dart'; // 🔥 新增：知识图谱模型
+import 'package:app/services/natural_language_reminder_service.dart';
+
 
 class HumanUnderstandingSystem {
   static final HumanUnderstandingSystem _instance = HumanUnderstandingSystem._internal();
@@ -23,6 +26,10 @@ class HumanUnderstandingSystem {
   final CausalChainExtractor _causalExtractor = CausalChainExtractor();
   final SemanticGraphBuilder _graphBuilder = SemanticGraphBuilder();
   final CognitiveLoadEstimator _loadEstimator = CognitiveLoadEstimator();
+  final IntelligentReminderManager _reminderManager = IntelligentReminderManager(); // 🔥 新增：智能提醒管理器
+  final NaturalLanguageReminderService _naturalReminderService = NaturalLanguageReminderService();
+
+
 
   // 系统状态
   final StreamController<HumanUnderstandingSystemState> _systemStateController = StreamController.broadcast();
@@ -110,7 +117,7 @@ class HumanUnderstandingSystem {
       if (recentRecords.isEmpty) {
         print('[HumanUnderstandingSystem] ℹ️ 暂无最近对话记录');
         _lastProcessedTimestamp = DateTime.now().millisecondsSinceEpoch;
-        
+
         // 创建一些基础的测试数据来验证系统工作
         await _createInitialTestData();
         return;
@@ -125,13 +132,13 @@ class HumanUnderstandingSystem {
       // 标记这些记录为已处理
       _markRecordsAsProcessed(limitedRecords);
       _updateProcessedTimestamp();
-      
+
       print('[HumanUnderstandingSystem] �� 历史对话异步处理完成');
 
     } catch (e) {
       print('[HumanUnderstandingSystem] ❌ 异步处理历史对话失败: $e');
       _lastProcessedTimestamp = DateTime.now().millisecondsSinceEpoch;
-      
+
       // 如果处理失败，也创建测试数据
       await _createInitialTestData();
     }
@@ -614,8 +621,8 @@ class HumanUnderstandingSystem {
 
   /// 处理新的语义分析输入（直接与知识图谱对接）
   Future<HumanUnderstandingSystemState> processSemanticInput(
-    SemanticAnalysisInput analysis,
-  ) async {
+      SemanticAnalysisInput analysis,
+      ) async {
     // 🔥 修复：避免在初始化过程中触发循环调用
     if (_initializing) {
       print('[HumanUnderstandingSystem] ⚠️ 系统正在初始化中，跳过语义输入处理');
@@ -698,6 +705,8 @@ class HumanUnderstandingSystem {
         _intentManager.processSemanticAnalysis(enhancedAnalysis),
         _topicTracker.processConversation(enhancedAnalysis),
         _causalExtractor.extractCausalRelations(enhancedAnalysis),
+        _reminderManager.processSemanticAnalysis(enhancedAnalysis),
+        _naturalReminderService.processSemanticAnalysis(enhancedAnalysis), // 🔥 新增：自然语言提醒处理
       ]);
 
       final intents = results[0] as List<Intent>;
@@ -727,6 +736,7 @@ class HumanUnderstandingSystem {
       );
 
       // 4. 生成系统状态快照（包含知识图谱统计）
+      final reminderStats = _naturalReminderService.getStatistics();
       final systemState = HumanUnderstandingSystemState(
         activeIntents: _intentManager.getActiveIntents(),
         activeTopics: _topicTracker.getActiveTopics(),
@@ -746,6 +756,7 @@ class HumanUnderstandingSystem {
             'entities_aligned': true,
             'processed_via_kg': true, // 标记为通过知识图谱处理
           },
+          'reminder_statistics': reminderStats,
           'analysis_timestamp': analysis.timestamp.toIso8601String(),
         },
       );
@@ -757,6 +768,7 @@ class HumanUnderstandingSystem {
       print('[HumanUnderstandingSystem] 📊 新增: ${intents.length}意图, ${topics.length}主题, ${causalRelations.length}因果, ${triples.length}三元组');
       print('[HumanUnderstandingSystem] 🔗 知识图谱辅助: ${knowledgeContext['related_nodes']?.length ?? 0}个相关节点帮助分析');
       print('[HumanUnderstandingSystem] 🗃️ 直接存储到知识图谱，上下文ID: $contextId');
+      print('[HumanUnderstandingSystem] 🔔 ToDo提醒统计: ${reminderStats['pending_reminders']}个等待, ${reminderStats['sent_reminders_today']}个今日已发送');
 
       return systemState;
 
@@ -818,7 +830,7 @@ class HumanUnderstandingSystem {
 
     // 基于意图状态
     final clarifyingIntents = state.activeIntents.where(
-      (intent) => intent.state == IntentLifecycleState.clarifying
+            (intent) => intent.state == IntentLifecycleState.clarifying
     ).toList();
     if (clarifyingIntents.isNotEmpty) {
       actions.add('澄清 ${clarifyingIntents.length} 个需要明确的意图');
@@ -826,7 +838,7 @@ class HumanUnderstandingSystem {
 
     // 基于主题活跃度
     final highRelevanceTopics = state.activeTopics.where(
-      (topic) => topic.relevanceScore > 0.8
+            (topic) => topic.relevanceScore > 0.8
     ).toList();
     if (highRelevanceTopics.isNotEmpty) {
       actions.add('深入讨论高相关性主题：${highRelevanceTopics.map((t) => t.name).take(2).join('、')}');
@@ -1117,9 +1129,9 @@ class HumanUnderstandingSystem {
 
   /// 🔥 新增：使用知识图谱信息增强分析输入
   SemanticAnalysisInput _enhanceAnalysisWithKnowledgeGraph(
-    SemanticAnalysisInput original,
-    Map<String, dynamic> knowledgeContext
-  ) {
+      SemanticAnalysisInput original,
+      Map<String, dynamic> knowledgeContext
+      ) {
     final relatedNodes = knowledgeContext['related_nodes'] as List<Node>? ?? [];
     final relatedEvents = knowledgeContext['related_events'] as List<EventNode>? ?? [];
 
@@ -1177,9 +1189,9 @@ class HumanUnderstandingSystem {
 
   /// 🔥 新增：使用知识图谱信息增强主题
   Future<List<ConversationTopic>> _enhanceTopicsWithKnowledgeGraph(
-    List<ConversationTopic> originalTopics,
-    Map<String, dynamic> knowledgeContext,
-  ) async {
+      List<ConversationTopic> originalTopics,
+      Map<String, dynamic> knowledgeContext,
+      ) async {
     final relatedNodes = knowledgeContext['related_nodes'] as List<Node>? ?? [];
     final relatedEvents = knowledgeContext['related_events'] as List<EventNode>? ?? [];
 
@@ -1202,8 +1214,8 @@ class HumanUnderstandingSystem {
     for (final discoveredTopic in discoveredTopics) {
       // 检查是否与现有主题重复
       final isDuplicate = enhancedTopics.any((existing) =>
-        existing.name.toLowerCase() == discoveredTopic.name.toLowerCase() ||
-        _calculateTopicSimilarity(existing, discoveredTopic) > 0.7
+      existing.name.toLowerCase() == discoveredTopic.name.toLowerCase() ||
+          _calculateTopicSimilarity(existing, discoveredTopic) > 0.7
       );
 
       if (!isDuplicate) {
@@ -1217,10 +1229,10 @@ class HumanUnderstandingSystem {
 
   /// 🔥 新增：使用知识图谱信息增强单个主题
   ConversationTopic _enhanceTopicWithKnowledgeGraph(
-    ConversationTopic originalTopic,
-    List<Node> relatedNodes,
-    List<EventNode> relatedEvents,
-  ) {
+      ConversationTopic originalTopic,
+      List<Node> relatedNodes,
+      List<EventNode> relatedEvents,
+      ) {
     final enhancedKeywords = List<String>.from(originalTopic.keywords);
     final enhancedContext = Map<String, dynamic>.from(originalTopic.context ?? {});
 
@@ -1237,7 +1249,7 @@ class HumanUnderstandingSystem {
 
     // 2. 从相关事件中添加上下文
     final relevantEvents = relatedEvents.where((event) =>
-      _isEventRelevantToTopic(event, originalTopic)
+        _isEventRelevantToTopic(event, originalTopic)
     ).toList();
 
     if (relevantEvents.isNotEmpty) {
@@ -1270,9 +1282,9 @@ class HumanUnderstandingSystem {
 
   /// 🔥 新增：从知识图谱中发现新主题
   List<ConversationTopic> _discoverTopicsFromKnowledgeGraph(
-    List<Node> relatedNodes,
-    List<EventNode> relatedEvents,
-  ) {
+      List<Node> relatedNodes,
+      List<EventNode> relatedEvents,
+      ) {
     final discoveredTopics = <ConversationTopic>[];
 
     // 1. 基于相关事件创建主题
@@ -1406,8 +1418,8 @@ class HumanUnderstandingSystem {
         'attribute_count': allNodes.fold(0, (sum, node) => sum + node.attributes.length),
         'event_count': allEvents.length,
         'last_updated': allNodes.isNotEmpty
-          ? allNodes.first.lastUpdated.millisecondsSinceEpoch
-          : DateTime.now().millisecondsSinceEpoch,
+            ? allNodes.first.lastUpdated.millisecondsSinceEpoch
+            : DateTime.now().millisecondsSinceEpoch,
         'recent_nodes_preview': recentNodes.map((n) => {
           'name': n.name,
           'type': n.type,
@@ -1447,10 +1459,10 @@ class HumanUnderstandingSystem {
           // 🔥 修复：使用正确的属性名 relatedEntities 而不是 entities
           // 检查意图的实体是否与主题的关键词匹配
           final hasEntityMatch = intent.relatedEntities.any((entity) =>
-            topic.keywords.any((keyword) =>
+              topic.keywords.any((keyword) =>
               entity.toLowerCase().contains(keyword.toLowerCase()) ||
-              keyword.toLowerCase().contains(entity.toLowerCase())
-            )
+                  keyword.toLowerCase().contains(entity.toLowerCase())
+              )
           );
 
           // 检查意图类别是否与主题类别匹配
@@ -1489,6 +1501,8 @@ class HumanUnderstandingSystem {
     _causalExtractor.dispose();
     _graphBuilder.dispose();
     _loadEstimator.dispose();
+    _reminderManager.dispose();
+    _naturalReminderService.dispose();
 
     _initialized = false;
     print('[HumanUnderstandingSystem] 🔌 人类理解系统已完全释放');

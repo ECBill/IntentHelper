@@ -13,6 +13,7 @@ import '../constants/voice_constants.dart';
 import '../models/record_entity.dart';
 import '../models/summary_entity.dart';
 import '../services/chat_manager.dart';
+import '../services/natural_language_reminder_service.dart';
 import '../services/summary.dart';
 import 'package:uuid/uuid.dart';
 import '../services/objectbox_service.dart';
@@ -32,6 +33,7 @@ class ChatController extends ChangeNotifier {
 
   // 🔥 新增：智能提醒管理器实例
   final IntelligentReminderManager _reminderManager = IntelligentReminderManager();
+  final NaturalLanguageReminderService _naturalReminderService = NaturalLanguageReminderService();
 
   int countHelp = 0;
   static const int _pageSize = 10;
@@ -66,6 +68,8 @@ class ChatController extends ChangeNotifier {
   Future<void> _initializeReminderManager() async {
     try {
       await _reminderManager.initialize(chatController: this);
+      await _naturalReminderService.initialize(chatController: this);
+
       print('[ChatController] ✅ 智能提醒管理器已初始化');
     } catch (e) {
       print('[ChatController] ❌ 智能提醒管理器初始化失败: $e');
@@ -127,11 +131,6 @@ class ChatController extends ChangeNotifier {
     }
   }
 
-  // 🔥 新增：获取智能提醒统计信息
-  Map<String, dynamic> getReminderStatistics() {
-    return _reminderManager.getStatistics();
-  }
-
   // 🔥 新增：手动触发智能分析（用于测试或手动同步）
   Future<void> triggerIntelligentAnalysis() async {
     try {
@@ -167,6 +166,7 @@ class ChatController extends ChangeNotifier {
 
       // 提交给智能提醒管理器处理
       await _reminderManager.processSemanticAnalysis(semanticInput);
+      await _naturalReminderService.processSemanticAnalysis(semanticInput);
 
       print('[ChatController] ✅ 手动智能分析完成');
 

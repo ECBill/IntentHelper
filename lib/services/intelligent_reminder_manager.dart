@@ -21,8 +21,6 @@ class IntelligentReminderManager {
   final List<PendingReminder> _pendingReminders = [];
   final Set<String> _sentReminderIds = {};
 
-  // 🔥 新增：自然语言提醒服务
-  final NaturalLanguageReminderService _nlReminderService = NaturalLanguageReminderService();
 
   // 系统状态
   Timer? _reminderCheckTimer;
@@ -51,8 +49,6 @@ class IntelligentReminderManager {
 
     _chatController = chatController;
 
-    // 🔥 新增：初始化自然语言提醒服务
-    await _nlReminderService.initialize(chatController: chatController);
 
     // 加载预定义的提醒规则
     await _loadDefaultReminderRules();
@@ -70,8 +66,6 @@ class IntelligentReminderManager {
     if (!_initialized) return;
 
     try {
-      // 1. 🔥 新增：首先处理自然语言提醒
-      await _nlReminderService.processSemanticAnalysis(analysis);
 
       // 2. 更新关键词追踪器
       await _updateKeywordTrackers(analysis);
@@ -534,7 +528,6 @@ class IntelligentReminderManager {
   /// 获取统计信息
   Map<String, dynamic> getStatistics() {
     // 🔥 新增：合并自然语言提醒统计
-    final nlStats = _nlReminderService.getStatistics();
 
     return {
       'keyword_trackers': _keywordTrackers.length,
@@ -553,13 +546,9 @@ class IntelligentReminderManager {
         }
       }).length,
       'hourly_reminder_count': _hourlyReminderCount,
-      // 🔥 新增：自然语言提醒统计
-      'natural_language_reminders': nlStats,
     };
   }
 
-  /// 🔥 新增：获取自然语言提醒服务引用
-  NaturalLanguageReminderService get naturalLanguageReminderService => _nlReminderService;
 
   /// 🔥 新增：手动创建提醒任务
   Future<TodoEntity?> createManualReminderTodo({
@@ -593,7 +582,6 @@ class IntelligentReminderManager {
   void dispose() {
     _reminderCheckTimer?.cancel();
     _analysisTimer?.cancel();
-    _nlReminderService.dispose();
     print('[IntelligentReminderManager] 🧹 智能提醒管理器已清理');
   }
 
