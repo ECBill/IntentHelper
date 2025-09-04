@@ -8,7 +8,6 @@ import 'package:app/services/conversation_topic_tracker.dart';
 import 'package:app/services/causal_chain_extractor.dart';
 import 'package:app/services/semantic_graph_builder.dart';
 import 'package:app/services/cognitive_load_estimator.dart';
-import 'package:app/services/intelligent_reminder_manager.dart';
 import 'package:app/services/objectbox_service.dart';
 import 'package:app/services/knowledge_graph_service.dart'; // 🔥 新增：知识图谱服务
 import 'package:app/models/graph_models.dart'; // 🔥 新增：知识图谱模型
@@ -24,7 +23,6 @@ class HumanUnderstandingSystem {
   final CausalChainExtractor _causalExtractor = CausalChainExtractor();
   final SemanticGraphBuilder _graphBuilder = SemanticGraphBuilder();
   final CognitiveLoadEstimator _loadEstimator = CognitiveLoadEstimator();
-  final IntelligentReminderManager _reminderManager = IntelligentReminderManager(); // 🔥 新增：智能提醒管理器
 
   // 系统状态
   final StreamController<HumanUnderstandingSystemState> _systemStateController = StreamController.broadcast();
@@ -700,7 +698,6 @@ class HumanUnderstandingSystem {
         _intentManager.processSemanticAnalysis(enhancedAnalysis),
         _topicTracker.processConversation(enhancedAnalysis),
         _causalExtractor.extractCausalRelations(enhancedAnalysis),
-        _reminderManager.processSemanticAnalysis(enhancedAnalysis),
       ]);
 
       final intents = results[0] as List<Intent>;
@@ -730,7 +727,6 @@ class HumanUnderstandingSystem {
       );
 
       // 4. 生成系统状态快照（包含知识图谱统计）
-      final reminderStats = _reminderManager.getStatistics();
       final systemState = HumanUnderstandingSystemState(
         activeIntents: _intentManager.getActiveIntents(),
         activeTopics: _topicTracker.getActiveTopics(),
@@ -750,7 +746,6 @@ class HumanUnderstandingSystem {
             'entities_aligned': true,
             'processed_via_kg': true, // 标记为通过知识图谱处理
           },
-          'reminder_statistics': reminderStats,
           'analysis_timestamp': analysis.timestamp.toIso8601String(),
         },
       );
@@ -762,7 +757,6 @@ class HumanUnderstandingSystem {
       print('[HumanUnderstandingSystem] 📊 新增: ${intents.length}意图, ${topics.length}主题, ${causalRelations.length}因果, ${triples.length}三元组');
       print('[HumanUnderstandingSystem] 🔗 知识图谱辅助: ${knowledgeContext['related_nodes']?.length ?? 0}个相关节点帮助分析');
       print('[HumanUnderstandingSystem] 🗃️ 直接存储到知识图谱，上下文ID: $contextId');
-      print('[HumanUnderstandingSystem] 🔔 智能提醒统计: ${reminderStats['pending_reminders']}个等待, ${reminderStats['sent_reminders_today']}个今日已发送');
 
       return systemState;
 
@@ -1495,7 +1489,6 @@ class HumanUnderstandingSystem {
     _causalExtractor.dispose();
     _graphBuilder.dispose();
     _loadEstimator.dispose();
-    _reminderManager.dispose();
 
     _initialized = false;
     print('[HumanUnderstandingSystem] 🔌 人类理解系统已完全释放');

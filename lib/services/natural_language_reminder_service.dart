@@ -304,13 +304,13 @@ class NaturalLanguageReminderService {
 
       // 🔥 修改：确保提醒时间在未来，并且时间精确到分钟（避免秒级差异导致的重复）
       reminderTime = DateTime(
-        reminderTime.year,
-        reminderTime.month,
-        reminderTime.day,
-        reminderTime.hour,
-        reminderTime.minute,
-        0, // 秒设为0
-        0  // 毫秒设为0
+          reminderTime.year,
+          reminderTime.month,
+          reminderTime.day,
+          reminderTime.hour,
+          reminderTime.minute,
+          0, // 秒设为0
+          0  // 毫秒设为0
       );
 
       // 🔥 修复：如果时间已过且是今天，自动调整到明天同一时间
@@ -682,7 +682,7 @@ class NaturalLanguageReminderService {
 
     final reminders = allReminders;
     final todayReminders = reminders.where((r) =>
-        r.deadline != null &&
+    r.deadline != null &&
         r.deadline! >= todayStart.millisecondsSinceEpoch &&
         r.deadline! < todayEnd.millisecondsSinceEpoch
     ).toList();
@@ -693,12 +693,12 @@ class NaturalLanguageReminderService {
       'completed_reminders': reminders.where((r) => r.status == Status.completed).length,
       'today_reminders': todayReminders.length,
       'overdue_reminders': reminders.where((r) =>
-          r.status == Status.pending_reminder &&
+      r.status == Status.pending_reminder &&
           r.deadline != null &&
           r.deadline! < now.millisecondsSinceEpoch
       ).length,
       'upcoming_reminders': reminders.where((r) =>
-          r.status == Status.pending_reminder &&
+      r.status == Status.pending_reminder &&
           r.deadline != null &&
           r.deadline! > now.millisecondsSinceEpoch
       ).length,
@@ -760,7 +760,7 @@ class NaturalLanguageReminderService {
 
     // 清理过期的哈希记录
     _recentContentHashes.removeWhere((hash) =>
-        _lastReminderByType[hash]?.isBefore(reminderTime.subtract(Duration(hours: 1))) ?? true
+    _lastReminderByType[hash]?.isBefore(reminderTime.subtract(Duration(hours: 1))) ?? true
     );
 
     // 更新最后提醒时间

@@ -32,7 +32,7 @@ class _HumanUnderstandingDashboardState extends State<HumanUnderstandingDashboar
   @override
   void initState() {
     super.initState();
-    _tabController = TabController(length: 5, vsync: this); // 🔥 修改：改回5个标签页
+    _tabController = TabController(length: 6, vsync: this); // 🔥 修改：改为6个标签页
     _initializeSystem();
   }
 
@@ -132,9 +132,9 @@ class _HumanUnderstandingDashboardState extends State<HumanUnderstandingDashboar
             Tab(text: '概览'),
             Tab(text: '意图管理'),
             Tab(text: '主题追踪'),
+            Tab(text: '知识图谱'), // 🔥 新增：知识图谱标签页
             Tab(text: '因果分析'),
             Tab(text: '认知负载'),
-            // 🔥 删除：提醒管理标签页
           ],
         ),
       ),
@@ -146,9 +146,9 @@ class _HumanUnderstandingDashboardState extends State<HumanUnderstandingDashboar
                 _buildOverviewTab(),
                 _buildIntentsTab(),
                 _buildTopicsTab(),
+                _buildKnowledgeGraphTab(), // 🔥 新增：知识图谱页面
                 _buildCausalTab(),
                 _buildCognitiveLoadTab(),
-                // 🔥 删除：提醒管理页面
               ],
             ),
     );
@@ -597,9 +597,6 @@ class _HumanUnderstandingDashboardState extends State<HumanUnderstandingDashboar
       padding: EdgeInsets.all(16.w),
       child: Column(
         children: [
-          // 🔥 新增：知识图谱增强信息统计卡片
-          _buildKnowledgeGraphEnhancementCard(),
-          SizedBox(height: 16.h),
           Expanded(
             child: topics.isEmpty
                 ? Center(child: Text('暂无活跃主题'))
@@ -609,50 +606,6 @@ class _HumanUnderstandingDashboardState extends State<HumanUnderstandingDashboar
                   ),
           ),
         ],
-      ),
-    );
-  }
-
-  Widget _buildKnowledgeGraphEnhancementCard() {
-    final kgData = _currentState?.knowledgeGraphData;
-
-    return Card(
-      child: Padding(
-        padding: EdgeInsets.all(16.w),
-        child: Column(
-          crossAxisAlignment: CrossAxisAlignment.start,
-          children: [
-            Text(
-              '知识图谱增强信息',
-              style: TextStyle(fontSize: 18.sp, fontWeight: FontWeight.bold),
-            ),
-            SizedBox(height: 12.h),
-            if (kgData == null || kgData.isEmpty) ...[
-              Text(
-                '暂无可用的知识图谱数据',
-                style: TextStyle(fontSize: 14.sp, color: Colors.grey[600]),
-              ),
-            ] else ...[
-              Text(
-                '实体数量: ${kgData['entity_count']}',
-                style: TextStyle(fontSize: 14.sp),
-              ),
-              Text(
-                '关系数量: ${kgData['relation_count']}',
-                style: TextStyle(fontSize: 14.sp),
-              ),
-              Text(
-                '属性数量: ${kgData['attribute_count']}',
-                style: TextStyle(fontSize: 14.sp),
-              ),
-              SizedBox(height: 8.h),
-              Text(
-                '更新时间: ${kgData['last_updated'] != null ? DateTime.fromMillisecondsSinceEpoch(kgData['last_updated']).toString() : "未知"}',
-                style: TextStyle(fontSize: 12.sp, color: Colors.grey[500]),
-              ),
-            ],
-          ],
-        ),
       ),
     );
   }
@@ -709,6 +662,132 @@ class _HumanUnderstandingDashboardState extends State<HumanUnderstandingDashboar
                     child: Text(
                       intent.toString(),
                       style: TextStyle(fontSize: 12.sp, color: Colors.grey[700]),
+                    ),
+                  )),
+            ],
+          ],
+        ),
+      ),
+    );
+  }
+
+  Widget _buildKnowledgeGraphTab() {
+    if (_currentState == null) return Container();
+
+    final kgData = _currentState!.knowledgeGraphData;
+
+    return Padding(
+      padding: EdgeInsets.all(16.w),
+      child: Column(
+        children: [
+          Text(
+            '知识图谱',
+            style: TextStyle(fontSize: 18.sp, fontWeight: FontWeight.bold),
+          ),
+          SizedBox(height: 12.h),
+          Expanded(
+            child: kgData == null || kgData.isEmpty
+                ? Center(child: Text('暂无知识图谱数据'))
+                : SingleChildScrollView(
+                    child: Column(
+                      children: [
+                        _buildKnowledgeGraphCard(kgData),
+                        SizedBox(height: 16.h),
+                        _buildKnowledgeGraphInsightsCard(kgData),
+                      ],
+                    ),
+                  ),
+          ),
+        ],
+      ),
+    );
+  }
+
+  Widget _buildKnowledgeGraphCard(Map<String, dynamic> kgData) {
+    final entities = kgData['entities'] as List? ?? [];
+    final relations = kgData['relations'] as List? ?? [];
+
+    return Card(
+      child: Padding(
+        padding: EdgeInsets.all(16.w),
+        child: Column(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            Text(
+              '知识图谱结构',
+              style: TextStyle(fontSize: 16.sp, fontWeight: FontWeight.bold),
+            ),
+            SizedBox(height: 12.h),
+            if (entities.isEmpty && relations.isEmpty) ...[
+              Text(
+                '知识图谱为空',
+                style: TextStyle(fontSize: 14.sp, color: Colors.grey[600]),
+              ),
+            ] else ...[
+              Text(
+                '实体数量: ${entities.length}',
+                style: TextStyle(fontSize: 14.sp),
+              ),
+              Text(
+                '关系数量: ${relations.length}',
+                style: TextStyle(fontSize: 14.sp),
+              ),
+              SizedBox(height: 8.h),
+              Text(
+                '实体示例:',
+                style: TextStyle(fontSize: 14.sp, fontWeight: FontWeight.w600),
+              ),
+              Wrap(
+                spacing: 4.w,
+                children: entities.take(5).map((e) => Chip(
+                  label: Text(e['name'] ?? '', style: TextStyle(fontSize: 12.sp)),
+                  backgroundColor: Colors.blue.withOpacity(0.1),
+                )).toList(),
+              ),
+              SizedBox(height: 8.h),
+              Text(
+                '关系示例:',
+                style: TextStyle(fontSize: 14.sp, fontWeight: FontWeight.w600),
+              ),
+              Wrap(
+                spacing: 4.w,
+                children: relations.take(5).map((r) => Chip(
+                  label: Text('${r['source']} → ${r['target']}', style: TextStyle(fontSize: 12.sp)),
+                  backgroundColor: Colors.green.withOpacity(0.1),
+                )).toList(),
+              ),
+            ],
+          ],
+        ),
+      ),
+    );
+  }
+
+  Widget _buildKnowledgeGraphInsightsCard(Map<String, dynamic> kgData) {
+    final insights = kgData['insights'] as List? ?? [];
+
+    return Card(
+      child: Padding(
+        padding: EdgeInsets.all(16.w),
+        child: Column(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            Text(
+              '知识图谱洞察',
+              style: TextStyle(fontSize: 16.sp, fontWeight: FontWeight.bold),
+            ),
+            SizedBox(height: 12.h),
+            if (insights.isEmpty) ...[
+              Text(
+                '暂无洞察信息',
+                style: TextStyle(fontSize: 14.sp, color: Colors.grey[600]),
+              ),
+            ] else ...[
+              ...insights.map((insight) => Padding(
+                    padding: EdgeInsets.symmetric(vertical: 4.h),
+                    child: Text(
+                      '- ${insight.toString()}',
+                      style: TextStyle(fontSize: 14.sp),
                     ),
                   )),
             ],
@@ -1131,3 +1210,4 @@ class _HumanUnderstandingDashboardState extends State<HumanUnderstandingDashboar
     return Colors.red;
   }
 }
+

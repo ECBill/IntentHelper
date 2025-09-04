@@ -232,12 +232,12 @@ class IntelligentReminderManager {
 
   /// 🔥 新增：创建提醒任务
   Future<void> _createReminderTodo(
-    ReminderRule rule,
-    SemanticAnalysisInput analysis,
-    String content,
-    DateTime scheduledTime,
-    String reminderId
-  ) async {
+      ReminderRule rule,
+      SemanticAnalysisInput analysis,
+      String content,
+      DateTime scheduledTime,
+      String reminderId
+      ) async {
     try {
       final todo = TodoEntity(
         task: _generateReminderTitle(rule, content),
@@ -603,7 +603,7 @@ class IntelligentReminderManager {
 
     // 清理过期的提醒时间记录
     _recentReminderTimes.removeWhere((time) =>
-      now.difference(time).inMinutes > _minIntervalBetweenReminders ~/ 60);
+    now.difference(time).inMinutes > _minIntervalBetweenReminders ~/ 60);
 
     // 检查最近是否发送过提醒
     if (_recentReminderTimes.isNotEmpty) {
@@ -616,7 +616,7 @@ class IntelligentReminderManager {
     // 检查今天是否已达到最大提醒数
     final todayStart = DateTime(now.year, now.month, now.day);
     final todayReminders = _recentReminderTimes.where((time) =>
-      time.isAfter(todayStart)).length;
+        time.isAfter(todayStart)).length;
 
     return todayReminders < _maxRemindersPerDay;
   }
