@@ -21,6 +21,268 @@ class LogEvaluationService {
     await _loadEvaluations();
   }
 
+  /// 获取FoA主题识别数据
+  Future<List<FoAEntry>> getFoAEntries({DateTimeRange? dateRange}) async {
+    final entries = <FoAEntry>[];
+
+    try {
+      final startTime = dateRange?.start.millisecondsSinceEpoch ??
+                       DateTime.now().subtract(Duration(days: 30)).millisecondsSinceEpoch;
+      final endTime = dateRange?.end.add(Duration(days: 1)).millisecondsSinceEpoch ??
+                     DateTime.now().millisecondsSinceEpoch;
+
+      // 获取相关的对话记录
+      final query = ObjectBoxService.recordBox
+          .query(RecordEntity_.createdAt.between(startTime, endTime))
+          .order(RecordEntity_.createdAt)
+          .build();
+      final records = query.find();
+      query.close();
+
+      for (final record in records) {
+        if (record.content == null || record.content!.isEmpty) continue;
+
+        // 模拟FoA主题识别结果 - 实际应该从ConversationTopicTracker获取
+        List<String> topics = [];
+        double confidence = 0.0;
+
+        if (record.content!.contains('会议')) {
+          topics = ['会议', '工作'];
+          confidence = 0.85;
+        } else if (record.content!.contains('天气')) {
+          topics = ['天气', '日常'];
+          confidence = 0.95;
+        } else if (record.content!.contains('吃饭') || record.content!.contains('食物')) {
+          topics = ['饮食', '日常'];
+          confidence = 0.90;
+        }
+
+        if (topics.isNotEmpty) {
+          final entryId = 'foa_${record.id}';
+          final evaluation = _evaluations[entryId];
+
+          entries.add(FoAEntry(
+            id: entryId,
+            topics: topics,
+            confidence: confidence,
+            timestamp: DateTime.fromMillisecondsSinceEpoch(record.createdAt ?? 0),
+            relatedContent: record.content!,
+            evaluation: evaluation,
+          ));
+        }
+      }
+    } catch (e) {
+      print('获取FoA数据失败: $e');
+    }
+
+    return entries;
+  }
+
+  /// 获取Todo提醒数据
+  Future<List<TodoEntry>> getTodoEntries({DateTimeRange? dateRange}) async {
+    final entries = <TodoEntry>[];
+
+    try {
+      final startTime = dateRange?.start.millisecondsSinceEpoch ??
+                       DateTime.now().subtract(Duration(days: 30)).millisecondsSinceEpoch;
+      final endTime = dateRange?.end.add(Duration(days: 1)).millisecondsSinceEpoch ??
+                     DateTime.now().millisecondsSinceEpoch;
+
+      final query = ObjectBoxService.todoBox
+          .query(TodoEntity_.createdAt.between(startTime, endTime))
+          .order(TodoEntity_.createdAt)
+          .build();
+      final todos = query.find();
+      query.close();
+
+      for (final todo in todos) {
+        if (todo.task == null || todo.task!.isEmpty) continue;
+
+        final entryId = 'todo_${todo.id}';
+        final evaluation = _evaluations[entryId];
+
+        entries.add(TodoEntry(
+          id: entryId,
+          task: todo.task!,
+          deadline: todo.deadline != null ? DateTime.fromMillisecondsSinceEpoch(todo.deadline!) : null,
+          confidence: 0.9, // 模拟置信度
+          timestamp: DateTime.fromMillisecondsSinceEpoch(todo.createdAt ?? 0),
+          relatedContent: todo.detail ?? '',
+          evaluation: evaluation,
+        ));
+      }
+    } catch (e) {
+      print('获取Todo数据失败: $e');
+    }
+
+    return entries;
+  }
+
+  /// 获取智能推荐数据
+  Future<List<RecommendationEntry>> getRecommendationEntries({DateTimeRange? dateRange}) async {
+    final entries = <RecommendationEntry>[];
+
+    try {
+      final startTime = dateRange?.start.millisecondsSinceEpoch ??
+                       DateTime.now().subtract(Duration(days: 30)).millisecondsSinceEpoch;
+      final endTime = dateRange?.end.add(Duration(days: 1)).millisecondsSinceEpoch ??
+                     DateTime.now().millisecondsSinceEpoch;
+
+      // 获取助手回复中包含推荐内容的记录
+      final query = ObjectBoxService.recordBox
+          .query(RecordEntity_.createdAt.between(startTime, endTime)
+              .and(RecordEntity_.role.equals('assistant')))
+          .order(RecordEntity_.createdAt)
+          .build();
+      final records = query.find();
+      query.close();
+
+      for (final record in records) {
+        if (record.content == null || record.content!.isEmpty) continue;
+
+        // 检查是否包含推荐内容
+        if (record.content!.contains('建议') || record.content!.contains('推荐') || record.content!.contains('可以试试')) {
+          final entryId = 'rec_${record.id}';
+          final evaluation = _evaluations[entryId];
+
+          entries.add(RecommendationEntry(
+            id: entryId,
+            content: record.content!,
+            source: '智能提醒系统',
+            relevance: 0.8, // 模拟相关性分数
+            timestamp: DateTime.fromMillisecondsSinceEpoch(record.createdAt ?? 0),
+            relatedContent: record.content!,
+            evaluation: evaluation,
+          ));
+        }
+      }
+    } catch (e) {
+      print('获取推荐数据失败: $e');
+    }
+
+    return entries;
+  }
+
+  /// 获取总结数据
+  Future<List<SummaryEntry>> getSummaryEntries({DateTimeRange? dateRange}) async {
+    final entries = <SummaryEntry>[];
+
+    try {
+      final startTime = dateRange?.start.millisecondsSinceEpoch ??
+                       DateTime.now().subtract(Duration(days: 30)).millisecondsSinceEpoch;
+      final endTime = dateRange?.end.add(Duration(days: 1)).millisecondsSinceEpoch ??
+                     DateTime.now().millisecondsSinceEpoch;
+
+      final query = ObjectBoxService.summaryBox
+          .query(SummaryEntity_.createdAt.between(startTime, endTime))
+          .order(SummaryEntity_.createdAt)
+          .build();
+      final summaries = query.find();
+      query.close();
+
+      for (final summary in summaries) {
+        if (summary.content == null || summary.content!.isEmpty) continue;
+
+        final entryId = 'summary_${summary.id}';
+        final evaluation = _evaluations[entryId];
+
+        entries.add(SummaryEntry(
+          id: entryId,
+          subject: summary.subject ?? '未命名总结',
+          content: summary.content!,
+          timestamp: DateTime.fromMillisecondsSinceEpoch(summary.createdAt ?? 0),
+          relatedContent: summary.content!,
+          evaluation: evaluation,
+        ));
+      }
+    } catch (e) {
+      print('获取总结数据失败: $e');
+    }
+
+    return entries;
+  }
+
+  /// 获取知识图谱数据
+  Future<List<KGEntry>> getKGEntries({DateTimeRange? dateRange}) async {
+    final entries = <KGEntry>[];
+
+    try {
+      // 暂时返回模拟数据，实际需要从知识图谱服务获取
+      // TODO: 从KnowledgeGraphService获取真实数据
+      if (dateRange != null) {
+        entries.add(KGEntry(
+          id: 'kg_1',
+          nodeType: 'Person',
+          content: '用户信息节点',
+          properties: {'name': '用户', 'type': 'person'},
+          timestamp: DateTime.now(),
+          relatedContent: '从对话中提取的用户信息',
+          evaluation: _evaluations['kg_1'],
+        ));
+      }
+    } catch (e) {
+      print('获取KG数据失败: $e');
+    }
+
+    return entries;
+  }
+
+  /// 获取认知负载数据
+  Future<List<CognitiveLoadEntry>> getCognitiveLoadEntries({DateTimeRange? dateRange}) async {
+    final entries = <CognitiveLoadEntry>[];
+
+    try {
+      final startTime = dateRange?.start.millisecondsSinceEpoch ??
+                       DateTime.now().subtract(Duration(days: 30)).millisecondsSinceEpoch;
+      final endTime = dateRange?.end.add(Duration(days: 1)).millisecondsSinceEpoch ??
+                     DateTime.now().millisecondsSinceEpoch;
+
+      // 获取对话记录并分析认知负载
+      final query = ObjectBoxService.recordBox
+          .query(RecordEntity_.createdAt.between(startTime, endTime))
+          .order(RecordEntity_.createdAt)
+          .build();
+      final records = query.find();
+      query.close();
+
+      for (final record in records) {
+        if (record.content == null || record.content!.isEmpty) continue;
+
+        // 模拟认知负载分析 - 实际应该从CognitiveLoadEstimator获取
+        final contentLength = record.content!.length;
+        double loadValue = 0.0;
+        String loadLevel = '';
+
+        if (contentLength > 100) {
+          loadValue = 0.8;
+          loadLevel = '高';
+        } else if (contentLength > 50) {
+          loadValue = 0.6;
+          loadLevel = '中等';
+        } else {
+          loadValue = 0.3;
+          loadLevel = '低';
+        }
+
+        final entryId = 'load_${record.id}';
+        final evaluation = _evaluations[entryId];
+
+        entries.add(CognitiveLoadEntry(
+          id: entryId,
+          value: loadValue,
+          level: loadLevel,
+          timestamp: DateTime.fromMillisecondsSinceEpoch(record.createdAt ?? 0),
+          relatedContent: record.content!,
+          evaluation: evaluation,
+        ));
+      }
+    } catch (e) {
+      print('获取认知负载数据失败: $e');
+    }
+
+    return entries;
+  }
+
   /// 获取对话日志
   Future<List<ConversationLogEntry>> getConversationLogs({
     DateTimeRange? dateRange,
@@ -232,52 +494,80 @@ class LogEvaluationService {
     DateTimeRange? dateRange,
     List<ConversationLogEntry>? logs,
   }) async {
-    final evaluatedLogs = logs ?? await getConversationLogs(dateRange: dateRange);
-    final evaluations = evaluatedLogs
-        .where((log) => log.evaluation != null)
-        .map((log) => log.evaluation!)
-        .toList();
+    // 获取所有模块的评估数据
+    final foaEntries = await getFoAEntries(dateRange: dateRange);
+    final todoEntries = await getTodoEntries(dateRange: dateRange);
+    final recEntries = await getRecommendationEntries(dateRange: dateRange);
+    final summaryEntries = await getSummaryEntries(dateRange: dateRange);
+    final kgEntries = await getKGEntries(dateRange: dateRange);
+    final loadEntries = await getCognitiveLoadEntries(dateRange: dateRange);
 
-    if (evaluations.isEmpty) {
+    // 收集所有评估
+    final allEvaluations = <UserEvaluation>[];
+
+    foaEntries.where((e) => e.evaluation != null).forEach((e) => allEvaluations.add(e.evaluation!));
+    todoEntries.where((e) => e.evaluation != null).forEach((e) => allEvaluations.add(e.evaluation!));
+    recEntries.where((e) => e.evaluation != null).forEach((e) => allEvaluations.add(e.evaluation!));
+    summaryEntries.where((e) => e.evaluation != null).forEach((e) => allEvaluations.add(e.evaluation!));
+    kgEntries.where((e) => e.evaluation != null).forEach((e) => allEvaluations.add(e.evaluation!));
+    loadEntries.where((e) => e.evaluation != null).forEach((e) => allEvaluations.add(e.evaluation!));
+
+    if (allEvaluations.isEmpty) {
       return EvaluationMetrics(
         todoAccuracy: 0.0,
         averageFoaScore: 0.0,
         averageRecommendationRelevance: 0.0,
         averageCognitiveLoadReasonability: 0.0,
+        averageSummaryRelevance: 0.0,
+        averageKgAccuracy: 0.0,
         totalEvaluations: 0,
       );
     }
 
-    // 计算Todo准确率
-    final todoEvaluations = evaluations.where((e) => e.todoCorrect != null);
+    // 计算Todo准确率 = 正确数 / 总数
+    final todoEvaluations = allEvaluations.where((e) => e.todoCorrect != null);
     final todoAccuracy = todoEvaluations.isEmpty
         ? 0.0
         : todoEvaluations.where((e) => e.todoCorrect == true).length / todoEvaluations.length;
 
-    // 计算FoA平均分
-    final foaEvaluations = evaluations.where((e) => e.foaScore != null);
+    // 计算FoA平均分 = 各次标注映射值的平均
+    final foaEvaluations = allEvaluations.where((e) => e.foaScore != null);
     final averageFoaScore = foaEvaluations.isEmpty
         ? 0.0
         : foaEvaluations.map((e) => e.foaScore!).reduce((a, b) => a + b) / foaEvaluations.length;
 
-    // 计算推荐相关性平均分
-    final recEvaluations = evaluations.where((e) => e.recommendationRelevance != null);
+    // 计算主动推荐平均相关性 = 平均分
+    final recEvaluations = allEvaluations.where((e) => e.recommendationRelevance != null);
     final averageRecommendationRelevance = recEvaluations.isEmpty
         ? 0.0
-        : recEvaluations.map((e) => e.recommendationRelevance!).reduce((a, b) => a + b) / recEvaluations.length;
+        : recEvaluations.map((e) => e.recommendationRelevance!.toDouble()).reduce((a, b) => a + b) / recEvaluations.length;
 
-    // 计算认知负载合理性平均分
-    final cogEvaluations = evaluations.where((e) => e.cognitiveLoadReasonability != null);
+    // 计算认知负载合理性 = 平均分
+    final cogEvaluations = allEvaluations.where((e) => e.cognitiveLoadReasonability != null);
     final averageCognitiveLoadReasonability = cogEvaluations.isEmpty
         ? 0.0
-        : cogEvaluations.map((e) => e.cognitiveLoadReasonability!).reduce((a, b) => a + b) / cogEvaluations.length;
+        : cogEvaluations.map((e) => e.cognitiveLoadReasonability!.toDouble()).reduce((a, b) => a + b) / cogEvaluations.length;
+
+    // 计算总结质量平均分
+    final summaryEvaluations = allEvaluations.where((e) => e.summaryRelevance != null);
+    final averageSummaryRelevance = summaryEvaluations.isEmpty
+        ? 0.0
+        : summaryEvaluations.map((e) => e.summaryRelevance!.toDouble()).reduce((a, b) => a + b) / summaryEvaluations.length;
+
+    // 计算KG准确性平均分
+    final kgEvaluations = allEvaluations.where((e) => e.kgAccuracy != null);
+    final averageKgAccuracy = kgEvaluations.isEmpty
+        ? 0.0
+        : kgEvaluations.map((e) => e.kgAccuracy!.toDouble()).reduce((a, b) => a + b) / kgEvaluations.length;
 
     return EvaluationMetrics(
       todoAccuracy: todoAccuracy,
       averageFoaScore: averageFoaScore,
       averageRecommendationRelevance: averageRecommendationRelevance,
       averageCognitiveLoadReasonability: averageCognitiveLoadReasonability,
-      totalEvaluations: evaluations.length,
+      averageSummaryRelevance: averageSummaryRelevance,
+      averageKgAccuracy: averageKgAccuracy,
+      totalEvaluations: allEvaluations.length,
     );
   }
 
