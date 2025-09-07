@@ -49,6 +49,8 @@ class UserEvaluation {
   final bool? todoCorrect; // Todo是否正确
   final int? recommendationRelevance; // 推荐相关性 (1-5)
   final int? cognitiveLoadReasonability; // 认知负载合理性 (1-5)
+  final int? summaryRelevance; // 总结相关性 (1-5)
+  final int? kgAccuracy; // 知识图谱准确性 (1-5)
   final DateTime evaluatedAt;
   final String? notes; // 备注
 
@@ -57,6 +59,8 @@ class UserEvaluation {
     this.todoCorrect,
     this.recommendationRelevance,
     this.cognitiveLoadReasonability,
+    this.summaryRelevance,
+    this.kgAccuracy,
     required this.evaluatedAt,
     this.notes,
   });
@@ -67,6 +71,8 @@ class UserEvaluation {
       todoCorrect: json['todoCorrect'],
       recommendationRelevance: json['recommendationRelevance'],
       cognitiveLoadReasonability: json['cognitiveLoadReasonability'],
+      summaryRelevance: json['summaryRelevance'],
+      kgAccuracy: json['kgAccuracy'],
       evaluatedAt: DateTime.parse(json['evaluatedAt']),
       notes: json['notes'],
     );
@@ -78,6 +84,8 @@ class UserEvaluation {
       'todoCorrect': todoCorrect,
       'recommendationRelevance': recommendationRelevance,
       'cognitiveLoadReasonability': cognitiveLoadReasonability,
+      'summaryRelevance': summaryRelevance,
+      'kgAccuracy': kgAccuracy,
       'evaluatedAt': evaluatedAt.toIso8601String(),
       'notes': notes,
     };

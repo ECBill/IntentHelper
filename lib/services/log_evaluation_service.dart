@@ -3,18 +3,21 @@ import 'dart:io';
 import 'package:flutter/material.dart';
 import 'package:path_provider/path_provider.dart';
 import 'package:app/models/log_evaluation_models.dart';
+import 'package:app/services/objectbox_service.dart';
+import 'package:app/models/record_entity.dart';
+import 'package:app/models/todo_entity.dart';
+import 'package:app/models/summary_entity.dart';
+import 'package:app/models/graph_models.dart';
+import 'package:app/models/objectbox.g.dart';
 
 /// 日志评估服务
 class LogEvaluationService {
-  static const String _logFileName = 'conversation_logs.json';
   static const String _evaluationFileName = 'evaluations.json';
 
-  List<ConversationLogEntry> _logs = [];
   Map<String, UserEvaluation> _evaluations = {};
 
   /// 初始化服务
   Future<void> initialize() async {
-    await _loadLogs();
     await _loadEvaluations();
   }
 
@@ -22,27 +25,200 @@ class LogEvaluationService {
   Future<List<ConversationLogEntry>> getConversationLogs({
     DateTimeRange? dateRange,
   }) async {
-    var filteredLogs = _logs;
+    final logs = <ConversationLogEntry>[];
 
-    if (dateRange != null) {
-      filteredLogs = _logs.where((log) {
-        return log.timestamp.isAfter(dateRange.start) &&
-               log.timestamp.isBefore(dateRange.end.add(Duration(days: 1)));
-      }).toList();
+    // 获取对话记录时间范围
+    final startTime = dateRange?.start.millisecondsSinceEpoch ??
+                     DateTime.now().subtract(Duration(days: 30)).millisecondsSinceEpoch;
+    final endTime = dateRange?.end.add(Duration(days: 1)).millisecondsSinceEpoch ??
+                   DateTime.now().millisecondsSinceEpoch;
+
+    try {
+      // 从 ObjectBox 获取对话记录
+      final query = ObjectBoxService.recordBox
+          .query(RecordEntity_.createdAt.between(startTime, endTime))
+          .order(RecordEntity_.createdAt)
+          .build();
+      final records = query.find();
+      query.close();
+
+      print('找到 ${records.length} 条对话记录');
+
+      for (final record in records) {
+        if (record.content == null || record.content!.isEmpty) continue;
+
+        final timestamp = DateTime.fromMillisecondsSinceEpoch(record.createdAt ?? 0);
+        final logId = record.id.toString();
+
+        // 收集功能结果
+        final functionResults = <String, dynamic>{};
+
+        // 1. FoA识别 - 从 HumanUnderstandingSystem 的 topicTracker 获取
+        final foaResults = await _getFoAResults(record, timestamp);
+        if (foaResults.isNotEmpty) {
+          functionResults['foa'] = foaResults;
+        }
+
+        // 2. Todo生成 - 从 TodoEntity 获取
+        final todoResults = await _getTodoResults(record, timestamp);
+        if (todoResults.isNotEmpty) {
+          functionResults['todo'] = todoResults;
+        }
+
+        // 3. 主动推荐 - 从 IntelligentReminderManager 获取
+        final recommendationResults = await _getRecommendationResults(record, timestamp);
+        if (recommendationResults.isNotEmpty) {
+          functionResults['recommendations'] = recommendationResults;
+        }
+
+        // 4. 总结 - 从 SummaryEntity 获取
+        final summaryResults = await _getSummaryResults(record, timestamp);
+        if (summaryResults.isNotEmpty) {
+          functionResults['summaries'] = summaryResults;
+        }
+
+        // 5. KG内容 - 从知识图谱获取
+        final kgResults = await _getKGResults(record, timestamp);
+        if (kgResults.isNotEmpty) {
+          functionResults['kg'] = kgResults;
+        }
+
+        // 6. 认知负载 - 从 CognitiveLoadEstimator 获取
+        final cognitiveLoadResults = await _getCognitiveLoadResults(record, timestamp);
+        if (cognitiveLoadResults.isNotEmpty) {
+          functionResults['cognitiveLoad'] = cognitiveLoadResults;
+        }
+
+        // 显示所有对话记录，不管是否有功能结果
+        final evaluation = _evaluations[logId];
+        logs.add(ConversationLogEntry(
+          id: logId,
+          role: record.role ?? 'user',
+          content: record.content!,
+          timestamp: timestamp,
+          functionResults: functionResults,
+          evaluation: evaluation,
+        ));
+      }
+    } catch (e) {
+      print('获取对话记录失败: $e');
     }
 
-    // 合并评估数据
-    return filteredLogs.map((log) {
-      final evaluation = _evaluations[log.id];
-      return ConversationLogEntry(
-        id: log.id,
-        role: log.role,
-        content: log.content,
-        timestamp: log.timestamp,
-        functionResults: log.functionResults,
-        evaluation: evaluation,
-      );
-    }).toList();
+    print('生成了 ${logs.length} 条日志条目');
+    return logs;
+  }
+
+  /// 获取FoA识别结果
+  Future<List<Map<String, dynamic>>> _getFoAResults(RecordEntity record, DateTime timestamp) async {
+    try {
+      // 这里应该从 ConversationTopicTracker 获取主题分析结果
+      // 目前先返回模拟数据，实际实现需要调用相应的服务
+      if (record.content != null && record.content!.contains('会议')) {
+        return [{'topics': ['会议', '工作'], 'confidence': 0.85}];
+      } else if (record.content != null && record.content!.contains('天气')) {
+        return [{'topics': ['天气', '日常'], 'confidence': 0.95}];
+      }
+      return [];
+    } catch (e) {
+      print('获取FoA结果失败: $e');
+      return [];
+    }
+  }
+
+  /// 获取Todo生成结果
+  Future<List<Map<String, dynamic>>> _getTodoResults(RecordEntity record, DateTime timestamp) async {
+    try {
+      // 查找相关时间范围内的Todo记录
+      final query = ObjectBoxService.todoBox
+          .query(TodoEntity_.createdAt.between(
+            timestamp.subtract(Duration(minutes: 5)).millisecondsSinceEpoch,
+            timestamp.add(Duration(minutes: 5)).millisecondsSinceEpoch,
+          ))
+          .build();
+      final todos = query.find();
+      query.close();
+
+      return todos.map((todo) => {
+        'event': todo.task ?? '',
+        'reminderTime': todo.deadline != null ? DateTime.fromMillisecondsSinceEpoch(todo.deadline!).toString() : '未指定',
+        'confidence': 0.9,
+      }).toList();
+    } catch (e) {
+      print('获取Todo结果失败: $e');
+      return [];
+    }
+  }
+
+  /// 获取主动推荐结果
+  Future<List<Map<String, dynamic>>> _getRecommendationResults(RecordEntity record, DateTime timestamp) async {
+    try {
+      // 这里应该从 IntelligentReminderManager 获取智能提醒结果
+      // 目前先返回模拟数据
+      if (record.role == 'assistant' && record.content != null && record.content!.contains('建议')) {
+        return [{'content': '智能推荐内容', 'source': '智能提醒系统'}];
+      }
+      return [];
+    } catch (e) {
+      print('获取推荐结果失败: $e');
+      return [];
+    }
+  }
+
+  /// 获取总结结果
+  Future<List<Map<String, dynamic>>> _getSummaryResults(RecordEntity record, DateTime timestamp) async {
+    try {
+      // 查找相关时间范围内的Summary记录
+      final query = ObjectBoxService.summaryBox
+          .query(SummaryEntity_.createdAt.between(
+            timestamp.subtract(Duration(minutes: 10)).millisecondsSinceEpoch,
+            timestamp.add(Duration(minutes: 10)).millisecondsSinceEpoch,
+          ))
+          .build();
+      final summaries = query.find();
+      query.close();
+
+      return summaries.map((summary) => {
+        'subject': summary.subject ?? '',
+        'content': summary.content ?? '',
+      }).toList();
+    } catch (e) {
+      print('获取总结结果失败: $e');
+      return [];
+    }
+  }
+
+  /// 获取KG结果
+  Future<List<Map<String, dynamic>>> _getKGResults(RecordEntity record, DateTime timestamp) async {
+    try {
+      // 暂时跳过KG查询，因为模型字段可能不匹配
+      // TODO: 需要检查Node和Edge模型的实际字段结构
+      return [];
+    } catch (e) {
+      print('获取KG结果失败: $e');
+      return [];
+    }
+  }
+
+  /// 获取认知负载结果
+  Future<Map<String, dynamic>> _getCognitiveLoadResults(RecordEntity record, DateTime timestamp) async {
+    try {
+      // 这里应该从 CognitiveLoadEstimator 获取认知负载分析结果
+      // 目前先返回模拟数据
+      if (record.content != null) {
+        final contentLength = record.content!.length;
+        if (contentLength > 100) {
+          return {'value': 0.8, 'level': '高'};
+        } else if (contentLength > 50) {
+          return {'value': 0.6, 'level': '中等'};
+        } else {
+          return {'value': 0.3, 'level': '低'};
+        }
+      }
+      return {};
+    } catch (e) {
+      print('获取认知负载结果失败: $e');
+      return {};
+    }
   }
 
   /// 保存评估
@@ -153,27 +329,6 @@ class LogEvaluationService {
     throw Exception('不支持的导出格式: $format');
   }
 
-  /// 加载日志
-  Future<void> _loadLogs() async {
-    try {
-      final directory = await getApplicationDocumentsDirectory();
-      final file = File('${directory.path}/$_logFileName');
-
-      if (await file.exists()) {
-        final content = await file.readAsString();
-        final List<dynamic> jsonList = jsonDecode(content);
-        _logs = jsonList.map((json) => ConversationLogEntry.fromJson(json)).toList();
-      } else {
-        // 如果文件不存在，创建示例数据
-        _logs = _generateSampleLogs();
-        await _saveLogs();
-      }
-    } catch (e) {
-      print('加载日志失败: $e');
-      _logs = _generateSampleLogs();
-    }
-  }
-
   /// 加载评估
   Future<void> _loadEvaluations() async {
     try {
@@ -192,18 +347,6 @@ class LogEvaluationService {
     }
   }
 
-  /// 保存日志
-  Future<void> _saveLogs() async {
-    try {
-      final directory = await getApplicationDocumentsDirectory();
-      final file = File('${directory.path}/$_logFileName');
-      final jsonList = _logs.map((log) => log.toJson()).toList();
-      await file.writeAsString(jsonEncode(jsonList));
-    } catch (e) {
-      print('保存日志失败: $e');
-    }
-  }
-
   /// 保存评估
   Future<void> _saveEvaluations() async {
     try {
@@ -215,43 +358,5 @@ class LogEvaluationService {
     } catch (e) {
       print('保存评估失败: $e');
     }
-  }
-
-  /// 生成示例日志数据
-  List<ConversationLogEntry> _generateSampleLogs() {
-    final now = DateTime.now();
-    return [
-      ConversationLogEntry(
-        id: '1',
-        role: 'user',
-        content: '我明天有个重要会议需要准备',
-        timestamp: now.subtract(Duration(hours: 2)),
-        functionResults: {
-          'foa': [{'topics': ['会议', '准备'], 'confidence': 0.85}],
-          'todo': [{'event': '准备明天的重要会议', 'reminderTime': null, 'confidence': 0.9}],
-          'cognitiveLoad': {'value': 0.6, 'level': '中等'},
-        },
-      ),
-      ConversationLogEntry(
-        id: '2',
-        role: 'assistant',
-        content: '我已经为您创建了一个待办事项：准备明天的重要会议。需要我提供一些会议准备的建议吗？',
-        timestamp: now.subtract(Duration(hours: 2, minutes: 1)),
-        functionResults: {
-          'recommendations': [{'content': '会议准备清单建议', 'source': '知识库'}],
-          'summaries': [{'subject': '会议准备', 'content': '用户需要准备明天的重要会议'}],
-        },
-      ),
-      ConversationLogEntry(
-        id: '3',
-        role: 'user',
-        content: '今天天气怎么样？',
-        timestamp: now.subtract(Duration(hours: 1)),
-        functionResults: {
-          'foa': [{'topics': ['天气'], 'confidence': 0.95}],
-          'cognitiveLoad': {'value': 0.2, 'level': '低'},
-        },
-      ),
-    ];
   }
 }

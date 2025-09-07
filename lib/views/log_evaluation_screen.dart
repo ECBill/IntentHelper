@@ -544,10 +544,9 @@ class _ConversationLogTileState extends State<ConversationLogTile> {
             SizedBox(height: 8.sp),
             _buildFunctionResults(),
           ],
-          if (hasResults) ...[
-            SizedBox(height: 8.sp),
-            _buildEvaluationArea(),
-          ],
+          // 修改：显示评估区域的条件 - 只要有对话内容就显示
+          SizedBox(height: 8.sp),
+          _buildEvaluationArea(),
         ],
       ),
     );
@@ -689,6 +688,10 @@ class _ConversationLogTileState extends State<ConversationLogTile> {
             _buildRecommendationEvaluation(),
           if (widget.log.functionResults.containsKey('cognitiveLoad'))
             _buildCognitiveLoadEvaluation(),
+          if (widget.log.functionResults.containsKey('summaries'))
+            _buildSummaryEvaluation(),
+          if (widget.log.functionResults.containsKey('kg') || widget.log.functionResults.containsKey('kgStatus'))
+            _buildKGEvaluation(),
         ],
       ),
     );
@@ -842,6 +845,68 @@ class _ConversationLogTileState extends State<ConversationLogTile> {
     );
   }
 
+  Widget _buildSummaryEvaluation() {
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: [
+        Text(
+          '总结内容相关性 (1-5分):',
+          style: TextStyle(
+            fontSize: 12.sp,
+            fontWeight: FontWeight.w500,
+            color: widget.isLightMode ? Colors.black87 : Colors.white,
+          ),
+        ),
+        SizedBox(height: 6.sp),
+        Wrap(
+          spacing: 6.sp,
+          children: List.generate(5, (index) {
+            final score = index + 1;
+            final isSelected = _currentEvaluation?.summaryRelevance == score;
+            return _buildScoreButton(
+              score: score,
+              isSelected: isSelected,
+              color: Colors.teal,
+              onTap: () => _updateSummaryEvaluation(score),
+            );
+          }),
+        ),
+        SizedBox(height: 12.sp),
+      ],
+    );
+  }
+
+  Widget _buildKGEvaluation() {
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: [
+        Text(
+          '知识图谱内容准确性 (1-5分):',
+          style: TextStyle(
+            fontSize: 12.sp,
+            fontWeight: FontWeight.w500,
+            color: widget.isLightMode ? Colors.black87 : Colors.white,
+          ),
+        ),
+        SizedBox(height: 6.sp),
+        Wrap(
+          spacing: 6.sp,
+          children: List.generate(5, (index) {
+            final score = index + 1;
+            final isSelected = _currentEvaluation?.kgAccuracy == score;
+            return _buildScoreButton(
+              score: score,
+              isSelected: isSelected,
+              color: Colors.indigo,
+              onTap: () => _updateKGEvaluation(score),
+            );
+          }),
+        ),
+        SizedBox(height: 12.sp),
+      ],
+    );
+  }
+
   Widget _buildScoreButton({
     required int score,
     required bool isSelected,
@@ -927,6 +992,34 @@ class _ConversationLogTileState extends State<ConversationLogTile> {
       todoCorrect: _currentEvaluation?.todoCorrect,
       recommendationRelevance: _currentEvaluation?.recommendationRelevance,
       cognitiveLoadReasonability: score,
+      evaluatedAt: DateTime.now(),
+      notes: _currentEvaluation?.notes,
+    );
+    _updateEvaluation(newEvaluation);
+  }
+
+  void _updateSummaryEvaluation(int score) {
+    final newEvaluation = UserEvaluation(
+      foaScore: _currentEvaluation?.foaScore,
+      todoCorrect: _currentEvaluation?.todoCorrect,
+      recommendationRelevance: _currentEvaluation?.recommendationRelevance,
+      cognitiveLoadReasonability: _currentEvaluation?.cognitiveLoadReasonability,
+      summaryRelevance: score,
+      kgAccuracy: _currentEvaluation?.kgAccuracy,
+      evaluatedAt: DateTime.now(),
+      notes: _currentEvaluation?.notes,
+    );
+    _updateEvaluation(newEvaluation);
+  }
+
+  void _updateKGEvaluation(int score) {
+    final newEvaluation = UserEvaluation(
+      foaScore: _currentEvaluation?.foaScore,
+      todoCorrect: _currentEvaluation?.todoCorrect,
+      recommendationRelevance: _currentEvaluation?.recommendationRelevance,
+      cognitiveLoadReasonability: _currentEvaluation?.cognitiveLoadReasonability,
+      summaryRelevance: _currentEvaluation?.summaryRelevance,
+      kgAccuracy: score,
       evaluatedAt: DateTime.now(),
       notes: _currentEvaluation?.notes,
     );
