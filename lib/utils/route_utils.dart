@@ -16,6 +16,7 @@ import 'package:app/views/knowledge_graph_page.dart';
 import 'package:app/views/kg_test_page.dart';
 import 'package:app/views/cache_debug_page.dart';
 import 'package:app/views/summary_list_screen.dart';
+import 'package:app/views/log_evaluation_screen.dart'; // 🔥 新增：日志评估页面导入
 import 'package:go_router/go_router.dart';
 import '../views/entry/loading_screen.dart';
 import 'package:app/views/help_feedback/help_feedback_screen.dart';
@@ -139,6 +140,11 @@ class RouteUtils {
       name: RouteName.todo,
       builder: (_, state) => const TodoScreen(status: Status.all),
     ),
+    GoRoute(
+      path: RouteName.log_evaluation,
+      name: RouteName.log_evaluation,
+      builder: (_, state) => const LogEvaluationScreen(),
+    ),
   ];
 }
 
@@ -176,4 +182,7 @@ class RouteName {
 
   /// todo
   static const String todo = '/todo';
+
+  /// log evaluation
+  static const String log_evaluation = '/log_evaluation';
 }

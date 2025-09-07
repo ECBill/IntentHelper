@@ -140,6 +140,11 @@ class _SettingScreenState extends State<SettingScreen> {
     );
   }
 
+  /// 点击日志评估入口
+  void _onClickLogEvaluation() {
+    context.pushNamed(RouteName.log_evaluation);
+  }
+
   @override
   Widget build(BuildContext context) {
     final themeNotifier = Provider.of<ThemeNotifier>(context);
@@ -234,6 +239,12 @@ class _SettingScreenState extends State<SettingScreen> {
                 title: 'Human Understanding',
                 subtitle: 'Advanced AI understanding system',
                 onTap: _onClickHumanUnderstanding,
+              ),
+              SettingListTile(
+                leading: AssetsUtil.icon_feedback, // 临时使用现有图标
+                title: 'Log Evaluation',
+                subtitle: 'Evaluate AI understanding performance',
+                onTap: _onClickLogEvaluation,
               ),
             ],
           ),
