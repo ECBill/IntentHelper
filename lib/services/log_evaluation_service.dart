@@ -4,6 +4,7 @@ import 'package:flutter/material.dart';
 import 'package:path_provider/path_provider.dart';
 import 'package:app/models/log_evaluation_models.dart';
 import 'package:app/services/objectbox_service.dart';
+import 'package:app/services/topic_history_service.dart';
 import 'package:app/models/record_entity.dart';
 import 'package:app/models/todo_entity.dart';
 import 'package:app/models/summary_entity.dart';
@@ -15,14 +16,60 @@ class LogEvaluationService {
   static const String _evaluationFileName = 'evaluations.json';
 
   Map<String, UserEvaluation> _evaluations = {};
+  final TopicHistoryService _topicHistoryService = TopicHistoryService();
 
   /// 初始化服务
   Future<void> initialize() async {
     await _loadEvaluations();
+    await _topicHistoryService.initialize();
   }
 
-  /// 获取FoA主题识别数据
+  /// 获取FoA主题识别数据（修改版）
   Future<List<FoAEntry>> getFoAEntries({DateTimeRange? dateRange}) async {
+    final entries = <FoAEntry>[];
+
+    try {
+      // 从主题历史服务获取数据
+      final topicHistory = _topicHistoryService.getTopicHistory(dateRange: dateRange);
+
+      for (final historyEntry in topicHistory) {
+        if (historyEntry.detectedTopics.isNotEmpty) {
+          final entryId = 'foa_${historyEntry.id}';
+          final evaluation = _evaluations[entryId];
+
+          // 计算平均置信度
+          final avgConfidence = historyEntry.detectedTopics
+              .map((t) => t.relevanceScore)
+              .reduce((a, b) => a + b) / historyEntry.detectedTopics.length;
+
+          entries.add(FoAEntry(
+            id: entryId,
+            topics: historyEntry.detectedTopics.map((t) => t.name).toList(),
+            confidence: avgConfidence,
+            timestamp: historyEntry.timestamp,
+            relatedContent: historyEntry.content,
+            evaluation: evaluation,
+          ));
+        }
+      }
+
+      // 如果历史服务中没有数据，回退到原来的模拟数据方法
+      if (entries.isEmpty) {
+        final fallbackEntries = await _getFallbackFoAEntries(dateRange: dateRange);
+        entries.addAll(fallbackEntries);
+      }
+    } catch (e) {
+      print('获取FoA数据失败: $e');
+      // 出错时使用回退方法
+      final fallbackEntries = await _getFallbackFoAEntries(dateRange: dateRange);
+      entries.addAll(fallbackEntries);
+    }
+
+    return entries;
+  }
+
+  /// 回退的FoA数据获取方法（原来的模拟数据）
+  Future<List<FoAEntry>> _getFallbackFoAEntries({DateTimeRange? dateRange}) async {
     final entries = <FoAEntry>[];
 
     try {
@@ -72,7 +119,7 @@ class LogEvaluationService {
         }
       }
     } catch (e) {
-      print('获取FoA数据失败: $e');
+      print('获取回退FoA数据失败: $e');
     }
 
     return entries;
@@ -149,7 +196,7 @@ class LogEvaluationService {
             id: entryId,
             content: record.content!,
             source: '智能提醒系统',
-            relevance: 0.8, // 模拟相关性分数
+            relevance: 0.8, // 模拟相关性分��
             timestamp: DateTime.fromMillisecondsSinceEpoch(record.createdAt ?? 0),
             relatedContent: record.content!,
             evaluation: evaluation,
@@ -494,7 +541,7 @@ class LogEvaluationService {
     DateTimeRange? dateRange,
     List<ConversationLogEntry>? logs,
   }) async {
-    // 获取所有模块的评估数据
+    // 获取所有模块的评���数据
     final foaEntries = await getFoAEntries(dateRange: dateRange);
     final todoEntries = await getTodoEntries(dateRange: dateRange);
     final recEntries = await getRecommendationEntries(dateRange: dateRange);

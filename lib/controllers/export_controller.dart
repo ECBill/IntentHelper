@@ -74,7 +74,12 @@ class _ExportDataDialogState extends State<ExportDataDialog> {
 
     try {
       File file = File(filePath);
-      await file.writeAsBytes(utf8.encode(csvData));
+      // 添加 UTF-8 BOM 来确保中文字符正确显示
+      List<int> utf8Bom = [0xEF, 0xBB, 0xBF];
+      List<int> utf8Data = utf8.encode(csvData);
+      List<int> finalData = utf8Bom + utf8Data;
+
+      await file.writeAsBytes(finalData);
       bool success = await SharePlusUtil.shareFile(path: filePath);
       if (success) {
         ScaffoldMessenger.of(context).showSnackBar(

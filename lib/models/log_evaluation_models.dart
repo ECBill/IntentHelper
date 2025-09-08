@@ -313,3 +313,79 @@ class CognitiveLoadEntry {
     };
   }
 }
+
+/// 主题历史记录条目
+class TopicHistoryEntry {
+  final String id;
+  final String conversationId;
+  final String content;
+  final List<TopicSnapshot> detectedTopics;
+  final DateTime timestamp;
+
+  TopicHistoryEntry({
+    required this.id,
+    required this.conversationId,
+    required this.content,
+    required this.detectedTopics,
+    required this.timestamp,
+  });
+
+  Map<String, dynamic> toJson() => {
+    'id': id,
+    'conversationId': conversationId,
+    'content': content,
+    'detectedTopics': detectedTopics.map((t) => t.toJson()).toList(),
+    'timestamp': timestamp.millisecondsSinceEpoch,
+  };
+
+  factory TopicHistoryEntry.fromJson(Map<String, dynamic> json) => TopicHistoryEntry(
+    id: json['id'],
+    conversationId: json['conversationId'],
+    content: json['content'],
+    detectedTopics: (json['detectedTopics'] as List)
+        .map((t) => TopicSnapshot.fromJson(t))
+        .toList(),
+    timestamp: DateTime.fromMillisecondsSinceEpoch(json['timestamp']),
+  );
+}
+
+/// 主题快照（用于历史记录）
+class TopicSnapshot {
+  final String name;
+  final String category;
+  final double relevanceScore;
+  final List<String> keywords;
+  final List<String> entities;
+
+  TopicSnapshot({
+    required this.name,
+    required this.category,
+    required this.relevanceScore,
+    required this.keywords,
+    required this.entities,
+  });
+
+  factory TopicSnapshot.fromTopic(dynamic topic) => TopicSnapshot(
+    name: topic.name,
+    category: topic.category,
+    relevanceScore: topic.relevanceScore,
+    keywords: topic.keywords,
+    entities: topic.entities,
+  );
+
+  Map<String, dynamic> toJson() => {
+    'name': name,
+    'category': category,
+    'relevanceScore': relevanceScore,
+    'keywords': keywords,
+    'entities': entities,
+  };
+
+  factory TopicSnapshot.fromJson(Map<String, dynamic> json) => TopicSnapshot(
+    name: json['name'],
+    category: json['category'],
+    relevanceScore: json['relevanceScore'],
+    keywords: List<String>.from(json['keywords']),
+    entities: List<String>.from(json['entities']),
+  );
+}

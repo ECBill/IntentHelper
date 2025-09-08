@@ -6,6 +6,7 @@ import 'dart:convert';
 import 'dart:math' as math;
 import 'package:app/models/human_understanding_models.dart';
 import 'package:app/services/llm.dart';
+import 'package:app/services/topic_history_service.dart';
 
 class ConversationTopicTracker {
   static final ConversationTopicTracker _instance = ConversationTopicTracker._internal();
@@ -15,6 +16,7 @@ class ConversationTopicTracker {
   final Map<String, ConversationTopic> _topics = {};
   final List<String> _conversationHistory = [];
   final StreamController<ConversationTopic> _topicUpdatesController = StreamController.broadcast();
+  final TopicHistoryService _historyService = TopicHistoryService();
 
   Timer? _relevanceDecayTimer;
   bool _initialized = false;
@@ -32,6 +34,9 @@ class ConversationTopicTracker {
 
     print('[ConversationTopicTracker] 🚀 初始化对话主题追踪器...');
 
+    // 初始化历史服务
+    await _historyService.initialize();
+
     // 启动相关性衰减定时器
     _startRelevanceDecayTimer();
 
@@ -39,7 +44,7 @@ class ConversationTopicTracker {
     print('[ConversationTopicTracker] ✅ 对话主题追踪器初始化完成');
   }
 
-  /// 处理新的对话内容
+  /// 处理新的对话内容（修改版）
   Future<List<ConversationTopic>> processConversation(SemanticAnalysisInput analysis) async {
     if (!_initialized) await initialize();
 
@@ -55,13 +60,21 @@ class ConversationTopicTracker {
       // 2. 识别当前对话中的主题
       final detectedTopics = await _detectTopics(analysis);
 
-      // 3. 更新现有主题���相关性
+      // 3. 记录到历史服务
+      await _historyService.recordTopicDetection(
+        conversationId: 'conversation_${DateTime.now().millisecondsSinceEpoch}',
+        content: analysis.content,
+        detectedTopics: detectedTopics,
+        timestamp: DateTime.now(),
+      );
+
+      // 4. 更新现有主题的相关性
       await _updateTopicRelevance(analysis, detectedTopics);
 
-      // 4. 检测主题切换
+      // 5. 检测主题切换
       final topicSwitches = await _detectTopicSwitches(analysis);
 
-      // 5. 返回受影响的主题
+      // 6. 返回受影响的主题
       final affectedTopics = <ConversationTopic>[];
       affectedTopics.addAll(detectedTopics);
 
@@ -105,7 +118,7 @@ class ConversationTopicTracker {
     "name": "主题名称（具体描述）",
     "category": "主题分类",
     "relevance_score": 0.8,
-    "keywords": ["关键词1", "关键词2"],
+    "keywords": ["关键词1", "���键词2"],
     "entities": ["相关实体"],
     "context": {
       "importance": "high|medium|low",
