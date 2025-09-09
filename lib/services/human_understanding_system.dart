@@ -1412,14 +1412,29 @@ class HumanUnderstandingSystem {
       final activeTopics = _topicTracker.getActiveTopics();
       final allKeywords = <String>[];
 
-      // 收集所有活跃主题的关键词
+      // 收集所有活跃主题的关键词并去重
+      final keywordSet = <String>{};
       for (final topic in activeTopics) {
-        allKeywords.addAll(topic.keywords);
+        for (final keyword in topic.keywords) {
+          // 🔥 修复：标准化关键词并去重
+          final normalizedKeyword = keyword.trim().toLowerCase();
+          if (normalizedKeyword.isNotEmpty && normalizedKeyword.length > 1) {
+            keywordSet.add(normalizedKeyword);
+          }
+        }
       }
+      allKeywords.addAll(keywordSet);
 
       // 如果没有活跃主题，使用最近的实体作为关键词
       if (allKeywords.isEmpty && allNodes.isNotEmpty) {
-        allKeywords.addAll(allNodes.take(5).map((n) => n.name));
+        final entityKeywordSet = <String>{};
+        for (final node in allNodes.take(5)) {
+          final normalizedName = node.name.trim().toLowerCase();
+          if (normalizedName.isNotEmpty && normalizedName.length > 1) {
+            entityKeywordSet.add(normalizedName);
+          }
+        }
+        allKeywords.addAll(entityKeywordSet);
       }
 
       // 🔥 核心逻辑：根据关键词查找相关的事件节点
@@ -1428,16 +1443,16 @@ class HumanUnderstandingSystem {
       final eventIds = <String>{};
       final entityIds = <String>{};
 
-      print('[HumanUnderstandingSystem] 🔍 使用关键词查找相关事件: ${allKeywords.join(', ')}');
+      print('[HumanUnderstandingSystem] 🔍 使用去重后的关键词查找相关事件: ${allKeywords.join(', ')}');
 
       // 1. 根据关键词找到匹配的实体节点
       for (final node in allNodes) {
         bool isRelevant = false;
 
         for (final keyword in allKeywords) {
-          if (node.name.toLowerCase().contains(keyword.toLowerCase()) ||
-              node.canonicalName.toLowerCase().contains(keyword.toLowerCase()) ||
-              node.aliases.any((alias) => alias.toLowerCase().contains(keyword.toLowerCase()))) {
+          if (node.name.toLowerCase().contains(keyword) ||
+              node.canonicalName.toLowerCase().contains(keyword) ||
+              node.aliases.any((alias) => alias.toLowerCase().contains(keyword))) {
             isRelevant = true;
             break;
           }
@@ -1477,8 +1492,10 @@ class HumanUnderstandingSystem {
 
       print('[HumanUnderstandingSystem] 🎯 找到 ${relatedEventNodes.length} 个相关事件节点');
 
-      // 4. 生成关系数据（实体-事件关系）
+      // 4. 生成关系数据（实体-事件关系）并去重
       final relations = <Map<String, dynamic>>[];
+      final relationSignatures = <String>{};
+
       for (final entityNode in relatedEntityNodes) {
         final entityEventRelations = objectBox.queryEventEntityRelations(entityId: entityNode.id);
         for (final relation in entityEventRelations) {
@@ -1487,35 +1504,58 @@ class HumanUnderstandingSystem {
             orElse: () => EventNode(id: '', name: '', type: '', lastUpdated: DateTime.now(), sourceContext: ''),
           );
           if (event.name.isNotEmpty) {
-            relations.add({
-              'source': entityNode.name,
-              'target': event.name,
-              'relation_type': relation.role,
-              'entity_type': entityNode.type,
-              'event_type': event.type,
-            });
+            // 🔥 修复：生成关系签名避免重复
+            final signature = '${entityNode.name}_${event.name}_${relation.role}';
+            if (!relationSignatures.contains(signature)) {
+              relations.add({
+                'source': entityNode.name,
+                'target': event.name,
+                'relation_type': relation.role,
+                'entity_type': entityNode.type,
+                'event_type': event.type,
+              });
+              relationSignatures.add(signature);
+            }
           }
         }
       }
 
-      // 5. 生成实体数据
-      final entities = relatedEntityNodes.map((node) => {
-        'name': node.name,
-        'type': node.type,
-        'attributes_count': node.attributes.length,
-        'aliases': node.aliases,
-        'canonical_name': node.canonicalName,
-      }).toList();
+      // 5. 生成实体数据并去重
+      final entities = <Map<String, dynamic>>[];
+      final entitySignatures = <String>{};
 
-      // 6. 生成事件数据
-      final events = relatedEventNodes.map((event) => {
-        'name': event.name,
-        'type': event.type,
-        'description': event.description,
-        'location': event.location,
-        'start_time': event.startTime?.toIso8601String(),
-        'last_updated': event.lastUpdated.toIso8601String(),
-      }).toList();
+      for (final node in relatedEntityNodes) {
+        final signature = '${node.name}_${node.type}';
+        if (!entitySignatures.contains(signature)) {
+          entities.add({
+            'name': node.name,
+            'type': node.type,
+            'attributes_count': node.attributes.length,
+            'aliases': node.aliases,
+            'canonical_name': node.canonicalName,
+          });
+          entitySignatures.add(signature);
+        }
+      }
+
+      // 6. 生成事件数据并去重
+      final events = <Map<String, dynamic>>[];
+      final eventSignatures = <String>{};
+
+      for (final event in relatedEventNodes) {
+        final signature = '${event.name}_${event.type}_${event.startTime?.millisecondsSinceEpoch ?? event.lastUpdated.millisecondsSinceEpoch}';
+        if (!eventSignatures.contains(signature)) {
+          events.add({
+            'name': event.name,
+            'type': event.type,
+            'description': event.description,
+            'location': event.location,
+            'start_time': event.startTime?.toIso8601String(),
+            'last_updated': event.lastUpdated.toIso8601String(),
+          });
+          eventSignatures.add(signature);
+        }
+      }
 
       // 7. 生成洞察信息
       final insights = <String>[];
@@ -1525,20 +1565,35 @@ class HumanUnderstandingSystem {
           eventsByType[event.type] = (eventsByType[event.type] ?? 0) + 1;
         }
 
-        final topEventType = eventsByType.entries.reduce((a, b) => a.value > b.value ? a : b);
-        insights.add('最常见的事件类型是"${topEventType.key}"，共${topEventType.value}个事件');
+        if (eventsByType.isNotEmpty) {
+          final topEventType = eventsByType.entries.reduce((a, b) => a.value > b.value ? a : b);
+          insights.add('最常见的事件类型是"${topEventType.key}"，共${topEventType.value}个事件');
 
-        if (relatedEntityNodes.isNotEmpty) {
-          insights.add('通过${relatedEntityNodes.length}个相关实体找到了${relatedEventNodes.length}个相关记忆');
+          if (relatedEntityNodes.isNotEmpty) {
+            insights.add('通过${relatedEntityNodes.length}个相关实体找到了${relatedEventNodes.length}个相关记忆');
+          }
+
+          if (allKeywords.isNotEmpty) {
+            insights.add('基于${allKeywords.length}个去重关键词进行智能检索');
+          }
+
+          final recentEvents = relatedEventNodes.take(3);
+          if (recentEvents.isNotEmpty) {
+            insights.add('最近的相关记忆包括: ${recentEvents.map((e) => e.name).join('、')}');
+          }
         }
-
-        final recentEvents = relatedEventNodes.take(3);
-        if (recentEvents.isNotEmpty) {
-          insights.add('最近的相关记忆包括: ${recentEvents.map((e) => e.name).join('、')}');
+      } else {
+        // 🔥 新增：当没有找到相关事件时的提示
+        if (allKeywords.isNotEmpty) {
+          insights.add('使用了${allKeywords.length}个关键词进行检索，但未找到相关的历史记忆');
+          insights.add('这可能表示这是全新的话题，或者相关记忆还没有被记录');
+        } else {
+          insights.add('当前没有活跃的主题关键词，系统暂时无法提供个性化的记忆检索');
         }
       }
 
-      return {
+      // 🔥 修复：确保返回的数据结构完整且稳定
+      final result = {
         // Dashboard期望的字段名
         'entities': entities,
         'relations': relations,
@@ -1551,30 +1606,39 @@ class HumanUnderstandingSystem {
         'event_count': allEvents.length,
         'relevant_entity_count': relatedEntityNodes.length,
         'relevant_event_count': relatedEventNodes.length,
-        'keywords_used': allKeywords,
+        'keywords_used': allKeywords, // 已去重的关键词
 
         'last_updated': allNodes.isNotEmpty
             ? allNodes.first.lastUpdated.millisecondsSinceEpoch
             : DateTime.now().millisecondsSinceEpoch,
+        'generated_at': DateTime.now().millisecondsSinceEpoch, // 🔥 新增：生成时间戳
+        'is_empty': entities.isEmpty && relations.isEmpty && events.isEmpty, // 🔥 新增：空状态标识
       };
+
+      print('[HumanUnderstandingSystem] ✅ 知识图谱数据生成完成: ${entities.length}实体, ${events.length}事件, ${relations.length}关系');
+      return result;
+
     } catch (e) {
       print('[HumanUnderstandingSystem] ❌ 生成知识图谱数据统计失败: $e');
       return {
         'entities': [],
         'relations': [],
         'events': [],
-        'insights': [],
+        'insights': ['数据生成失败: ${e.toString()}'],
         'entity_count': 0,
         'relation_count': 0,
         'event_count': 0,
         'relevant_entity_count': 0,
         'relevant_event_count': 0,
+        'keywords_used': [],
         'error': e.toString(),
+        'generated_at': DateTime.now().millisecondsSinceEpoch,
+        'is_empty': true,
       };
     }
   }
 
-  /// 🔥 修复：生成意图主题关系映射
+  /// 修复意图主题关系映射
   Map<String, List<Intent>> _generateIntentTopicRelations() {
     try {
       final activeIntents = _intentManager.getActiveIntents();

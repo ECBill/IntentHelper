@@ -676,22 +676,65 @@ class _HumanUnderstandingDashboardState extends State<HumanUnderstandingDashboar
 
     final kgData = _currentState!.knowledgeGraphData;
 
+    // 🔥 修复：检查数据的有效性和稳定性
+    final isDataEmpty = kgData == null ||
+                       kgData.isEmpty ||
+                       (kgData['is_empty'] == true) ||
+                       (kgData['entities'] as List? ?? []).isEmpty &&
+                       (kgData['events'] as List? ?? []).isEmpty &&
+                       (kgData['relations'] as List? ?? []).isEmpty;
+
     return Padding(
       padding: EdgeInsets.all(16.w),
       child: Column(
         children: [
+          // 🔥 新增：状态栏显示数据生成时间和状态
+          Container(
+            width: double.infinity,
+            padding: EdgeInsets.all(8.w),
+            decoration: BoxDecoration(
+              color: Colors.grey.withOpacity(0.1),
+              borderRadius: BorderRadius.circular(6.r),
+            ),
+            child: Row(
+              children: [
+                Icon(Icons.info_outline, size: 16.sp, color: Colors.grey[600]),
+                SizedBox(width: 8.w),
+                Expanded(
+                  child: Text(
+                    isDataEmpty
+                      ? '知识图谱数据为空 - 可能还没有相关的对话记录'
+                      : '数据生成时间: ${_formatTimestamp(kgData?['generated_at'])}',
+                    style: TextStyle(fontSize: 12.sp, color: Colors.grey[600]),
+                  ),
+                ),
+                // 🔥 新增：手动刷新按钮
+                IconButton(
+                  icon: Icon(Icons.refresh, size: 16.sp),
+                  onPressed: () {
+                    print('[Dashboard] 🔄 手动刷新知识图谱数据');
+                    _loadSystemData();
+                  },
+                  tooltip: '刷新知识图谱',
+                ),
+              ],
+            ),
+          ),
+          SizedBox(height: 12.h),
+
           Text(
             '知识图谱',
             style: TextStyle(fontSize: 18.sp, fontWeight: FontWeight.bold),
           ),
           SizedBox(height: 12.h),
+
           Expanded(
-            child: kgData == null || kgData.isEmpty
-                ? Center(child: Text('暂无知识图谱数据'))
+            child: isDataEmpty
+                ? _buildEmptyKnowledgeGraphView(kgData)
                 : SingleChildScrollView(
                     child: Column(
                       children: [
-                        _buildKnowledgeGraphCard(kgData),
+                        _buildKnowledgeGraphCard(kgData!),
                         SizedBox(height: 16.h),
                         _buildKnowledgeGraphInsightsCard(kgData),
                       ],
@@ -701,6 +744,103 @@ class _HumanUnderstandingDashboardState extends State<HumanUnderstandingDashboar
         ],
       ),
     );
+  }
+
+  // 🔥 新增：空状态视图
+  Widget _buildEmptyKnowledgeGraphView(Map<String, dynamic>? kgData) {
+    final hasError = kgData?['error'] != null;
+    final totalEntityCount = kgData?['entity_count'] ?? 0;
+    final totalEventCount = kgData?['event_count'] ?? 0;
+
+    return Center(
+      child: Column(
+        mainAxisAlignment: MainAxisAlignment.center,
+        children: [
+          Icon(
+            hasError ? Icons.error_outline : Icons.memory,
+            size: 64.sp,
+            color: hasError ? Colors.red : Colors.grey[400],
+          ),
+          SizedBox(height: 16.h),
+          Text(
+            hasError ? '知识图谱加载失败' : '暂无相关知识图谱数据',
+            style: TextStyle(
+              fontSize: 18.sp,
+              fontWeight: FontWeight.w600,
+              color: hasError ? Colors.red : Colors.grey[600],
+            ),
+          ),
+          SizedBox(height: 8.h),
+          if (hasError) ...[
+            Text(
+              '错误信息: ${kgData!['error']}',
+              style: TextStyle(fontSize: 12.sp, color: Colors.red),
+              textAlign: TextAlign.center,
+            ),
+          ] else ...[
+            Text(
+              totalEntityCount > 0 || totalEventCount > 0
+                ? '数据库中有 $totalEntityCount 个实体和 $totalEventCount 个事件\n但没有找到与当前主题相关的内容'
+                : '还没有进行过对话，或者对话内容还没有被处理成知识图谱',
+              style: TextStyle(fontSize: 14.sp, color: Colors.grey[600]),
+              textAlign: TextAlign.center,
+            ),
+          ],
+          SizedBox(height: 24.h),
+          Row(
+            mainAxisAlignment: MainAxisAlignment.center,
+            children: [
+              ElevatedButton.icon(
+                onPressed: _loadSystemData,
+                icon: Icon(Icons.refresh, size: 16.sp),
+                label: Text('刷新数据'),
+              ),
+              SizedBox(width: 12.w),
+              if (!hasError && totalEntityCount == 0) ...[
+                ElevatedButton.icon(
+                  onPressed: () async {
+                    await _testAnalysis();
+                  },
+                  icon: Icon(Icons.science, size: 16.sp),
+                  label: Text('生成测试数据'),
+                ),
+              ],
+            ],
+          ),
+        ],
+      ),
+    );
+  }
+
+  // 🔥 新增：时间戳格式化函数
+  String _formatTimestamp(dynamic timestamp) {
+    if (timestamp == null) return '未知';
+
+    try {
+      final DateTime time;
+      if (timestamp is int) {
+        time = DateTime.fromMillisecondsSinceEpoch(timestamp);
+      } else if (timestamp is String) {
+        time = DateTime.parse(timestamp);
+      } else {
+        return '未知';
+      }
+
+      final now = DateTime.now();
+      final diff = now.difference(time);
+
+      if (diff.inMinutes < 1) {
+        return '刚刚';
+      } else if (diff.inMinutes < 60) {
+        return '${diff.inMinutes}分钟前';
+      } else if (diff.inHours < 24) {
+        return '${diff.inHours}小时前';
+      } else {
+        return '${time.month}/${time.day} ${time.hour.toString().padLeft(2, '0')}:${time.minute.toString().padLeft(2, '0')}';
+      }
+    } catch (e) {
+      return '格式错误';
+    }
   }
 
   Widget _buildKnowledgeGraphCard(Map<String, dynamic> kgData) {
