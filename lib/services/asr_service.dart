@@ -567,7 +567,7 @@ class RecordServiceHandler extends TaskHandler {
     }
   }
 
-  // 处理音频数据���VAD、ASR、声纹识别等主流程）
+  // 处理音频数据�������VAD、ASR、声纹识别等主流程）
   void _processAudioData(data, {String category = RecordEntity.categoryDefault}) async {
     // print('[_processAudioData] 🎤 Received audio data: ${data.length} bytes');
 
@@ -762,14 +762,6 @@ class RecordServiceHandler extends TaskHandler {
     if (speaker != 'user') {
       _objectBoxService.insertDefaultRecord(RecordEntity(role: 'others', content: text));
       _chatManager.addChatSession('others', text);
-      // if (text.trim().isNotEmpty) {
-      //   FlutterForegroundTask.sendDataToMain({
-      //     'text': text,
-      //     'isEndpoint': true,
-      //     'inDialogMode': _inDialogMode,
-      //     'speaker': speaker,
-      //   });
-      // }
     } else {
       if (_inDialogMode) {
         _objectBoxService.insertDialogueRecord(RecordEntity(role: 'user', content: text));
@@ -1343,3 +1335,78 @@ double _cosineSimilarity(Float32List a, Float32List b) {
   if (normA == 0 || normB == 0) return -1.0;
   return dot / (math.sqrt(normA) * math.sqrt(normB)); // ← 使用math.sqrt
 }
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
