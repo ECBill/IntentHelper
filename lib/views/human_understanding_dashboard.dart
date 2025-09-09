@@ -706,6 +706,8 @@ class _HumanUnderstandingDashboardState extends State<HumanUnderstandingDashboar
   Widget _buildKnowledgeGraphCard(Map<String, dynamic> kgData) {
     final entities = kgData['entities'] as List? ?? [];
     final relations = kgData['relations'] as List? ?? [];
+    final events = kgData['events'] as List? ?? []; // 🔥 新增：事件数据
+    final keywordsUsed = kgData['keywords_used'] as List? ?? []; // 🔥 新增：使用的关键词
 
     return Card(
       child: Padding(
@@ -718,47 +720,229 @@ class _HumanUnderstandingDashboardState extends State<HumanUnderstandingDashboar
               style: TextStyle(fontSize: 16.sp, fontWeight: FontWeight.bold),
             ),
             SizedBox(height: 12.h),
-            if (entities.isEmpty && relations.isEmpty) ...[
+
+            // 🔥 新增：查询关键词显示
+            if (keywordsUsed.isNotEmpty) ...[
+              Container(
+                padding: EdgeInsets.all(8.w),
+                decoration: BoxDecoration(
+                  color: Colors.blue.withOpacity(0.1),
+                  borderRadius: BorderRadius.circular(8.r),
+                  border: Border.all(color: Colors.blue.withOpacity(0.3)),
+                ),
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    Text(
+                      '查询关键词:',
+                      style: TextStyle(fontSize: 12.sp, fontWeight: FontWeight.w600),
+                    ),
+                    SizedBox(height: 4.h),
+                    Wrap(
+                      spacing: 4.w,
+                      children: keywordsUsed.map((keyword) => Chip(
+                        label: Text(keyword.toString(), style: TextStyle(fontSize: 10.sp)),
+                        backgroundColor: Colors.blue.withOpacity(0.1),
+                        materialTapTargetSize: MaterialTapTargetSize.shrinkWrap,
+                      )).toList(),
+                    ),
+                  ],
+                ),
+              ),
+              SizedBox(height: 12.h),
+            ],
+
+            if (entities.isEmpty && relations.isEmpty && events.isEmpty) ...[
               Text(
-                '知识图谱为空',
+                '暂无相关知识图谱数据',
                 style: TextStyle(fontSize: 14.sp, color: Colors.grey[600]),
               ),
             ] else ...[
-              Text(
-                '实体数量: ${entities.length}',
-                style: TextStyle(fontSize: 14.sp),
+              // 🔥 修复：显示统计信息
+              Row(
+                children: [
+                  Expanded(
+                    child: _buildKGStatItem('相关实体', '${entities.length}', Icons.account_circle, Colors.blue),
+                  ),
+                  Expanded(
+                    child: _buildKGStatItem('相关事件', '${events.length}', Icons.event, Colors.green),
+                  ),
+                  Expanded(
+                    child: _buildKGStatItem('关系', '${relations.length}', Icons.link, Colors.orange),
+                  ),
+                ],
               ),
-              Text(
-                '关系数量: ${relations.length}',
-                style: TextStyle(fontSize: 14.sp),
-              ),
-              SizedBox(height: 8.h),
-              Text(
-                '实体示例:',
-                style: TextStyle(fontSize: 14.sp, fontWeight: FontWeight.w600),
-              ),
-              Wrap(
-                spacing: 4.w,
-                children: entities.take(5).map((e) => Chip(
-                  label: Text(e['name'] ?? '', style: TextStyle(fontSize: 12.sp)),
-                  backgroundColor: Colors.blue.withOpacity(0.1),
-                )).toList(),
-              ),
-              SizedBox(height: 8.h),
-              Text(
-                '关系示例:',
-                style: TextStyle(fontSize: 14.sp, fontWeight: FontWeight.w600),
-              ),
-              Wrap(
-                spacing: 4.w,
-                children: relations.take(5).map((r) => Chip(
-                  label: Text('${r['source']} → ${r['target']}', style: TextStyle(fontSize: 12.sp)),
-                  backgroundColor: Colors.green.withOpacity(0.1),
-                )).toList(),
-              ),
+              SizedBox(height: 12.h),
+
+              // 🔥 新增：事件节点显示
+              if (events.isNotEmpty) ...[
+                Text(
+                  '最近相关事件:',
+                  style: TextStyle(fontSize: 14.sp, fontWeight: FontWeight.w600),
+                ),
+                SizedBox(height: 6.h),
+                Container(
+                  height: 120.h,
+                  child: ListView.builder(
+                    scrollDirection: Axis.horizontal,
+                    itemCount: events.length.clamp(0, 5), // 最多显示5个事件
+                    itemBuilder: (context, index) {
+                      final event = events[index];
+                      return Container(
+                        width: 200.w,
+                        margin: EdgeInsets.only(right: 8.w),
+                        padding: EdgeInsets.all(8.w),
+                        decoration: BoxDecoration(
+                          color: Colors.green.withOpacity(0.1),
+                          borderRadius: BorderRadius.circular(8.r),
+                          border: Border.all(color: Colors.green.withOpacity(0.3)),
+                        ),
+                        child: Column(
+                          crossAxisAlignment: CrossAxisAlignment.start,
+                          children: [
+                            Text(
+                              event['name']?.toString() ?? '未知事件',
+                              style: TextStyle(fontSize: 12.sp, fontWeight: FontWeight.w600),
+                              maxLines: 2,
+                              overflow: TextOverflow.ellipsis,
+                            ),
+                            SizedBox(height: 4.h),
+                            Text(
+                              '类型: ${event['type']?.toString() ?? '未知'}',
+                              style: TextStyle(fontSize: 10.sp, color: Colors.grey[600]),
+                            ),
+                            if (event['description'] != null) ...[
+                              SizedBox(height: 2.h),
+                              Text(
+                                event['description'].toString(),
+                                style: TextStyle(fontSize: 10.sp, color: Colors.grey[700]),
+                                maxLines: 3,
+                                overflow: TextOverflow.ellipsis,
+                              ),
+                            ],
+                            if (event['location'] != null) ...[
+                              SizedBox(height: 2.h),
+                              Row(
+                                children: [
+                                  Icon(Icons.location_on, size: 10.sp, color: Colors.grey[600]),
+                                  SizedBox(width: 2.w),
+                                  Expanded(
+                                    child: Text(
+                                      event['location'].toString(),
+                                      style: TextStyle(fontSize: 10.sp, color: Colors.grey[600]),
+                                      maxLines: 1,
+                                      overflow: TextOverflow.ellipsis,
+                                    ),
+                                  ),
+                                ],
+                              ),
+                            ],
+                          ],
+                        ),
+                      );
+                    },
+                  ),
+                ),
+                SizedBox(height: 12.h),
+              ],
+
+              // 实体显示
+              if (entities.isNotEmpty) ...[
+                Text(
+                  '相关实体:',
+                  style: TextStyle(fontSize: 14.sp, fontWeight: FontWeight.w600),
+                ),
+                SizedBox(height: 6.h),
+                Wrap(
+                  spacing: 4.w,
+                  children: entities.take(8).map((e) => Chip(
+                    label: Text(
+                      '${e['name'] ?? ''} (${e['type'] ?? ''})',
+                      style: TextStyle(fontSize: 10.sp)
+                    ),
+                    backgroundColor: Colors.blue.withOpacity(0.1),
+                    materialTapTargetSize: MaterialTapTargetSize.shrinkWrap,
+                  )).toList(),
+                ),
+                SizedBox(height: 12.h),
+              ],
+
+              // 关系显示
+              if (relations.isNotEmpty) ...[
+                Text(
+                  '实体-事件关系:',
+                  style: TextStyle(fontSize: 14.sp, fontWeight: FontWeight.w600),
+                ),
+                SizedBox(height: 6.h),
+                Container(
+                  height: 100.h,
+                  child: ListView.builder(
+                    itemCount: relations.length.clamp(0, 5), // 最多显示5个关系
+                    itemBuilder: (context, index) {
+                      final relation = relations[index];
+                      return Container(
+                        padding: EdgeInsets.symmetric(vertical: 4.h, horizontal: 8.w),
+                        margin: EdgeInsets.only(bottom: 4.h),
+                        decoration: BoxDecoration(
+                          color: Colors.orange.withOpacity(0.1),
+                          borderRadius: BorderRadius.circular(6.r),
+                        ),
+                        child: Row(
+                          children: [
+                            Expanded(
+                              child: Text(
+                                '${relation['source']} → ${relation['target']}',
+                                style: TextStyle(fontSize: 11.sp),
+                                maxLines: 1,
+                                overflow: TextOverflow.ellipsis,
+                              ),
+                            ),
+                            Text(
+                              '(${relation['relation_type'] ?? '关联'})',
+                              style: TextStyle(fontSize: 10.sp, color: Colors.grey[600]),
+                            ),
+                          ],
+                        ),
+                      );
+                    },
+                  ),
+                ),
+              ],
             ],
           ],
         ),
+      ),
+    );
+  }
+
+  // 🔥 新增：知识图谱统计项组件
+  Widget _buildKGStatItem(String label, String value, IconData icon, Color color) {
+    return Container(
+      padding: EdgeInsets.all(8.w),
+      margin: EdgeInsets.symmetric(horizontal: 2.w),
+      decoration: BoxDecoration(
+        color: color.withOpacity(0.1),
+        borderRadius: BorderRadius.circular(8.r),
+        border: Border.all(color: color.withOpacity(0.3)),
+      ),
+      child: Column(
+        children: [
+          Icon(icon, color: color, size: 16.sp),
+          SizedBox(height: 2.h),
+          Text(
+            value,
+            style: TextStyle(
+              fontSize: 16.sp,
+              fontWeight: FontWeight.bold,
+              color: color,
+            ),
+          ),
+          Text(
+            label,
+            style: TextStyle(fontSize: 10.sp, color: Colors.grey[600]),
+            textAlign: TextAlign.center,
+          ),
+        ],
       ),
     );
   }
@@ -1039,11 +1223,11 @@ class _HumanUnderstandingDashboardState extends State<HumanUnderstandingDashboar
         actions: [
           TextButton(
             onPressed: () => Navigator.pop(context, false),
-            child: Text('取��'),
+            child: Text('取消'),
           ),
           TextButton(
             onPressed: () => Navigator.pop(context, true),
-            child: Text('���定'),
+            child: Text('确定'),
           ),
         ],
       ),

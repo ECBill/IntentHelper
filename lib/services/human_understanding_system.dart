@@ -1408,36 +1408,167 @@ class HumanUnderstandingSystem {
       final allEvents = objectBox.queryEventNodes();
       final allEdges = objectBox.queryEdges();
 
-      // 获取最近的节点和事件
-      final recentNodes = allNodes.take(10).toList();
-      final recentEvents = allEvents.take(10).toList();
+      // 🔥 新增：根据当前活跃主题关键词查找相关事件节点
+      final activeTopics = _topicTracker.getActiveTopics();
+      final allKeywords = <String>[];
+
+      // 收集所有活跃主题的关键词
+      for (final topic in activeTopics) {
+        allKeywords.addAll(topic.keywords);
+      }
+
+      // 如果没有活跃主题，使用最近的实体作为关键词
+      if (allKeywords.isEmpty && allNodes.isNotEmpty) {
+        allKeywords.addAll(allNodes.take(5).map((n) => n.name));
+      }
+
+      // 🔥 核心逻辑：根据关键词查找相关的事件节点
+      final relatedEventNodes = <EventNode>[];
+      final relatedEntityNodes = <Node>[];
+      final eventIds = <String>{};
+      final entityIds = <String>{};
+
+      print('[HumanUnderstandingSystem] 🔍 使用关键词查找相关事件: ${allKeywords.join(', ')}');
+
+      // 1. 根据关键词找到匹配的实体节点
+      for (final node in allNodes) {
+        bool isRelevant = false;
+
+        for (final keyword in allKeywords) {
+          if (node.name.toLowerCase().contains(keyword.toLowerCase()) ||
+              node.canonicalName.toLowerCase().contains(keyword.toLowerCase()) ||
+              node.aliases.any((alias) => alias.toLowerCase().contains(keyword.toLowerCase()))) {
+            isRelevant = true;
+            break;
+          }
+        }
+
+        if (isRelevant && !entityIds.contains(node.id)) {
+          relatedEntityNodes.add(node);
+          entityIds.add(node.id);
+        }
+      }
+
+      print('[HumanUnderstandingSystem] 📊 找到 ${relatedEntityNodes.length} 个相关实体节点');
+
+      // 2. 基于找到的实体节点查找相关事件（每个实体最多10个事件）
+      for (final entityNode in relatedEntityNodes) {
+        final entityEventRelations = objectBox.queryEventEntityRelations(entityId: entityNode.id);
+
+        int eventCount = 0;
+        for (final relation in entityEventRelations) {
+          if (eventCount >= 10) break; // 每个实体最多10个事件
+
+          final event = objectBox.findEventNodeById(relation.eventId);
+          if (event != null && !eventIds.contains(event.id)) {
+            relatedEventNodes.add(event);
+            eventIds.add(event.id);
+            eventCount++;
+          }
+        }
+      }
+
+      // 3. 按时间排序事件（最近的在前）
+      relatedEventNodes.sort((a, b) {
+        final timeA = a.startTime?.millisecondsSinceEpoch ?? a.lastUpdated.millisecondsSinceEpoch;
+        final timeB = b.startTime?.millisecondsSinceEpoch ?? b.lastUpdated.millisecondsSinceEpoch;
+        return timeB.compareTo(timeA);
+      });
+
+      print('[HumanUnderstandingSystem] 🎯 找到 ${relatedEventNodes.length} 个相关事件节点');
+
+      // 4. 生成关系数据（实体-事件关系）
+      final relations = <Map<String, dynamic>>[];
+      for (final entityNode in relatedEntityNodes) {
+        final entityEventRelations = objectBox.queryEventEntityRelations(entityId: entityNode.id);
+        for (final relation in entityEventRelations) {
+          final event = relatedEventNodes.firstWhere(
+            (e) => e.id == relation.eventId,
+            orElse: () => EventNode(id: '', name: '', type: '', lastUpdated: DateTime.now(), sourceContext: ''),
+          );
+          if (event.name.isNotEmpty) {
+            relations.add({
+              'source': entityNode.name,
+              'target': event.name,
+              'relation_type': relation.role,
+              'entity_type': entityNode.type,
+              'event_type': event.type,
+            });
+          }
+        }
+      }
+
+      // 5. 生成实体数据
+      final entities = relatedEntityNodes.map((node) => {
+        'name': node.name,
+        'type': node.type,
+        'attributes_count': node.attributes.length,
+        'aliases': node.aliases,
+        'canonical_name': node.canonicalName,
+      }).toList();
+
+      // 6. 生成事件数据
+      final events = relatedEventNodes.map((event) => {
+        'name': event.name,
+        'type': event.type,
+        'description': event.description,
+        'location': event.location,
+        'start_time': event.startTime?.toIso8601String(),
+        'last_updated': event.lastUpdated.toIso8601String(),
+      }).toList();
+
+      // 7. 生成洞察信息
+      final insights = <String>[];
+      if (relatedEventNodes.isNotEmpty) {
+        final eventsByType = <String, int>{};
+        for (final event in relatedEventNodes) {
+          eventsByType[event.type] = (eventsByType[event.type] ?? 0) + 1;
+        }
+
+        final topEventType = eventsByType.entries.reduce((a, b) => a.value > b.value ? a : b);
+        insights.add('最常见的事件类型是"${topEventType.key}"，共${topEventType.value}个事件');
+
+        if (relatedEntityNodes.isNotEmpty) {
+          insights.add('通过${relatedEntityNodes.length}个相关实体找到了${relatedEventNodes.length}个相关记忆');
+        }
+
+        final recentEvents = relatedEventNodes.take(3);
+        if (recentEvents.isNotEmpty) {
+          insights.add('最近的相关记忆包括: ${recentEvents.map((e) => e.name).join('、')}');
+        }
+      }
 
       return {
+        // Dashboard期望的字段名
+        'entities': entities,
+        'relations': relations,
+        'events': events,
+        'insights': insights,
+
+        // 统计信息
         'entity_count': allNodes.length,
         'relation_count': allEdges.length,
-        'attribute_count': allNodes.fold(0, (sum, node) => sum + node.attributes.length),
         'event_count': allEvents.length,
+        'relevant_entity_count': relatedEntityNodes.length,
+        'relevant_event_count': relatedEventNodes.length,
+        'keywords_used': allKeywords,
+
         'last_updated': allNodes.isNotEmpty
             ? allNodes.first.lastUpdated.millisecondsSinceEpoch
             : DateTime.now().millisecondsSinceEpoch,
-        'recent_nodes_preview': recentNodes.map((n) => {
-          'name': n.name,
-          'type': n.type,
-          'attributes_count': n.attributes.length,
-        }).toList(),
-        'recent_events_preview': recentEvents.map((e) => {
-          'name': e.name,
-          'type': e.type,
-          'location': e.location,
-        }).toList(),
       };
     } catch (e) {
       print('[HumanUnderstandingSystem] ❌ 生成知识图谱数据统计失败: $e');
       return {
+        'entities': [],
+        'relations': [],
+        'events': [],
+        'insights': [],
         'entity_count': 0,
         'relation_count': 0,
-        'attribute_count': 0,
         'event_count': 0,
+        'relevant_entity_count': 0,
+        'relevant_event_count': 0,
         'error': e.toString(),
       };
     }
