@@ -13,6 +13,7 @@ import 'package:app/services/objectbox_service.dart';
 import 'package:app/services/knowledge_graph_service.dart';
 import 'package:app/models/graph_models.dart';
 import 'package:app/services/natural_language_reminder_service.dart';
+import 'package:app/services/knowledge_graph_manager.dart'; // 🔥 新增：导入知识图谱管理器
 
 class HumanUnderstandingSystem {
   static final HumanUnderstandingSystem _instance = HumanUnderstandingSystem._internal();
@@ -27,6 +28,7 @@ class HumanUnderstandingSystem {
   final CognitiveLoadEstimator _loadEstimator = CognitiveLoadEstimator();
   final IntelligentReminderManager _reminderManager = IntelligentReminderManager();
   final NaturalLanguageReminderService _naturalReminderService = NaturalLanguageReminderService();
+  final KnowledgeGraphManager _knowledgeGraphManager = KnowledgeGraphManager(); // 🔥 新增：知识图谱管理器实例
 
   // 🔥 知识图谱数据缓存
   Map<String, dynamic>? _cachedKnowledgeGraphData;
@@ -76,6 +78,7 @@ class HumanUnderstandingSystem {
         _causalExtractor.initialize(),
         _graphBuilder.initialize(),
         _loadEstimator.initialize(),
+        _knowledgeGraphManager.initialize(), // 🔥 新增：初始化知识图谱管理器
       ]);
 
       print('[HumanUnderstandingSystem] ✅ 所有子模块初始化完成');
