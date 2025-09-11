@@ -676,44 +676,55 @@ class _HumanUnderstandingDashboardState extends State<HumanUnderstandingDashboar
 
     final kgData = _currentState!.knowledgeGraphData;
 
-    // 🔥 修复：检查数据的有效性和稳定性
+    // 🔥 修复：更宽松的数据判空逻辑，优先显示有用信息
+    final entities = (kgData?['entities'] as List? ?? []);
+    final events = (kgData?['events'] as List? ?? []);
+    final relations = (kgData?['relations'] as List? ?? []);
+    final insights = (kgData?['insights'] as List? ?? []);
+
+    // 只有在真正没有任何数据且有错误时才显示空状态
     final isDataEmpty = kgData == null ||
-                       kgData.isEmpty ||
-                       (kgData['is_empty'] == true) ||
-                       (kgData['entities'] as List? ?? []).isEmpty &&
-                       (kgData['events'] as List? ?? []).isEmpty &&
-                       (kgData['relations'] as List? ?? []).isEmpty;
+                       (entities.isEmpty && events.isEmpty && relations.isEmpty && insights.isEmpty && kgData['error'] != null);
 
     return Padding(
       padding: EdgeInsets.all(16.w),
       child: Column(
         children: [
-          // 🔥 新增：状态栏显示数据生成时间和状态
+          // 🔥 改进：状态栏显示更详细的数据信息
           Container(
             width: double.infinity,
             padding: EdgeInsets.all(8.w),
             decoration: BoxDecoration(
-              color: Colors.grey.withOpacity(0.1),
+              color: isDataEmpty ? Colors.red.withOpacity(0.1) : Colors.blue.withOpacity(0.1),
               borderRadius: BorderRadius.circular(6.r),
+              border: Border.all(color: isDataEmpty ? Colors.red.withOpacity(0.3) : Colors.blue.withOpacity(0.3)),
             ),
             child: Row(
               children: [
-                Icon(Icons.info_outline, size: 16.sp, color: Colors.grey[600]),
+                Icon(
+                  isDataEmpty ? Icons.error_outline : Icons.info_outline,
+                  size: 16.sp,
+                  color: isDataEmpty ? Colors.red[600] : Colors.blue[600]
+                ),
                 SizedBox(width: 8.w),
                 Expanded(
                   child: Text(
                     isDataEmpty
-                      ? '知识图谱数据为空 - 可能还没有相关的对话记录'
-                      : '数据生成时间: ${_formatTimestamp(kgData?['generated_at'])}',
-                    style: TextStyle(fontSize: 12.sp, color: Colors.grey[600]),
+                      ? '知识图谱数据加载失败或暂无数据'
+                      : '数据状态: ${entities.length}实体, ${events.length}事件, ${relations.length}关系 | 更新时间: ${_formatTimestamp(kgData?['generated_at'])}',
+                    style: TextStyle(fontSize: 12.sp, color: isDataEmpty ? Colors.red[600] : Colors.blue[700]),
                   ),
                 ),
-                // 🔥 新增：手动刷新按钮
+                // 🔥 改进：手动刷新按钮
                 IconButton(
                   icon: Icon(Icons.refresh, size: 16.sp),
                   onPressed: () {
                     print('[Dashboard] 🔄 手动刷新知识图谱数据');
-                    _loadSystemData();
+                    // 先清除缓存再重新加载
+                    _system.refreshKnowledgeGraphCache();
+                    Future.delayed(Duration(milliseconds: 100), () {
+                      _loadSystemData();
+                    });
                   },
                   tooltip: '刷新知识图谱',
                 ),
