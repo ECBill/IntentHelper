@@ -917,71 +917,117 @@ class _HumanUnderstandingDashboardState extends State<HumanUnderstandingDashboar
               // 🔥 新增：事件节点显示
               if (events.isNotEmpty) ...[
                 Text(
-                  '最近相关事件:',
+                  '最近相关事件 (共${events.length}个):',
                   style: TextStyle(fontSize: 14.sp, fontWeight: FontWeight.w600),
                 ),
                 SizedBox(height: 6.h),
-                Container(
-                  height: 120.h,
-                  child: ListView.builder(
-                    scrollDirection: Axis.horizontal,
-                    itemCount: events.length.clamp(0, 5), // 最多显示5个事件
-                    itemBuilder: (context, index) {
-                      final event = events[index];
-                      return Container(
-                        width: 200.w,
-                        margin: EdgeInsets.only(right: 8.w),
-                        padding: EdgeInsets.all(8.w),
-                        decoration: BoxDecoration(
-                          color: Colors.green.withOpacity(0.1),
-                          borderRadius: BorderRadius.circular(8.r),
-                          border: Border.all(color: Colors.green.withOpacity(0.3)),
-                        ),
-                        child: Column(
-                          crossAxisAlignment: CrossAxisAlignment.start,
-                          children: [
+                // 🔥 修复：显示所有事件，完整的事件卡片布局
+                Column(
+                  children: events.map<Widget>((event) {
+                    return Container(
+                      width: double.infinity,
+                      margin: EdgeInsets.only(bottom: 8.h),
+                      padding: EdgeInsets.all(12.w),
+                      decoration: BoxDecoration(
+                        color: Colors.green.withOpacity(0.1),
+                        borderRadius: BorderRadius.circular(8.r),
+                        border: Border.all(color: Colors.green.withOpacity(0.3)),
+                      ),
+                      child: Column(
+                        crossAxisAlignment: CrossAxisAlignment.start,
+                        children: [
+                          // 事件标题和类型
+                          Row(
+                            children: [
+                              Expanded(
+                                child: Text(
+                                  event['name']?.toString() ?? '未知事件',
+                                  style: TextStyle(fontSize: 13.sp, fontWeight: FontWeight.w600),
+                                  maxLines: 2,
+                                  overflow: TextOverflow.ellipsis,
+                                ),
+                              ),
+                              Container(
+                                padding: EdgeInsets.symmetric(horizontal: 6.w, vertical: 2.h),
+                                decoration: BoxDecoration(
+                                  color: Colors.green.withOpacity(0.2),
+                                  borderRadius: BorderRadius.circular(12.r),
+                                ),
+                                child: Text(
+                                  event['type']?.toString() ?? '未知',
+                                  style: TextStyle(fontSize: 9.sp, color: Colors.green[800]),
+                                ),
+                              ),
+                            ],
+                          ),
+                          SizedBox(height: 6.h),
+
+                          // 🔥 新增：日期信息
+                          if (event['formatted_date'] != null) ...[
+                            Row(
+                              children: [
+                                Icon(Icons.access_time, size: 12.sp, color: Colors.grey[600]),
+                                SizedBox(width: 4.w),
+                                Text(
+                                  '时间: ${event['formatted_date']}',
+                                  style: TextStyle(fontSize: 11.sp, color: Colors.grey[700]),
+                                ),
+                              ],
+                            ),
+                            SizedBox(height: 4.h),
+                          ],
+
+                          // 🔥 新增：查询词来源信息
+                          if (event['source_query'] != null && event['source_query'].toString().isNotEmpty) ...[
+                            Row(
+                              children: [
+                                Icon(Icons.search, size: 12.sp, color: Colors.blue[600]),
+                                SizedBox(width: 4.w),
+                                Expanded(
+                                  child: Text(
+                                    '匹配关键词: ${event['source_query']}',
+                                    style: TextStyle(fontSize: 11.sp, color: Colors.blue[700]),
+                                    maxLines: 1,
+                                    overflow: TextOverflow.ellipsis,
+                                  ),
+                                ),
+                              ],
+                            ),
+                            SizedBox(height: 4.h),
+                          ],
+
+                          // 事件描述
+                          if (event['description'] != null && event['description'].toString().isNotEmpty) ...[
                             Text(
-                              event['name']?.toString() ?? '未知事件',
-                              style: TextStyle(fontSize: 12.sp, fontWeight: FontWeight.w600),
-                              maxLines: 2,
+                              event['description'].toString(),
+                              style: TextStyle(fontSize: 11.sp, color: Colors.grey[700]),
+                              maxLines: 3,
                               overflow: TextOverflow.ellipsis,
                             ),
                             SizedBox(height: 4.h),
-                            Text(
-                              '类型: ${event['type']?.toString() ?? '未知'}',
-                              style: TextStyle(fontSize: 10.sp, color: Colors.grey[600]),
-                            ),
-                            if (event['description'] != null) ...[
-                              SizedBox(height: 2.h),
-                              Text(
-                                event['description'].toString(),
-                                style: TextStyle(fontSize: 10.sp, color: Colors.grey[700]),
-                                maxLines: 3,
-                                overflow: TextOverflow.ellipsis,
-                              ),
-                            ],
-                            if (event['location'] != null) ...[
-                              SizedBox(height: 2.h),
-                              Row(
-                                children: [
-                                  Icon(Icons.location_on, size: 10.sp, color: Colors.grey[600]),
-                                  SizedBox(width: 2.w),
-                                  Expanded(
-                                    child: Text(
-                                      event['location'].toString(),
-                                      style: TextStyle(fontSize: 10.sp, color: Colors.grey[600]),
-                                      maxLines: 1,
-                                      overflow: TextOverflow.ellipsis,
-                                    ),
-                                  ),
-                                ],
-                              ),
-                            ],
                           ],
-                        ),
-                      );
-                    },
-                  ),
+
+                          // 位置信息
+                          if (event['location'] != null && event['location'].toString().isNotEmpty) ...[
+                            Row(
+                              children: [
+                                Icon(Icons.location_on, size: 12.sp, color: Colors.grey[600]),
+                                SizedBox(width: 4.w),
+                                Expanded(
+                                  child: Text(
+                                    '位置: ${event['location']}',
+                                    style: TextStyle(fontSize: 11.sp, color: Colors.grey[600]),
+                                    maxLines: 1,
+                                    overflow: TextOverflow.ellipsis,
+                                  ),
+                                ),
+                              ],
+                            ),
+                          ],
+                        ],
+                      ),
+                    );
+                  }).toList(),
                 ),
                 SizedBox(height: 12.h),
               ],
@@ -1005,48 +1051,6 @@ class _HumanUnderstandingDashboardState extends State<HumanUnderstandingDashboar
                   )).toList(),
                 ),
                 SizedBox(height: 12.h),
-              ],
-
-              // 关系显示
-              if (relations.isNotEmpty) ...[
-                Text(
-                  '实体-事件关系:',
-                  style: TextStyle(fontSize: 14.sp, fontWeight: FontWeight.w600),
-                ),
-                SizedBox(height: 6.h),
-                Container(
-                  height: 100.h,
-                  child: ListView.builder(
-                    itemCount: relations.length.clamp(0, 5), // 最多显示5个关系
-                    itemBuilder: (context, index) {
-                      final relation = relations[index];
-                      return Container(
-                        padding: EdgeInsets.symmetric(vertical: 4.h, horizontal: 8.w),
-                        margin: EdgeInsets.only(bottom: 4.h),
-                        decoration: BoxDecoration(
-                          color: Colors.orange.withOpacity(0.1),
-                          borderRadius: BorderRadius.circular(6.r),
-                        ),
-                        child: Row(
-                          children: [
-                            Expanded(
-                              child: Text(
-                                '${relation['source']} → ${relation['target']}',
-                                style: TextStyle(fontSize: 11.sp),
-                                maxLines: 1,
-                                overflow: TextOverflow.ellipsis,
-                              ),
-                            ),
-                            Text(
-                              '(${relation['relation_type'] ?? '关联'})',
-                              style: TextStyle(fontSize: 10.sp, color: Colors.grey[600]),
-                            ),
-                          ],
-                        ),
-                      );
-                    },
-                  ),
-                ),
               ],
             ],
           ],

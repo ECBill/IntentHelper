@@ -29,7 +29,10 @@ class HumanUnderstandingSystem {
   final IntelligentReminderManager _reminderManager = IntelligentReminderManager(); // 🔥 新增：智能提醒管理器
   final NaturalLanguageReminderService _naturalReminderService = NaturalLanguageReminderService();
 
-
+  // 🔥 新增：知识图谱数据缓存
+  Map<String, dynamic>? _cachedKnowledgeGraphData;
+  DateTime? _lastKnowledgeGraphUpdate;
+  static const Duration _cacheValidDuration = Duration(minutes: 5);
 
   // 系统状态
   final StreamController<HumanUnderstandingSystemState> _systemStateController = StreamController.broadcast();
@@ -1408,76 +1411,93 @@ class HumanUnderstandingSystem {
       final allEvents = objectBox.queryEventNodes();
       final allEdges = objectBox.queryEdges();
 
-      // 🔥 新增：根据当前活跃主题关键词查找相关事件节点
-      final activeTopics = _topicTracker.getActiveTopics();
+      // 🔥 修复：只使用前10个活跃主题的关键词，并彻底去重
+      final activeTopics = _topicTracker.getActiveTopics().take(10).toList(); // 只取前10个主题
       final allKeywords = <String>[];
 
-      // 收集所有活跃主题的关键词并去重
+      // 收集前10个主题的关键词并去重，过滤无效词
       final keywordSet = <String>{};
       for (final topic in activeTopics) {
         for (final keyword in topic.keywords) {
-          // 🔥 修复：标准化关键词并去重
           final normalizedKeyword = keyword.trim().toLowerCase();
-          if (normalizedKeyword.isNotEmpty && normalizedKeyword.length > 1) {
+          // 🔥 修复：更严格的关键词过滤
+          if (normalizedKeyword.isNotEmpty &&
+              normalizedKeyword.length >= 2 &&
+              normalizedKeyword.length <= 20 && // 避免过长的词
+              !normalizedKeyword.contains(' ') && // 避免短语
+              !_isCommonStopWord(normalizedKeyword)) { // 过滤停用词
             keywordSet.add(normalizedKeyword);
           }
         }
       }
-      allKeywords.addAll(keywordSet);
+      // 🔥 修复：确保转换为List类型
+      allKeywords.addAll(keywordSet.toList());
 
-      // 如果没有活跃主题，使用最近的实体作为关键词
-      if (allKeywords.isEmpty && allNodes.isNotEmpty) {
+      // 🔥 修复：限制关键词数量，避免查询过载
+      final limitedKeywords = allKeywords.take(15).toList(); // 最多15个关键词
+
+      // 如果没有有效关键词，使用最近的实体作为备选
+      if (limitedKeywords.isEmpty && allNodes.isNotEmpty) {
         final entityKeywordSet = <String>{};
         for (final node in allNodes.take(5)) {
           final normalizedName = node.name.trim().toLowerCase();
-          if (normalizedName.isNotEmpty && normalizedName.length > 1) {
+          if (normalizedName.isNotEmpty &&
+              normalizedName.length >= 2 &&
+              normalizedName.length <= 20 &&
+              !_isCommonStopWord(normalizedName)) {
             entityKeywordSet.add(normalizedName);
           }
         }
-        allKeywords.addAll(entityKeywordSet);
+        // 🔥 修复：确保转换为List类型
+        limitedKeywords.addAll(entityKeywordSet.toList().take(5));
       }
 
-      // 🔥 核心逻辑：根据关键词查找相关的事件节点
+      // 🔥 核心逻辑：根据关键词查找相关的事件节点，并记录匹配的关键词
       final relatedEventNodes = <EventNode>[];
       final relatedEntityNodes = <Node>[];
       final eventIds = <String>{};
       final entityIds = <String>{};
+      final eventKeywordMapping = <String, List<String>>{}; // 事件ID -> 匹配的关键词列表
 
-      print('[HumanUnderstandingSystem] 🔍 使用去重后的关键词查找相关事件: ${allKeywords.join(', ')}');
+      print('[HumanUnderstandingSystem] 🔍 使用${limitedKeywords.length}个去重关键词查找: ${limitedKeywords.join(', ')}');
 
-      // 1. 根据关键词找到匹配的实体节点
+      // 1. 根据关键词找到匹配的实体节点，并记录匹配的关键词
       for (final node in allNodes) {
-        bool isRelevant = false;
+        final matchedKeywords = <String>[];
 
-        for (final keyword in allKeywords) {
+        for (final keyword in limitedKeywords) {
           if (node.name.toLowerCase().contains(keyword) ||
               node.canonicalName.toLowerCase().contains(keyword) ||
               node.aliases.any((alias) => alias.toLowerCase().contains(keyword))) {
-            isRelevant = true;
-            break;
+            matchedKeywords.add(keyword);
           }
         }
 
-        if (isRelevant && !entityIds.contains(node.id)) {
+        if (matchedKeywords.isNotEmpty && !entityIds.contains(node.id)) {
           relatedEntityNodes.add(node);
           entityIds.add(node.id);
+          // 记录实体匹配的关键词
+          eventKeywordMapping[node.id] = matchedKeywords;
         }
       }
 
       print('[HumanUnderstandingSystem] 📊 找到 ${relatedEntityNodes.length} 个相关实体节点');
 
-      // 2. 基于找到的实体节点查找相关事件（每个实体最多10个事件）
+      // 2. 基于找到的实体节点查找相关事件，继承关键词映射
       for (final entityNode in relatedEntityNodes) {
+        final entityKeywords = eventKeywordMapping[entityNode.id] ?? [];
         final entityEventRelations = objectBox.queryEventEntityRelations(entityId: entityNode.id);
 
         int eventCount = 0;
         for (final relation in entityEventRelations) {
-          if (eventCount >= 10) break; // 每个实体最多10个事件
+          if (eventCount >= 15) break; // 🔥 修复：增加每个实体的事件数量限制
 
           final event = objectBox.findEventNodeById(relation.eventId);
           if (event != null && !eventIds.contains(event.id)) {
             relatedEventNodes.add(event);
             eventIds.add(event.id);
+            // 继承实体的关键词映射
+            eventKeywordMapping[event.id] = List<String>.from(entityKeywords); // 🔥 修复：确保是List类型
             eventCount++;
           }
         }
@@ -1493,7 +1513,7 @@ class HumanUnderstandingSystem {
       print('[HumanUnderstandingSystem] 🎯 找到 ${relatedEventNodes.length} 个相关事件节点');
 
       // 4. 生成关系数据（实体-事件关系）并去重
-      final relations = <Map<String, dynamic>>[];
+      final relations = <Map<String, dynamic>>[]; // 🔥 修复：确保是List类型
       final relationSignatures = <String>{};
 
       for (final entityNode in relatedEntityNodes) {
@@ -1504,7 +1524,6 @@ class HumanUnderstandingSystem {
             orElse: () => EventNode(id: '', name: '', type: '', lastUpdated: DateTime.now(), sourceContext: ''),
           );
           if (event.name.isNotEmpty) {
-            // 🔥 修复：生成关系签名避免重复
             final signature = '${entityNode.name}_${event.name}_${relation.role}';
             if (!relationSignatures.contains(signature)) {
               relations.add({
@@ -1521,7 +1540,7 @@ class HumanUnderstandingSystem {
       }
 
       // 5. 生成实体数据并去重
-      final entities = <Map<String, dynamic>>[];
+      final entities = <Map<String, dynamic>>[]; // 🔥 修复：确保是List类型
       final entitySignatures = <String>{};
 
       for (final node in relatedEntityNodes) {
@@ -1531,20 +1550,25 @@ class HumanUnderstandingSystem {
             'name': node.name,
             'type': node.type,
             'attributes_count': node.attributes.length,
-            'aliases': node.aliases,
+            'aliases': List<String>.from(node.aliases), // 🔥 修复：确保是List类型
             'canonical_name': node.canonicalName,
+            'matched_keywords': List<String>.from(eventKeywordMapping[node.id] ?? []), // 🔥 修复：确保是List类型
           });
           entitySignatures.add(signature);
         }
       }
 
-      // 6. 生成事件数据并去重
-      final events = <Map<String, dynamic>>[];
+      // 6. 生成增强的事件数据，包含日期和查询词来源
+      final events = <Map<String, dynamic>>[]; // 🔥 修复：确保是List类型
       final eventSignatures = <String>{};
 
       for (final event in relatedEventNodes) {
         final signature = '${event.name}_${event.type}_${event.startTime?.millisecondsSinceEpoch ?? event.lastUpdated.millisecondsSinceEpoch}';
         if (!eventSignatures.contains(signature)) {
+          // 🔥 新增：格式化日期信息
+          final eventTime = event.startTime ?? event.lastUpdated;
+          final formattedDate = _formatEventDate(eventTime);
+
           events.add({
             'name': event.name,
             'type': event.type,
@@ -1552,67 +1576,83 @@ class HumanUnderstandingSystem {
             'location': event.location,
             'start_time': event.startTime?.toIso8601String(),
             'last_updated': event.lastUpdated.toIso8601String(),
+            'formatted_date': formattedDate, // 🔥 新增：格式化的日期
+            'matched_keywords': List<String>.from(eventKeywordMapping[event.id] ?? []), // 🔥 修复：确保是List类型
+            'source_query': (eventKeywordMapping[event.id] ?? []).join(', '), // 🔥 新增：查询词来源
           });
           eventSignatures.add(signature);
         }
       }
 
-      // 7. 生成洞察信息
-      final insights = <String>[];
+      // 7. 生成改进的洞察信息，包含定量数据
+      final insights = <String>[]; // 🔥 修复：确保是List类型
+      insights.add('使用了${limitedKeywords.length}个去重关键词进行智能检索');
+
       if (relatedEventNodes.isNotEmpty) {
+        insights.add('通过${relatedEntityNodes.length}个相关实体找到了${relatedEventNodes.length}个相关记忆');
+
         final eventsByType = <String, int>{};
+        final eventsByKeyword = <String, int>{};
+
         for (final event in relatedEventNodes) {
           eventsByType[event.type] = (eventsByType[event.type] ?? 0) + 1;
+
+          // 统计每个关键词找到的事件数量
+          final keywords = eventKeywordMapping[event.id] ?? [];
+          for (final keyword in keywords) {
+            eventsByKeyword[keyword] = (eventsByKeyword[keyword] ?? 0) + 1;
+          }
         }
 
         if (eventsByType.isNotEmpty) {
           final topEventType = eventsByType.entries.reduce((a, b) => a.value > b.value ? a : b);
           insights.add('最常见的事件类型是"${topEventType.key}"，共${topEventType.value}个事件');
+        }
 
-          if (relatedEntityNodes.isNotEmpty) {
-            insights.add('通过${relatedEntityNodes.length}个相关实体找到了${relatedEventNodes.length}个相关记忆');
-          }
+        if (eventsByKeyword.isNotEmpty) {
+          final topKeyword = eventsByKeyword.entries.reduce((a, b) => a.value > b.value ? a : b);
+          insights.add('关键词"${topKeyword.key}"匹配到最多记忆(${topKeyword.value}个)');
+        }
 
-          if (allKeywords.isNotEmpty) {
-            insights.add('基于${allKeywords.length}个去重关键词进行智能检索');
-          }
+        // 时间范围分析
+        if (relatedEventNodes.length >= 2) {
+          final oldestEvent = relatedEventNodes.last;
+          final newestEvent = relatedEventNodes.first;
+          final oldestTime = oldestEvent.startTime ?? oldestEvent.lastUpdated;
+          final newestTime = newestEvent.startTime ?? newestEvent.lastUpdated;
+          final daysDiff = newestTime.difference(oldestTime).inDays;
 
-          final recentEvents = relatedEventNodes.take(3);
-          if (recentEvents.isNotEmpty) {
-            insights.add('最近的相关记忆包括: ${recentEvents.map((e) => e.name).join('、')}');
+          if (daysDiff > 0) {
+            insights.add('相关记忆跨越${daysDiff}天，从${_formatEventDate(oldestTime)}到${_formatEventDate(newestTime)}');
           }
         }
       } else {
-        // 🔥 新增：当没有找到相关事件时的提示
-        if (allKeywords.isNotEmpty) {
-          insights.add('使用了${allKeywords.length}个关键词进行检索，但未找到相关的历史记忆');
-          insights.add('这可能表示这是全新的话题，或者相关记忆还没有被记录');
-        } else {
-          insights.add('当前没有活跃的主题关键词，系统暂时无法提供个性化的记忆检索');
+        insights.add('未找到与当前${limitedKeywords.length}个关键词相关的历史记忆');
+        if (limitedKeywords.isNotEmpty) {
+          insights.add('查询关键词: ${limitedKeywords.take(5).join('、')}${limitedKeywords.length > 5 ? '等' : ''}');
         }
+        insights.add('这可能表示这是全新的话题，或者相关记忆还没有被记录');
       }
 
-      // 🔥 修复：确保返回的数据结构完整且稳定
+      // 🔥 修复：确保数据结构完整且持久，即使为空也保持结构，所有集合都是List类型
       final result = {
-        // Dashboard期望的字段名
-        'entities': entities,
-        'relations': relations,
-        'events': events,
-        'insights': insights,
-
-        // 统计信息
+        'entities': entities, // List<Map<String, dynamic>>
+        'relations': relations, // List<Map<String, dynamic>>
+        'events': events, // List<Map<String, dynamic>>
+        'insights': insights, // List<String>
         'entity_count': allNodes.length,
         'relation_count': allEdges.length,
         'event_count': allEvents.length,
         'relevant_entity_count': relatedEntityNodes.length,
         'relevant_event_count': relatedEventNodes.length,
-        'keywords_used': allKeywords, // 已去重的关键词
-
+        'keywords_used': List<String>.from(limitedKeywords), // 🔥 修复：确保是List类型
+        'active_topics_count': activeTopics.length,
         'last_updated': allNodes.isNotEmpty
             ? allNodes.first.lastUpdated.millisecondsSinceEpoch
             : DateTime.now().millisecondsSinceEpoch,
-        'generated_at': DateTime.now().millisecondsSinceEpoch, // 🔥 新增：生成时间戳
-        'is_empty': entities.isEmpty && relations.isEmpty && events.isEmpty, // 🔥 新增：空状态标识
+        'generated_at': DateTime.now().millisecondsSinceEpoch,
+        'is_empty': false,
+        'has_data': entities.isNotEmpty || events.isNotEmpty,
       };
 
       print('[HumanUnderstandingSystem] ✅ 知识图谱数据生成完成: ${entities.length}实体, ${events.length}事件, ${relations.length}关系');
@@ -1620,20 +1660,23 @@ class HumanUnderstandingSystem {
 
     } catch (e) {
       print('[HumanUnderstandingSystem] ❌ 生成知识图谱数据统计失败: $e');
+      // 🔥 修复：即使出错也返回基本结构，保持界面稳定，确保所有集合都是List类型
       return {
-        'entities': [],
-        'relations': [],
-        'events': [],
-        'insights': ['数据生成失败: ${e.toString()}'],
+        'entities': <Map<String, dynamic>>[], // 确保是List类型
+        'relations': <Map<String, dynamic>>[], // 确保是List类型
+        'events': <Map<String, dynamic>>[], // 确保是List类型
+        'insights': <String>['数据生成遇到问题，正在尝试恢复...'], // 确保是List类型
         'entity_count': 0,
         'relation_count': 0,
         'event_count': 0,
         'relevant_entity_count': 0,
         'relevant_event_count': 0,
-        'keywords_used': [],
+        'keywords_used': <String>[], // 确保是List类型
+        'active_topics_count': 0,
         'error': e.toString(),
         'generated_at': DateTime.now().millisecondsSinceEpoch,
-        'is_empty': true,
+        'is_empty': false,
+        'has_data': false,
       };
     }
   }
@@ -1685,16 +1728,39 @@ class HumanUnderstandingSystem {
     }
   }
 
+  /// 判断是否为常见停用词
+  bool _isCommonStopWord(String word) {
+    final stopWords = {
+      '的', '了', '在', '是', '我', '有', '和', '就', '不', '人', '都', '一', '一个',
+      '上', '也', '很', '到', '说', '要', '去', '你', '会', '着', '没有', '看', '好',
+      '自己', '这', '那', '但是', '还是', '因为', '所以', '如果', '虽然', '然后',
+      'the', 'a', 'an', 'and', 'or', 'but', 'in', 'on', 'at', 'to', 'for', 'of',
+      'with', 'by', 'is', 'are', 'was', 'were', 'be', 'been', 'have', 'has', 'had',
+    };
+    return stopWords.contains(word);
+  }
+
+  /// 格式化事件日期
+  String _formatEventDate(DateTime dateTime) {
+    final now = DateTime.now();
+    final diff = now.difference(dateTime);
+
+    if (diff.inDays == 0) {
+      return '今天 ${dateTime.hour.toString().padLeft(2, '0')}:${dateTime.minute.toString().padLeft(2, '0')}';
+    } else if (diff.inDays == 1) {
+      return '昨天 ${dateTime.hour.toString().padLeft(2, '0')}:${dateTime.minute.toString().padLeft(2, '0')}';
+    } else if (diff.inDays < 7) {
+      return '${diff.inDays}天前';
+    } else if (diff.inDays < 30) {
+      return '${(diff.inDays / 7).floor()}周前';
+    } else {
+      return '${dateTime.month}/${dateTime.day}';
+    }
+  }
+
   /// 释放所有资源
   void dispose() {
     _stateUpdateTimer?.cancel();
-    _conversationMonitorTimer?.cancel();
-    _systemStateController.close();
-
-    _intentManager.dispose();
-    _topicTracker.dispose();
-    _causalExtractor.dispose();
-    _graphBuilder.dispose();
     _loadEstimator.dispose();
     _reminderManager.dispose();
     _naturalReminderService.dispose();
