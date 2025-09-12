@@ -415,12 +415,17 @@ class HumanUnderstandingSystem {
 
   /// 🔥 核心修复：稳定的知识图谱数据生成
   Map<String, dynamic> _generateKnowledgeGraphData() {
+    // 🔥 新增：开始计时
+    final stopwatch = Stopwatch()..start();
+
     try {
       // 检查缓存
       if (_cachedKnowledgeGraphData != null &&
           _lastKnowledgeGraphUpdate != null &&
           DateTime.now().difference(_lastKnowledgeGraphUpdate!) < _cacheValidDuration) {
-        print('[HumanUnderstandingSystem] 🔄 返回缓存的知识图谱数据');
+         // 🔥 修复：缓存命中时也记录时长
+        stopwatch.stop();
+        print('[HumanUnderstandingSystem] 🔄 返回缓存的知识图谱数据 (耗时: ${stopwatch.elapsedMilliseconds}ms)');
         return _cachedKnowledgeGraphData!;
       }
 
@@ -605,11 +610,20 @@ class HumanUnderstandingSystem {
       _cachedKnowledgeGraphData = result;
       _lastKnowledgeGraphUpdate = DateTime.now();
 
-      print('[HumanUnderstandingSystem] ✅ 知识图谱数据生成完成并已缓存: ${entities.length}实体, ${events.length}事件');
+      // 🔥 修复：计算查询耗时并输出完整日志
+      stopwatch.stop();
+      final queryTimeMs = stopwatch.elapsedMilliseconds;
+      print('[HumanUnderstandingSystem] ⏱️ 知识图谱数据生成完成，耗时: ${queryTimeMs}ms (生成${entities.length}个实体，${events.length}个事件，${relations.length}个关系)');
+
+      // 🔥 修复：简化第二个日志输出，避免重复
+      print('[HumanUnderstandingSystem] ✅ 知识图谱数据已缓存，查询用时: ${queryTimeMs}ms');
       return result;
 
     } catch (e) {
-      print('[HumanUnderstandingSystem] ❌ 生成知识图谱数据失败: $e');
+      // 🔥 修复：异常情况下也记录耗时
+      stopwatch.stop();
+      final queryTimeMs = stopwatch.elapsedMilliseconds;
+      print('[HumanUnderstandingSystem] ❌ 生成知识图谱数据失败 (耗时: ${queryTimeMs}ms): $e');
 
       // 返回稳定的非空结构
       final fallbackResult = {
