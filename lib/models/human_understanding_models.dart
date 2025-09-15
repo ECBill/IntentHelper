@@ -163,6 +163,7 @@ class ConversationTopic {
     );
     evolutionHistory = [...evolutionHistory, evolution];
     relevanceScore = newScore;
+    weight = newScore; // 同步更新权重以供UI展示
     lastMentioned = DateTime.now();
   }
 
@@ -173,6 +174,7 @@ class ConversationTopic {
       'category': category,
       'state': state.toString(),
       'relevanceScore': relevanceScore,
+      'weight': weight, // 序列化权重
       'createdAt': createdAt.toIso8601String(),
       'lastMentioned': lastMentioned.toIso8601String(),
       'keywords': keywords,

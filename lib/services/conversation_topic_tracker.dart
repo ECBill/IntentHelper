@@ -21,9 +21,10 @@ class ConversationTopicTracker {
   Timer? _relevanceDecayTimer;
   bool _initialized = false;
 
-  // 主题相关性衰减参数
-  static const double _relevanceDecayRate = 0.95; // 每小时衰减5%
-  static const double _minimumRelevance = 0.1;
+  // 新规则：每分钟衰减5%，并基于阈值决定活跃/背景/删除
+  static const double _relevanceDecayRate = 0.95; // 每分钟衰减5%
+  static const double _deletionThreshold = 0.3;   // 小于等于即删除
+  static const double _activeThreshold = 0.6;     // 大于等于为活跃
 
   /// 主题更新流
   Stream<ConversationTopic> get topicUpdates => _topicUpdatesController.stream;
@@ -44,23 +45,23 @@ class ConversationTopicTracker {
     print('[ConversationTopicTracker] ✅ 对话主题追踪器初始化完成');
   }
 
-  /// 处理新的对话内容（修改版）
+  /// 处理新的对话内容
   Future<List<ConversationTopic>> processConversation(SemanticAnalysisInput analysis) async {
     if (!_initialized) await initialize();
 
     print('[ConversationTopicTracker] 🎯 分析对话主题: "${analysis.content.substring(0, analysis.content.length > 50 ? 50 : analysis.content.length)}..."');
 
     try {
-      // 1. 添加到对话历史
+      // 1. 记录对话历史
       _conversationHistory.add(analysis.content);
       if (_conversationHistory.length > 20) {
-        _conversationHistory.removeAt(0); // 保持最近20条对话
+        _conversationHistory.removeAt(0);
       }
 
-      // 2. 识别当前对话中的主题
+      // 2. 识别主题
       final detectedTopics = await _detectTopics(analysis);
 
-      // 3. 记录到历史服务
+      // 3. 写入历史
       await _historyService.recordTopicDetection(
         conversationId: 'conversation_${DateTime.now().millisecondsSinceEpoch}',
         content: analysis.content,
@@ -68,18 +69,16 @@ class ConversationTopicTracker {
         timestamp: DateTime.now(),
       );
 
-      // 4. 更新现有主题的相关性
+      // 4. 衰减未提及主题
       await _updateTopicRelevance(analysis, detectedTopics);
 
-      // 5. 检测主题切换
-      final topicSwitches = await _detectTopicSwitches(analysis);
+      // 5. 主题切换检测（无需保存返回值）
 
-      // 6. 返回受影响的主题
-      final affectedTopics = <ConversationTopic>[];
-      affectedTopics.addAll(detectedTopics);
+
+      // 6. 返回受影响主题（当前检测到的）
+      final affectedTopics = <ConversationTopic>[]..addAll(detectedTopics);
 
       print('[ConversationTopicTracker] ✅ 主题分析完成，当前活跃主题 ${getActiveTopics().length} 个');
-
       return affectedTopics;
 
     } catch (e) {
@@ -118,7 +117,7 @@ class ConversationTopicTracker {
     "name": "主题名称（具体描述）",
     "category": "主题分类",
     "relevance_score": 0.8,
-    "keywords": ["关键词1", "���键词2"],
+    "keywords": ["关键词1", "关键词2"],
     "entities": ["相关实体"],
     "context": {
       "importance": "high|medium|low",
@@ -146,9 +145,7 @@ ${_conversationHistory.take(5).join('\n')}
 
       final jsonStart = response.indexOf('[');
       final jsonEnd = response.lastIndexOf(']');
-      if (jsonStart == -1 || jsonEnd == -1) {
-        return [];
-      }
+      if (jsonStart == -1 || jsonEnd == -1) return [];
 
       final jsonStr = response.substring(jsonStart, jsonEnd + 1);
       final List<dynamic> topicsData = jsonDecode(jsonStr);
@@ -164,19 +161,17 @@ ${_conversationHistory.take(5).join('\n')}
           final context = (topicData['context'] as Map?) ?? {};
 
           if (topicName.isNotEmpty) {
-            // 检查是否已存���相似主题
             final existingTopic = _findSimilarTopic(topicName, category);
-
             if (existingTopic != null) {
-              // 更新现有主题
               existingTopic.updateRelevance(relevanceScore, '对话中重新提及');
               existingTopic.keywords = [...existingTopic.keywords, ...keywords].toSet().toList();
               existingTopic.entities = [...existingTopic.entities, ...entities].toSet().toList();
               existingTopic.context.addAll(Map<String, dynamic>.from(context));
+              // 根据分数更新状态
+              existingTopic.state = relevanceScore >= _activeThreshold ? TopicState.active : TopicState.background;
               detectedTopics.add(existingTopic);
               _topicUpdatesController.add(existingTopic);
             } else {
-              // 创建新主题
               final newTopic = ConversationTopic(
                 name: topicName,
                 category: category,
@@ -185,6 +180,8 @@ ${_conversationHistory.take(5).join('\n')}
                 entities: entities,
                 context: Map<String, dynamic>.from(context),
               );
+              // 新建时按阈值设置状态
+              newTopic.state = relevanceScore >= _activeThreshold ? TopicState.active : TopicState.background;
 
               _topics[newTopic.id] = newTopic;
               detectedTopics.add(newTopic);
@@ -203,7 +200,7 @@ ${_conversationHistory.take(5).join('\n')}
     }
   }
 
-  /// 查���相似主题
+  /// 查找相似主题
   ConversationTopic? _findSimilarTopic(String name, String category) {
     return _topics.values.where((topic) {
       final nameSimilarity = _calculateSimilarity(topic.name, name);
@@ -212,46 +209,46 @@ ${_conversationHistory.take(5).join('\n')}
     }).firstOrNull;
   }
 
-  /// 简单的字符串相似性计算
   double _calculateSimilarity(String str1, String str2) {
     if (str1 == str2) return 1.0;
     if (str1.isEmpty || str2.isEmpty) return 0.0;
-
     final words1 = str1.toLowerCase().split(' ').toSet();
     final words2 = str2.toLowerCase().split(' ').toSet();
-
     final intersection = words1.intersection(words2);
     final union = words1.union(words2);
-
     return intersection.length / union.length;
   }
 
-  /// 更新主题相关性
+  /// 更新未提及主题的相关性（按分钟衰减，<=0.3删除）
   Future<void> _updateTopicRelevance(SemanticAnalysisInput analysis, List<ConversationTopic> detectedTopics) async {
     final detectedTopicIds = detectedTopics.map((t) => t.id).toSet();
 
-    // 降低未提及主题的相关性
+    final toRemove = <String>[];
     for (final topic in _topics.values) {
       if (!detectedTopicIds.contains(topic.id)) {
-        final timeSinceLastMention = DateTime.now().difference(topic.lastMentioned).inHours;
+        final minutesSince = DateTime.now().difference(topic.lastMentioned).inMinutes;
+        if (minutesSince > 0) {
+          final decayFactor = math.pow(_relevanceDecayRate, minutesSince.toDouble());
+          final newRelevance = (topic.relevanceScore * decayFactor).clamp(0.0, 1.0);
 
-        if (timeSinceLastMention > 0) {
-          final decayFactor = math.pow(_relevanceDecayRate, timeSinceLastMention.toDouble());
-          final newRelevance = math.max(topic.relevanceScore * decayFactor, _minimumRelevance);
+          if (newRelevance <= _deletionThreshold) {
+            toRemove.add(topic.id);
+            continue;
+          }
 
-          if (newRelevance != topic.relevanceScore) {
+          if ((newRelevance - topic.relevanceScore).abs() > 0.0001) {
             topic.updateRelevance(newRelevance, '时间衰减');
-
-            // 更新主题状态
-            if (newRelevance < 0.3 && topic.state == TopicState.active) {
-              topic.state = TopicState.background;
-            } else if (newRelevance < 0.1 && topic.state == TopicState.background) {
-              topic.state = TopicState.dormant;
-            }
-
+            topic.state = newRelevance >= _activeThreshold ? TopicState.active : TopicState.background;
             _topicUpdatesController.add(topic);
           }
         }
+      }
+    }
+
+    for (final id in toRemove) {
+      final removed = _topics.remove(id);
+      if (removed != null) {
+        print('[ConversationTopicTracker] 🗑️ 已删除低权重主题: ${removed.name} (${removed.relevanceScore.toStringAsFixed(2)})');
       }
     }
   }
@@ -308,8 +305,7 @@ ${getActiveTopics().map((t) => '${t.name} (${t.relevanceScore.toStringAsFixed(2)
         final toTopic = switchData['to_topic']?.toString();
         final reason = switchData['reason']?.toString() ?? '主题切换';
 
-        print('[ConversationTopicTracker] 🔄 检测到主题切换: $switchType ($fromTopic -> $toTopic)');
-
+        print('[ConversationTopicTracker] 🔄 检测到主题切换: $switchType ($fromTopic -> $toTopic), 原因: $reason');
         return [switchType];
       }
 
@@ -321,69 +317,73 @@ ${getActiveTopics().map((t) => '${t.name} (${t.relevanceScore.toStringAsFixed(2)
     }
   }
 
-  /// 启动相关性衰减定时器
+  /// 启动相关性衰减定时器（每分钟）
   void _startRelevanceDecayTimer() {
-    _relevanceDecayTimer = Timer.periodic(Duration(hours: 1), (timer) {
+    _relevanceDecayTimer = Timer.periodic(const Duration(minutes: 1), (timer) {
       _performRelevanceDecay();
     });
   }
 
-  /// 执行相关性衰减
+  /// 执行相关性衰减（按分钟），并删除<=0.3的主题
   void _performRelevanceDecay() {
     final now = DateTime.now();
     final topicsToUpdate = <ConversationTopic>[];
+    final toRemove = <String>[];
 
     for (final topic in _topics.values) {
-      final hoursSinceLastMention = now.difference(topic.lastMentioned).inHours;
+      final minutesSince = now.difference(topic.lastMentioned).inMinutes;
+      if (minutesSince > 0) {
+        final decayFactor = math.pow(_relevanceDecayRate, minutesSince.toDouble());
+        final newRelevance = (topic.relevanceScore * decayFactor).clamp(0.0, 1.0);
 
-      if (hoursSinceLastMention > 0) {
-        final decayFactor = math.pow(_relevanceDecayRate, hoursSinceLastMention.toDouble());
-        final newRelevance = math.max(topic.relevanceScore * decayFactor, _minimumRelevance);
+        if (newRelevance <= _deletionThreshold) {
+          toRemove.add(topic.id);
+          continue;
+        }
 
         if ((topic.relevanceScore - newRelevance).abs() > 0.01) {
           topic.updateRelevance(newRelevance, '定期衰减');
+          topic.state = newRelevance >= _activeThreshold ? TopicState.active : TopicState.background;
           topicsToUpdate.add(topic);
-
-          // 更新状态
-          if (newRelevance < 0.3 && topic.state == TopicState.active) {
-            topic.state = TopicState.background;
-          } else if (newRelevance < 0.1 && topic.state == TopicState.background) {
-            topic.state = TopicState.dormant;
-          }
         }
       }
     }
 
-    // 通知更新
+    for (final id in toRemove) {
+      final removed = _topics.remove(id);
+      if (removed != null) {
+        print('[ConversationTopicTracker] 🗑️ 定期衰减删除主题: ${removed.name} (${removed.relevanceScore.toStringAsFixed(2)})');
+      }
+    }
+
     for (final topic in topicsToUpdate) {
       _topicUpdatesController.add(topic);
     }
 
-    if (topicsToUpdate.isNotEmpty) {
-      print('[ConversationTopicTracker] 🔄 相关性衰减更新了 ${topicsToUpdate.length} 个主题');
+    if (topicsToUpdate.isNotEmpty || toRemove.isNotEmpty) {
+      print('[ConversationTopicTracker] 🔄 衰减更新: ${topicsToUpdate.length} 个主题更新, ${toRemove.length} 个主题删除');
     }
   }
 
-  /// 获取活跃主题（相关性 > 0.3）
+  /// 获取活跃主题（>=0.6 且状态为active）
   List<ConversationTopic> getActiveTopics() {
     return _topics.values
-        .where((topic) => topic.relevanceScore > 0.3 && topic.state == TopicState.active)
+        .where((topic) => topic.relevanceScore >= _activeThreshold && topic.state == TopicState.active)
         .toList()
       ..sort((a, b) => b.relevanceScore.compareTo(a.relevanceScore));
   }
 
-  /// 获取背景主题（相关性 0.1-0.3）
+  /// 获取背景主题（0.3 - 0.6 之间）
   List<ConversationTopic> getBackgroundTopics() {
     return _topics.values
-        .where((topic) => topic.relevanceScore >= 0.1 && topic.relevanceScore <= 0.3)
+        .where((topic) => topic.relevanceScore > _deletionThreshold && topic.relevanceScore < _activeThreshold)
         .toList()
       ..sort((a, b) => b.relevanceScore.compareTo(a.relevanceScore));
   }
 
   /// 获取所有主题
   List<ConversationTopic> getAllTopics() {
-    return _topics.values.toList()
-      ..sort((a, b) => b.relevanceScore.compareTo(a.relevanceScore));
+    return _topics.values.toList()..sort((a, b) => b.relevanceScore.compareTo(a.relevanceScore));
   }
 
   /// 按类别获取主题
@@ -396,37 +396,29 @@ ${getActiveTopics().map((t) => '${t.name} (${t.relevanceScore.toStringAsFixed(2)
 
   /// 搜索主题
   List<ConversationTopic> searchTopics(String query) {
-    final queryLower = query.toLowerCase();
+    final q = query.toLowerCase();
     return _topics.values
-        .where((topic) =>
-            topic.name.toLowerCase().contains(queryLower) ||
-            topic.keywords.any((keyword) => keyword.toLowerCase().contains(queryLower)))
+        .where((topic) => topic.name.toLowerCase().contains(q) || topic.keywords.any((k) => k.toLowerCase().contains(q)))
         .toList()
       ..sort((a, b) => b.relevanceScore.compareTo(a.relevanceScore));
   }
 
-  /// 计算主题切换频率
+  /// 主题切换频率估算
   double calculateTopicSwitchRate() {
-    // 基于最近的对话历史计算切换频率
-    // 这里简化为基于活跃主题数量的估算
     final activeTopics = getActiveTopics();
     final conversationLength = _conversationHistory.length;
-
     if (conversationLength == 0) return 0.0;
-
     return activeTopics.length / conversationLength.toDouble();
   }
 
-  /// 获取主题统计信息
+  /// 主题统计
   Map<String, dynamic> getTopicStatistics() {
     final categoryDistribution = <String, int>{};
     final stateDistribution = <String, int>{};
 
     for (final topic in _topics.values) {
-      final category = topic.category;
+      categoryDistribution[topic.category] = (categoryDistribution[topic.category] ?? 0) + 1;
       final state = topic.state.toString().split('.').last;
-
-      categoryDistribution[category] = (categoryDistribution[category] ?? 0) + 1;
       stateDistribution[state] = (stateDistribution[state] ?? 0) + 1;
     }
 
@@ -446,18 +438,27 @@ ${getActiveTopics().map((t) => '${t.name} (${t.relevanceScore.toStringAsFixed(2)
   bool updateTopicState(String topicId, TopicState newState) {
     final topic = _topics[topicId];
     if (topic == null) return false;
-
     topic.state = newState;
     _topicUpdatesController.add(topic);
     return true;
   }
 
-  /// 手动设置主题相关性
+  /// 手动设置主题相关性（<=0.3直接删除）
   bool setTopicRelevance(String topicId, double relevance, String reason) {
     final topic = _topics[topicId];
     if (topic == null) return false;
 
-    topic.updateRelevance(relevance, reason);
+    final newScore = relevance.clamp(0.0, 1.0);
+    if (newScore <= _deletionThreshold) {
+      final removed = _topics.remove(topicId);
+      if (removed != null) {
+        print('[ConversationTopicTracker] 🗑️ 手动设置触发删除主题: ${removed.name} (${newScore.toStringAsFixed(2)})');
+      }
+      return true;
+    }
+
+    topic.updateRelevance(newScore, reason);
+    topic.state = newScore >= _activeThreshold ? TopicState.active : TopicState.background;
     _topicUpdatesController.add(topic);
     return true;
   }
@@ -473,14 +474,11 @@ ${getActiveTopics().map((t) => '${t.name} (${t.relevanceScore.toStringAsFixed(2)
   }
 }
 
-// 扩展方法
 extension ListExtension<T> on List<T> {
   List<T> takeLast(int count) {
     if (count >= length) return this;
     return skip(length - count).toList();
   }
 
-  T? get firstOrNull {
-    return isEmpty ? null : first;
-  }
+  T? get firstOrNull => isEmpty ? null : first;
 }

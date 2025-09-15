@@ -613,6 +613,12 @@ class _HumanUnderstandingDashboardState extends State<HumanUnderstandingDashboar
   Widget _buildEnhancedTopicCard(hum.Topic topic) {
     final relatedIntents = _currentState?.intentTopicRelations?[topic.name] ?? [];
 
+    // 提取上下文的三个核心字段
+    final ctx = (topic.context ?? {}) as Map<String, dynamic>;
+    final importance = (ctx['importance'] ?? '').toString();
+    final timeSensitivity = (ctx['time_sensitivity'] ?? '').toString();
+    final emotionalTone = (ctx['emotional_tone'] ?? '').toString();
+
     return Card(
       margin: EdgeInsets.only(bottom: 8.h),
       child: Padding(
@@ -641,16 +647,67 @@ class _HumanUnderstandingDashboardState extends State<HumanUnderstandingDashboar
                 ),
               ],
             ),
-            if (topic.keywords.isNotEmpty) ...[
+
+            // 上下文三要素展示
+            if (importance.isNotEmpty || timeSensitivity.isNotEmpty || emotionalTone.isNotEmpty) ...[
               SizedBox(height: 8.h),
               Wrap(
+                spacing: 6.w,
+                runSpacing: 4.h,
+                children: [
+                  if (importance.isNotEmpty)
+                    Chip(
+                      label: Text('重要性: $importance', style: TextStyle(fontSize: 10.sp)),
+                      backgroundColor: Colors.deepPurple.withOpacity(0.1),
+                      materialTapTargetSize: MaterialTapTargetSize.shrinkWrap,
+                    ),
+                  if (timeSensitivity.isNotEmpty)
+                    Chip(
+                      label: Text('时效性: $timeSensitivity', style: TextStyle(fontSize: 10.sp)),
+                      backgroundColor: Colors.teal.withOpacity(0.1),
+                      materialTapTargetSize: MaterialTapTargetSize.shrinkWrap,
+                    ),
+                  if (emotionalTone.isNotEmpty)
+                    Chip(
+                      label: Text('情绪: $emotionalTone', style: TextStyle(fontSize: 10.sp)),
+                      backgroundColor: Colors.pink.withOpacity(0.1),
+                      materialTapTargetSize: MaterialTapTargetSize.shrinkWrap,
+                    ),
+                ],
+              ),
+            ],
+
+            // 关键词
+            if (topic.keywords.isNotEmpty) ...[
+              SizedBox(height: 8.h),
+              Text('关键词:', style: TextStyle(fontSize: 12.sp, fontWeight: FontWeight.w600)),
+              SizedBox(height: 4.h),
+              Wrap(
                 spacing: 4.w,
+                runSpacing: 4.h,
                 children: topic.keywords.map((keyword) => Chip(
                   label: Text(keyword, style: TextStyle(fontSize: 10.sp)),
                   materialTapTargetSize: MaterialTapTargetSize.shrinkWrap,
                 )).toList(),
               ),
             ],
+
+            // 实体
+            if (topic.entities.isNotEmpty) ...[
+              SizedBox(height: 8.h),
+              Text('相关实体:', style: TextStyle(fontSize: 12.sp, fontWeight: FontWeight.w600)),
+              SizedBox(height: 4.h),
+              Wrap(
+                spacing: 4.w,
+                runSpacing: 4.h,
+                children: topic.entities.map((ent) => Chip(
+                  label: Text(ent, style: TextStyle(fontSize: 10.sp)),
+                  backgroundColor: Colors.blueGrey.withOpacity(0.1),
+                  materialTapTargetSize: MaterialTapTargetSize.shrinkWrap,
+                )).toList(),
+              ),
+            ],
+
             if (relatedIntents.isNotEmpty) ...[
               SizedBox(height: 8.h),
               Text(

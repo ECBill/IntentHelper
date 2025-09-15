@@ -10,7 +10,6 @@ import 'package:app/services/semantic_graph_builder.dart';
 import 'package:app/services/cognitive_load_estimator.dart';
 import 'package:app/services/intelligent_reminder_manager.dart';
 import 'package:app/services/objectbox_service.dart';
-import 'package:app/services/knowledge_graph_service.dart';
 import 'package:app/models/graph_models.dart';
 import 'package:app/services/natural_language_reminder_service.dart';
 import 'package:app/services/knowledge_graph_manager.dart'; // 🔥 新增：导入知识图谱管理器
