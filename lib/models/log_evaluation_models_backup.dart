@@ -143,24 +143,6 @@ class FoAEntry {
     this.evaluation,
   });
 
-  FoAEntry copyWith({
-    String? id,
-    List<String>? topics,
-    double? confidence,
-    DateTime? timestamp,
-    String? relatedContent,
-    UserEvaluation? evaluation,
-  }) {
-    return FoAEntry(
-      id: id ?? this.id,
-      topics: topics ?? this.topics,
-      confidence: confidence ?? this.confidence,
-      timestamp: timestamp ?? this.timestamp,
-      relatedContent: relatedContent ?? this.relatedContent,
-      evaluation: evaluation ?? this.evaluation,
-    );
-  }
-
   Map<String, dynamic> toJson() {
     return {
       'id': id,
@@ -192,26 +174,6 @@ class TodoEntry {
     required this.relatedContent,
     this.evaluation,
   });
-
-  TodoEntry copyWith({
-    String? id,
-    String? task,
-    DateTime? deadline,
-    double? confidence,
-    DateTime? timestamp,
-    String? relatedContent,
-    UserEvaluation? evaluation,
-  }) {
-    return TodoEntry(
-      id: id ?? this.id,
-      task: task ?? this.task,
-      deadline: deadline ?? this.deadline,
-      confidence: confidence ?? this.confidence,
-      timestamp: timestamp ?? this.timestamp,
-      relatedContent: relatedContent ?? this.relatedContent,
-      evaluation: evaluation ?? this.evaluation,
-    );
-  }
 
   Map<String, dynamic> toJson() {
     return {
@@ -246,26 +208,6 @@ class RecommendationEntry {
     this.evaluation,
   });
 
-  RecommendationEntry copyWith({
-    String? id,
-    String? content,
-    String? source,
-    double? relevance,
-    DateTime? timestamp,
-    String? relatedContent,
-    UserEvaluation? evaluation,
-  }) {
-    return RecommendationEntry(
-      id: id ?? this.id,
-      content: content ?? this.content,
-      source: source ?? this.source,
-      relevance: relevance ?? this.relevance,
-      timestamp: timestamp ?? this.timestamp,
-      relatedContent: relatedContent ?? this.relatedContent,
-      evaluation: evaluation ?? this.evaluation,
-    );
-  }
-
   Map<String, dynamic> toJson() {
     return {
       'id': id,
@@ -296,24 +238,6 @@ class SummaryEntry {
     required this.relatedContent,
     this.evaluation,
   });
-
-  SummaryEntry copyWith({
-    String? id,
-    String? subject,
-    String? content,
-    DateTime? timestamp,
-    String? relatedContent,
-    UserEvaluation? evaluation,
-  }) {
-    return SummaryEntry(
-      id: id ?? this.id,
-      subject: subject ?? this.subject,
-      content: content ?? this.content,
-      timestamp: timestamp ?? this.timestamp,
-      relatedContent: relatedContent ?? this.relatedContent,
-      evaluation: evaluation ?? this.evaluation,
-    );
-  }
 
   Map<String, dynamic> toJson() {
     return {
@@ -347,26 +271,6 @@ class KGEntry {
     this.evaluation,
   });
 
-  KGEntry copyWith({
-    String? id,
-    String? nodeType,
-    String? content,
-    Map<String, dynamic>? properties,
-    DateTime? timestamp,
-    String? relatedContent,
-    UserEvaluation? evaluation,
-  }) {
-    return KGEntry(
-      id: id ?? this.id,
-      nodeType: nodeType ?? this.nodeType,
-      content: content ?? this.content,
-      properties: properties ?? this.properties,
-      timestamp: timestamp ?? this.timestamp,
-      relatedContent: relatedContent ?? this.relatedContent,
-      evaluation: evaluation ?? this.evaluation,
-    );
-  }
-
   Map<String, dynamic> toJson() {
     return {
       'id': id,
@@ -397,24 +301,6 @@ class CognitiveLoadEntry {
     required this.relatedContent,
     this.evaluation,
   });
-
-  CognitiveLoadEntry copyWith({
-    String? id,
-    double? value,
-    String? level,
-    DateTime? timestamp,
-    String? relatedContent,
-    UserEvaluation? evaluation,
-  }) {
-    return CognitiveLoadEntry(
-      id: id ?? this.id,
-      value: value ?? this.value,
-      level: level ?? this.level,
-      timestamp: timestamp ?? this.timestamp,
-      relatedContent: relatedContent ?? this.relatedContent,
-      evaluation: evaluation ?? this.evaluation,
-    );
-  }
 
   Map<String, dynamic> toJson() {
     return {
@@ -461,6 +347,26 @@ class TopicHistoryEntry {
         .toList(),
     timestamp: DateTime.fromMillisecondsSinceEpoch(json['timestamp']),
   );
+  KGEntry copyWith({
+    String? id,
+    String? nodeType,
+    String? content,
+    Map<String, dynamic>? properties,
+    DateTime? timestamp,
+    String? relatedContent,
+    UserEvaluation? evaluation,
+  }) {
+    return KGEntry(
+      id: id ?? this.id,
+      nodeType: nodeType ?? this.nodeType,
+      content: content ?? this.content,
+      properties: properties ?? this.properties,
+      timestamp: timestamp ?? this.timestamp,
+      relatedContent: relatedContent ?? this.relatedContent,
+      evaluation: evaluation ?? this.evaluation,
+    );
+  }
+
 }
 
 /// 主题快照（用于历史记录）
@@ -492,6 +398,24 @@ class TopicSnapshot {
     'category': category,
     'relevanceScore': relevanceScore,
     'keywords': keywords,
+  CognitiveLoadEntry copyWith({
+    String? id,
+    double? value,
+    String? level,
+    DateTime? timestamp,
+    String? relatedContent,
+    UserEvaluation? evaluation,
+  }) {
+    return CognitiveLoadEntry(
+      id: id ?? this.id,
+      value: value ?? this.value,
+      level: level ?? this.level,
+      timestamp: timestamp ?? this.timestamp,
+      relatedContent: relatedContent ?? this.relatedContent,
+      evaluation: evaluation ?? this.evaluation,
+    );
+  }
+
     'entities': entities,
   };
 

@@ -26,6 +26,7 @@ class _LogEvaluationTabbedScreenState extends State<LogEvaluationTabbedScreen>
 
   // 数据状态
   bool _isLoading = false;
+  int _currentTabIndex = 0; // 添加当前标签索引追踪
 
   // 各模块数据
   List<FoAEntry> _foaEntries = [];
@@ -48,6 +49,14 @@ class _LogEvaluationTabbedScreenState extends State<LogEvaluationTabbedScreen>
   void initState() {
     super.initState();
     _tabController = TabController(length: 6, vsync: this);
+    // 修复标签切换监听器
+    _tabController.addListener(() {
+      if (!_tabController.indexIsChanging) {
+        setState(() {
+          _currentTabIndex = _tabController.index;
+        });
+      }
+    });
     _initializeScreen();
   }
 
@@ -312,6 +321,11 @@ class _LogEvaluationTabbedScreenState extends State<LogEvaluationTabbedScreen>
         indicatorColor: Colors.blue,
         labelStyle: TextStyle(fontSize: 14.sp, fontWeight: FontWeight.w500),
         unselectedLabelStyle: TextStyle(fontSize: 14.sp),
+        onTap: (index) {
+          setState(() {
+            _currentTabIndex = index;
+          });
+        },
         tabs: [
           Tab(text: 'FoA识别 (${_foaEntries.length})'),
           Tab(text: 'Todo生成 (${_todoEntries.length})'),
@@ -445,6 +459,9 @@ class _LogEvaluationTabbedScreenState extends State<LogEvaluationTabbedScreen>
     try {
       await _logService.saveEvaluation(entryId, evaluation);
 
+      // 更新对应模块的entry数据
+      _updateEntryEvaluation(entryId, evaluation);
+
       // 重新计算指标
       final logs = await _logService.getConversationLogs(dateRange: _selectedDateRange);
       final updatedMetrics = await _logService.calculateMetrics(
@@ -458,10 +475,44 @@ class _LogEvaluationTabbedScreenState extends State<LogEvaluationTabbedScreen>
     }
   }
 
-  /// 构建统计面板
-  Widget _buildStatisticsPanel(bool isLightMode) {
-    final metrics = _metrics!;
+  /// 更新entry的evaluation数据
+  void _updateEntryEvaluation(String entryId, UserEvaluation evaluation) {
+    // 根据entryId前缀判断是哪个模块的数据
+    if (entryId.startsWith('foa_')) {
+      final index = _foaEntries.indexWhere((e) => e.id == entryId);
+      if (index != -1) {
+        _foaEntries[index] = _foaEntries[index].copyWith(evaluation: evaluation);
+      }
+    } else if (entryId.startsWith('todo_')) {
+      final index = _todoEntries.indexWhere((e) => e.id == entryId);
+      if (index != -1) {
+        _todoEntries[index] = _todoEntries[index].copyWith(evaluation: evaluation);
+      }
+    } else if (entryId.startsWith('rec_')) {
+      final index = _recommendationEntries.indexWhere((e) => e.id == entryId);
+      if (index != -1) {
+        _recommendationEntries[index] = _recommendationEntries[index].copyWith(evaluation: evaluation);
+      }
+    } else if (entryId.startsWith('summary_')) {
+      final index = _summaryEntries.indexWhere((e) => e.id == entryId);
+      if (index != -1) {
+        _summaryEntries[index] = _summaryEntries[index].copyWith(evaluation: evaluation);
+      }
+    } else if (entryId.startsWith('kg_')) {
+      final index = _kgEntries.indexWhere((e) => e.id == entryId);
+      if (index != -1) {
+        _kgEntries[index] = _kgEntries[index].copyWith(evaluation: evaluation);
+      }
+    } else if (entryId.startsWith('load_')) {
+      final index = _cognitiveLoadEntries.indexWhere((e) => e.id == entryId);
+      if (index != -1) {
+        _cognitiveLoadEntries[index] = _cognitiveLoadEntries[index].copyWith(evaluation: evaluation);
+      }
+    }
+  }
 
+  /// 构建统计面板 - 只显示当前标签的统计信息
+  Widget _buildStatisticsPanel(bool isLightMode) {
     return Container(
       padding: EdgeInsets.all(16.w),
       decoration: BoxDecoration(
@@ -473,94 +524,525 @@ class _LogEvaluationTabbedScreenState extends State<LogEvaluationTabbedScreen>
           ),
         ),
       ),
-      child: Column(
-        crossAxisAlignment: CrossAxisAlignment.start,
-        children: [
-          Text(
-            '评估统计',
-            style: TextStyle(
-              fontSize: 18.sp,
-              fontWeight: FontWeight.bold,
-              color: isLightMode ? Colors.black : Colors.white,
+      child: _buildCurrentTabStatistics(isLightMode),
+    );
+  }
+
+  /// 构建当前标签的统计信息
+  Widget _buildCurrentTabStatistics(bool isLightMode) {
+    switch (_currentTabIndex) {
+      case 0: // FoA识别
+        return _buildFoAStatistics(isLightMode);
+      case 1: // Todo生成
+        return _buildTodoStatistics(isLightMode);
+      case 2: // 智能推荐
+        return _buildRecommendationStatistics(isLightMode);
+      case 3: // 总结
+        return _buildSummaryStatistics(isLightMode);
+      case 4: // 知识图谱
+        return _buildKGStatistics(isLightMode);
+      case 5: // 认知负载
+        return _buildCognitiveLoadStatistics(isLightMode);
+      default:
+        return const SizedBox.shrink();
+    }
+  }
+
+  /// FoA识别统计
+  Widget _buildFoAStatistics(bool isLightMode) {
+    final evaluatedEntries = _foaEntries.where((e) => e.evaluation?.foaScore != null).toList();
+    if (evaluatedEntries.isEmpty) {
+      return _buildEmptyStatistics('FoA识别', isLightMode);
+    }
+
+    // 统计各个分档的数量
+    int basicCorrect = 0; // 1.0
+    int relativelyCorrect = 0; // 0.75
+    int notVeryCorrect = 0; // 0.5
+    int basicIncorrect = 0; // 0.0
+
+    for (final entry in evaluatedEntries) {
+      final score = entry.evaluation!.foaScore!;
+      if (score == 1.0) basicCorrect++;
+      else if (score == 0.75) relativelyCorrect++;
+      else if (score == 0.5) notVeryCorrect++;
+      else if (score == 0.0) basicIncorrect++;
+    }
+
+    final avgScore = evaluatedEntries.map((e) => e.evaluation!.foaScore!).reduce((a, b) => a + b) / evaluatedEntries.length;
+
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: [
+        Text(
+          'FoA识别评估统计',
+          style: TextStyle(
+            fontSize: 18.sp,
+            fontWeight: FontWeight.bold,
+            color: isLightMode ? Colors.black : Colors.white,
+          ),
+        ),
+        SizedBox(height: 12.h),
+        Row(
+          children: [
+            Expanded(
+              child: _buildMetricCard(
+                label: '平均得分',
+                value: avgScore.toStringAsFixed(2),
+                color: Colors.blue,
+                isLightMode: isLightMode,
+              ),
             ),
+            Expanded(
+              child: _buildMetricCard(
+                label: '已评估数',
+                value: '${evaluatedEntries.length}/${_foaEntries.length}',
+                color: Colors.green,
+                isLightMode: isLightMode,
+              ),
+            ),
+          ],
+        ),
+        SizedBox(height: 12.h),
+        Text(
+          '评分分布：',
+          style: TextStyle(
+            fontSize: 14.sp,
+            fontWeight: FontWeight.w500,
+            color: isLightMode ? Colors.black87 : Colors.white,
           ),
-          SizedBox(height: 12.h),
-          // 第一行：Todo准确率 + FoA平均分
-          Row(
-            children: [
-              Expanded(
-                child: _buildMetricCard(
-                  label: 'Todo准确率',
-                  value: '${(metrics.todoAccuracy * 100).toStringAsFixed(1)}%',
-                  color: Colors.blue,
-                  isLightMode: isLightMode,
-                ),
-              ),
-              Expanded(
-                child: _buildMetricCard(
-                  label: 'FoA平均分',
-                  value: metrics.averageFoaScore.toStringAsFixed(2),
-                  color: Colors.green,
-                  isLightMode: isLightMode,
-                ),
-              ),
-            ],
+        ),
+        SizedBox(height: 8.h),
+        _buildScoreDistribution([
+          {'label': '基本正确', 'count': basicCorrect, 'color': Colors.green},
+          {'label': '比较正确', 'count': relativelyCorrect, 'color': Colors.lightGreen},
+          {'label': '不太正确', 'count': notVeryCorrect, 'color': Colors.orange},
+          {'label': '基本不正确', 'count': basicIncorrect, 'color': Colors.red},
+        ], isLightMode),
+      ],
+    );
+  }
+
+  /// Todo生成统计
+  Widget _buildTodoStatistics(bool isLightMode) {
+    final evaluatedEntries = _todoEntries.where((e) => e.evaluation?.todoCorrect != null).toList();
+    if (evaluatedEntries.isEmpty) {
+      return _buildEmptyStatistics('Todo生成', isLightMode);
+    }
+
+    final correctCount = evaluatedEntries.where((e) => e.evaluation!.todoCorrect == true).length;
+    final incorrectCount = evaluatedEntries.length - correctCount;
+    final accuracy = correctCount / evaluatedEntries.length;
+
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: [
+        Text(
+          'Todo生成评估统计',
+          style: TextStyle(
+            fontSize: 18.sp,
+            fontWeight: FontWeight.bold,
+            color: isLightMode ? Colors.black : Colors.white,
           ),
-          SizedBox(height: 8.h),
-          // 第二行：推荐相关性 + 负载合理性
-          Row(
-            children: [
-              Expanded(
-                child: _buildMetricCard(
-                  label: '推荐相关性',
-                  value: metrics.averageRecommendationRelevance.toStringAsFixed(1),
-                  color: Colors.orange,
-                  isLightMode: isLightMode,
-                ),
+        ),
+        SizedBox(height: 12.h),
+        Row(
+          children: [
+            Expanded(
+              child: _buildMetricCard(
+                label: '准确率',
+                value: '${(accuracy * 100).toStringAsFixed(1)}%',
+                color: Colors.blue,
+                isLightMode: isLightMode,
               ),
-              Expanded(
-                child: _buildMetricCard(
-                  label: '负载合理性',
-                  value: metrics.averageCognitiveLoadReasonability.toStringAsFixed(1),
-                  color: Colors.purple,
-                  isLightMode: isLightMode,
-                ),
+            ),
+            Expanded(
+              child: _buildMetricCard(
+                label: '已评估数',
+                value: '${evaluatedEntries.length}/${_todoEntries.length}',
+                color: Colors.green,
+                isLightMode: isLightMode,
               ),
-            ],
+            ),
+          ],
+        ),
+        SizedBox(height: 12.h),
+        Text(
+          '评估结果分布：',
+          style: TextStyle(
+            fontSize: 14.sp,
+            fontWeight: FontWeight.w500,
+            color: isLightMode ? Colors.black87 : Colors.white,
           ),
-          SizedBox(height: 8.h),
-          // 第三行：总结质量 + KG准确性
-          Row(
-            children: [
-              Expanded(
-                child: _buildMetricCard(
-                  label: '总结质量',
-                  value: metrics.averageSummaryRelevance.toStringAsFixed(1),
-                  color: Colors.teal,
-                  isLightMode: isLightMode,
-                ),
-              ),
-              Expanded(
-                child: _buildMetricCard(
-                  label: 'KG准确性',
-                  value: metrics.averageKgAccuracy.toStringAsFixed(1),
-                  color: Colors.indigo,
-                  isLightMode: isLightMode,
-                ),
-              ),
-            ],
+        ),
+        SizedBox(height: 8.h),
+        _buildScoreDistribution([
+          {'label': '正确', 'count': correctCount, 'color': Colors.green},
+          {'label': '错误', 'count': incorrectCount, 'color': Colors.red},
+        ], isLightMode),
+      ],
+    );
+  }
+
+  /// 智能推荐统计
+  Widget _buildRecommendationStatistics(bool isLightMode) {
+    final evaluatedEntries = _recommendationEntries.where((e) => e.evaluation?.recommendationRelevance != null).toList();
+    if (evaluatedEntries.isEmpty) {
+      return _buildEmptyStatistics('智能推荐', isLightMode);
+    }
+
+    // 统计1-5分的分布
+    final scoreCounts = List.filled(5, 0);
+    for (final entry in evaluatedEntries) {
+      final score = entry.evaluation!.recommendationRelevance!;
+      if (score >= 1 && score <= 5) {
+        scoreCounts[score - 1]++;
+      }
+    }
+
+    final avgScore = evaluatedEntries.map((e) => e.evaluation!.recommendationRelevance!).reduce((a, b) => a + b) / evaluatedEntries.length;
+
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: [
+        Text(
+          '智能推荐评估统计',
+          style: TextStyle(
+            fontSize: 18.sp,
+            fontWeight: FontWeight.bold,
+            color: isLightMode ? Colors.black : Colors.white,
           ),
-          SizedBox(height: 8.h),
-          Text(
-            '总评估数: ${metrics.totalEvaluations}',
+        ),
+        SizedBox(height: 12.h),
+        Row(
+          children: [
+            Expanded(
+              child: _buildMetricCard(
+                label: '平均相关性',
+                value: avgScore.toStringAsFixed(1),
+                color: Colors.orange,
+                isLightMode: isLightMode,
+              ),
+            ),
+            Expanded(
+              child: _buildMetricCard(
+                label: '已评估数',
+                value: '${evaluatedEntries.length}/${_recommendationEntries.length}',
+                color: Colors.green,
+                isLightMode: isLightMode,
+              ),
+            ),
+          ],
+        ),
+        SizedBox(height: 12.h),
+        Text(
+          '评分分布(1-5分)：',
+          style: TextStyle(
+            fontSize: 14.sp,
+            fontWeight: FontWeight.w500,
+            color: isLightMode ? Colors.black87 : Colors.white,
+          ),
+        ),
+        SizedBox(height: 8.h),
+        _buildScoreDistribution([
+          for (int i = 0; i < 5; i++)
+            {
+              'label': '${i + 1}分',
+              'count': scoreCounts[i],
+              'color': _getScoreColor(i + 1),
+            }
+        ], isLightMode),
+      ],
+    );
+  }
+
+  /// 总结统计
+  Widget _buildSummaryStatistics(bool isLightMode) {
+    final evaluatedEntries = _summaryEntries.where((e) => e.evaluation?.summaryRelevance != null).toList();
+    if (evaluatedEntries.isEmpty) {
+      return _buildEmptyStatistics('总结', isLightMode);
+    }
+
+    // 统计1-5分的分布
+    final scoreCounts = List.filled(5, 0);
+    for (final entry in evaluatedEntries) {
+      final score = entry.evaluation!.summaryRelevance!;
+      if (score >= 1 && score <= 5) {
+        scoreCounts[score - 1]++;
+      }
+    }
+
+    final avgScore = evaluatedEntries.map((e) => e.evaluation!.summaryRelevance!).reduce((a, b) => a + b) / evaluatedEntries.length;
+
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: [
+        Text(
+          '总结质量评估统计',
+          style: TextStyle(
+            fontSize: 18.sp,
+            fontWeight: FontWeight.bold,
+            color: isLightMode ? Colors.black : Colors.white,
+          ),
+        ),
+        SizedBox(height: 12.h),
+        Row(
+          children: [
+            Expanded(
+              child: _buildMetricCard(
+                label: '平均质量分',
+                value: avgScore.toStringAsFixed(1),
+                color: Colors.teal,
+                isLightMode: isLightMode,
+              ),
+            ),
+            Expanded(
+              child: _buildMetricCard(
+                label: '已评估数',
+                value: '${evaluatedEntries.length}/${_summaryEntries.length}',
+                color: Colors.green,
+                isLightMode: isLightMode,
+              ),
+            ),
+          ],
+        ),
+        SizedBox(height: 12.h),
+        Text(
+          '评分分布(1-5分)：',
+          style: TextStyle(
+            fontSize: 14.sp,
+            fontWeight: FontWeight.w500,
+            color: isLightMode ? Colors.black87 : Colors.white,
+          ),
+        ),
+        SizedBox(height: 8.h),
+        _buildScoreDistribution([
+          for (int i = 0; i < 5; i++)
+            {
+              'label': '${i + 1}分',
+              'count': scoreCounts[i],
+              'color': _getScoreColor(i + 1),
+            }
+        ], isLightMode),
+      ],
+    );
+  }
+
+  /// 知识图谱统计
+  Widget _buildKGStatistics(bool isLightMode) {
+    final evaluatedEntries = _kgEntries.where((e) => e.evaluation?.kgAccuracy != null).toList();
+    if (evaluatedEntries.isEmpty) {
+      return _buildEmptyStatistics('知识图谱', isLightMode);
+    }
+
+    // 统计1-5分的分布
+    final scoreCounts = List.filled(5, 0);
+    for (final entry in evaluatedEntries) {
+      final score = entry.evaluation!.kgAccuracy!;
+      if (score >= 1 && score <= 5) {
+        scoreCounts[score - 1]++;
+      }
+    }
+
+    final avgScore = evaluatedEntries.map((e) => e.evaluation!.kgAccuracy!).reduce((a, b) => a + b) / evaluatedEntries.length;
+
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: [
+        Text(
+          '知识图谱评估统计',
+          style: TextStyle(
+            fontSize: 18.sp,
+            fontWeight: FontWeight.bold,
+            color: isLightMode ? Colors.black : Colors.white,
+          ),
+        ),
+        SizedBox(height: 12.h),
+        Row(
+          children: [
+            Expanded(
+              child: _buildMetricCard(
+                label: '平均准确性',
+                value: avgScore.toStringAsFixed(1),
+                color: Colors.indigo,
+                isLightMode: isLightMode,
+              ),
+            ),
+            Expanded(
+              child: _buildMetricCard(
+                label: '已评估数',
+                value: '${evaluatedEntries.length}/${_kgEntries.length}',
+                color: Colors.green,
+                isLightMode: isLightMode,
+              ),
+            ),
+          ],
+        ),
+        SizedBox(height: 12.h),
+        Text(
+          '评分分布(1-5分)：',
+          style: TextStyle(
+            fontSize: 14.sp,
+            fontWeight: FontWeight.w500,
+            color: isLightMode ? Colors.black87 : Colors.white,
+          ),
+        ),
+        SizedBox(height: 8.h),
+        _buildScoreDistribution([
+          for (int i = 0; i < 5; i++)
+            {
+              'label': '${i + 1}分',
+              'count': scoreCounts[i],
+              'color': _getScoreColor(i + 1),
+            }
+        ], isLightMode),
+      ],
+    );
+  }
+
+  /// 认知负载统计
+  Widget _buildCognitiveLoadStatistics(bool isLightMode) {
+    final evaluatedEntries = _cognitiveLoadEntries.where((e) => e.evaluation?.cognitiveLoadReasonability != null).toList();
+    if (evaluatedEntries.isEmpty) {
+      return _buildEmptyStatistics('认知负载', isLightMode);
+    }
+
+    // 统计1-5分的分布
+    final scoreCounts = List.filled(5, 0);
+    for (final entry in evaluatedEntries) {
+      final score = entry.evaluation!.cognitiveLoadReasonability!;
+      if (score >= 1 && score <= 5) {
+        scoreCounts[score - 1]++;
+      }
+    }
+
+    final avgScore = evaluatedEntries.map((e) => e.evaluation!.cognitiveLoadReasonability!).reduce((a, b) => a + b) / evaluatedEntries.length;
+
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: [
+        Text(
+          '认知负载评估统计',
+          style: TextStyle(
+            fontSize: 18.sp,
+            fontWeight: FontWeight.bold,
+            color: isLightMode ? Colors.black : Colors.white,
+          ),
+        ),
+        SizedBox(height: 12.h),
+        Row(
+          children: [
+            Expanded(
+              child: _buildMetricCard(
+                label: '平均合理性',
+                value: avgScore.toStringAsFixed(1),
+                color: Colors.purple,
+                isLightMode: isLightMode,
+              ),
+            ),
+            Expanded(
+              child: _buildMetricCard(
+                label: '已评估数',
+                value: '${evaluatedEntries.length}/${_cognitiveLoadEntries.length}',
+                color: Colors.green,
+                isLightMode: isLightMode,
+              ),
+            ),
+          ],
+        ),
+        SizedBox(height: 12.h),
+        Text(
+          '评分分布(1-5分)：',
+          style: TextStyle(
+            fontSize: 14.sp,
+            fontWeight: FontWeight.w500,
+            color: isLightMode ? Colors.black87 : Colors.white,
+          ),
+        ),
+        SizedBox(height: 8.h),
+        _buildScoreDistribution([
+          for (int i = 0; i < 5; i++)
+            {
+              'label': '${i + 1}分',
+              'count': scoreCounts[i],
+              'color': _getScoreColor(i + 1),
+            }
+        ], isLightMode),
+      ],
+    );
+  }
+
+  /// 构建空统计信息
+  Widget _buildEmptyStatistics(String moduleName, bool isLightMode) {
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: [
+        Text(
+          '$moduleName评估统计',
+          style: TextStyle(
+            fontSize: 18.sp,
+            fontWeight: FontWeight.bold,
+            color: isLightMode ? Colors.black : Colors.white,
+          ),
+        ),
+        SizedBox(height: 12.h),
+        Text(
+          '暂无评估数据',
+          style: TextStyle(
+            fontSize: 14.sp,
+            color: Colors.grey,
+          ),
+        ),
+      ],
+    );
+  }
+
+  /// 构建评分分布组件
+  Widget _buildScoreDistribution(List<Map<String, dynamic>> distribution, bool isLightMode) {
+    return Wrap(
+      spacing: 8.w,
+      runSpacing: 4.h,
+      children: distribution.map((item) {
+        final label = item['label'] as String;
+        final count = item['count'] as int;
+        final color = item['color'] as Color;
+
+        return Container(
+          padding: EdgeInsets.symmetric(horizontal: 8.w, vertical: 4.h),
+          decoration: BoxDecoration(
+            color: color.withValues(alpha: 0.1),
+            borderRadius: BorderRadius.circular(12.r),
+            border: Border.all(color: color.withValues(alpha: 0.3)),
+          ),
+          child: Text(
+            '$label: $count',
             style: TextStyle(
               fontSize: 12.sp,
-              color: isLightMode ? Colors.grey[600] : Colors.grey[400],
+              color: color,
+              fontWeight: FontWeight.w500,
             ),
           ),
-        ],
-      ),
+        );
+      }).toList(),
     );
+  }
+
+  /// 根据评分获取颜色
+  Color _getScoreColor(int score) {
+    switch (score) {
+      case 1:
+        return Colors.red;
+      case 2:
+        return Colors.deepOrange;
+      case 3:
+        return Colors.orange;
+      case 4:
+        return Colors.lightGreen;
+      case 5:
+        return Colors.green;
+      default:
+        return Colors.grey;
+    }
   }
 
   /// 构建指标卡片
@@ -575,26 +1057,28 @@ class _LogEvaluationTabbedScreenState extends State<LogEvaluationTabbedScreen>
       padding: EdgeInsets.all(12.w),
       margin: EdgeInsets.symmetric(horizontal: 4.w),
       child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
         children: [
-          Text(
-            value,
-            style: TextStyle(
-              fontSize: 20.sp,
-              fontWeight: FontWeight.bold,
-              color: color,
-            ),
-          ),
-          SizedBox(height: 4.h),
           Text(
             label,
             style: TextStyle(
               fontSize: 12.sp,
-              color: isLightMode ? Colors.grey[600] : Colors.grey[400],
+              color: color,
+              fontWeight: FontWeight.w500,
             ),
-            textAlign: TextAlign.center,
+          ),
+          SizedBox(height: 4.h),
+          Text(
+            value,
+            style: TextStyle(
+              fontSize: 16.sp,
+              fontWeight: FontWeight.bold,
+              color: color,
+            ),
           ),
         ],
       ),
     );
   }
 }
+

@@ -31,6 +31,16 @@ class _FoAEntryTileState extends State<FoAEntryTile> {
     _currentEvaluation = widget.entry.evaluation;
   }
 
+  @override
+  void didUpdateWidget(FoAEntryTile oldWidget) {
+    super.didUpdateWidget(oldWidget);
+    if (oldWidget.entry.evaluation != widget.entry.evaluation) {
+      setState(() {
+        _currentEvaluation = widget.entry.evaluation;
+      });
+    }
+  }
+
   void _updateEvaluation(UserEvaluation evaluation) {
     setState(() => _currentEvaluation = evaluation);
     widget.onEvaluationChanged(evaluation);
@@ -147,7 +157,7 @@ class _FoAEntryTileState extends State<FoAEntryTile> {
 
   void _updateFoAScore(double score) {
     final newEvaluation = UserEvaluation(
-      foaScore: score, // 改为 score（保持double类型）
+      foaScore: score,
       todoCorrect: _currentEvaluation?.todoCorrect,
       recommendationRelevance: _currentEvaluation?.recommendationRelevance,
       cognitiveLoadReasonability: _currentEvaluation?.cognitiveLoadReasonability,
@@ -184,6 +194,16 @@ class _TodoEntryTileState extends State<TodoEntryTile> {
   void initState() {
     super.initState();
     _currentEvaluation = widget.entry.evaluation;
+  }
+
+  @override
+  void didUpdateWidget(TodoEntryTile oldWidget) {
+    super.didUpdateWidget(oldWidget);
+    if (oldWidget.entry.evaluation != widget.entry.evaluation) {
+      setState(() {
+        _currentEvaluation = widget.entry.evaluation;
+      });
+    }
   }
 
   void _updateEvaluation(UserEvaluation evaluation) {
@@ -356,6 +376,16 @@ class _RecommendationEntryTileState extends State<RecommendationEntryTile> {
     _currentEvaluation = widget.entry.evaluation;
   }
 
+  @override
+  void didUpdateWidget(RecommendationEntryTile oldWidget) {
+    super.didUpdateWidget(oldWidget);
+    if (oldWidget.entry.evaluation != widget.entry.evaluation) {
+      setState(() {
+        _currentEvaluation = widget.entry.evaluation;
+      });
+    }
+  }
+
   void _updateEvaluation(UserEvaluation evaluation) {
     setState(() => _currentEvaluation = evaluation);
     widget.onEvaluationChanged(evaluation);
@@ -513,6 +543,16 @@ class _SummaryEntryTileState extends State<SummaryEntryTile> {
     _currentEvaluation = widget.entry.evaluation;
   }
 
+  @override
+  void didUpdateWidget(SummaryEntryTile oldWidget) {
+    super.didUpdateWidget(oldWidget);
+    if (oldWidget.entry.evaluation != widget.entry.evaluation) {
+      setState(() {
+        _currentEvaluation = widget.entry.evaluation;
+      });
+    }
+  }
+
   void _updateEvaluation(UserEvaluation evaluation) {
     setState(() => _currentEvaluation = evaluation);
     widget.onEvaluationChanged(evaluation);
@@ -544,14 +584,40 @@ class _SummaryEntryTileState extends State<SummaryEntryTile> {
             ),
           ),
           SizedBox(height: 8.h),
-          Text(
-            '总结内容: ${widget.entry.content}',
-            style: TextStyle(
-              fontSize: 14.sp,
-              color: widget.isLightMode ? Colors.black87 : Colors.white70,
+          // 完全显示总结内容
+          Container(
+            width: double.infinity,
+            padding: EdgeInsets.all(12.w),
+            decoration: BoxDecoration(
+              color: widget.isLightMode ? Colors.grey[50] : Colors.grey[700],
+              borderRadius: BorderRadius.circular(8.r),
+              border: Border.all(
+                color: widget.isLightMode ? Colors.grey[300]! : Colors.grey[600]!,
+              ),
             ),
-            maxLines: 3,
-            overflow: TextOverflow.ellipsis,
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                Text(
+                  '总结内容：',
+                  style: TextStyle(
+                    fontSize: 13.sp,
+                    fontWeight: FontWeight.w600,
+                    color: widget.isLightMode ? Colors.black87 : Colors.white,
+                  ),
+                ),
+                SizedBox(height: 4.h),
+                Text(
+                  widget.entry.content,
+                  style: TextStyle(
+                    fontSize: 14.sp,
+                    color: widget.isLightMode ? Colors.black87 : Colors.white70,
+                    height: 1.4,
+                  ),
+                  // 完全显示，不限制行数
+                ),
+              ],
+            ),
           ),
           SizedBox(height: 16.h),
           Text(
@@ -648,6 +714,16 @@ class _KGEntryTileState extends State<KGEntryTile> {
   void initState() {
     super.initState();
     _currentEvaluation = widget.entry.evaluation;
+  }
+
+  @override
+  void didUpdateWidget(KGEntryTile oldWidget) {
+    super.didUpdateWidget(oldWidget);
+    if (oldWidget.entry.evaluation != widget.entry.evaluation) {
+      setState(() {
+        _currentEvaluation = widget.entry.evaluation;
+      });
+    }
   }
 
   void _updateEvaluation(UserEvaluation evaluation) {
@@ -805,6 +881,16 @@ class _CognitiveLoadEntryTileState extends State<CognitiveLoadEntryTile> {
   void initState() {
     super.initState();
     _currentEvaluation = widget.entry.evaluation;
+  }
+
+  @override
+  void didUpdateWidget(CognitiveLoadEntryTile oldWidget) {
+    super.didUpdateWidget(oldWidget);
+    if (oldWidget.entry.evaluation != widget.entry.evaluation) {
+      setState(() {
+        _currentEvaluation = widget.entry.evaluation;
+      });
+    }
   }
 
   void _updateEvaluation(UserEvaluation evaluation) {
