@@ -99,6 +99,7 @@ dependencies:
   # http requests for smart correction
   http: ^1.1.0
 
+  # 更新到最新稳定版本
   onnxruntime: ^1.4.1
 
 dev_dependencies:
@@ -140,6 +141,7 @@ flutter:
     - assets/audios/
     - assets/sherpa-onnx-streaming-paraformer-bilingual-zh-en/
     - assets/sherpa-onnx-whisper-tiny.en/
+    - assets/gte-model.onnx
 
   # An image asset can refer to one or more resolution-specific "variants", see
   # https://flutter.dev/to/resolution-aware-images

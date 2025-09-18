@@ -11,6 +11,7 @@ import 'package:app/views/ui/bud_icon.dart';
 import 'package:app/views/ui/bud_switch.dart';
 import 'package:app/views/ui/layout/bud_scaffold.dart';
 import 'package:app/views/human_understanding_dashboard.dart';
+import 'package:app/views/debug/onnx_debug_page.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_screenutil/flutter_screenutil.dart';
 import 'package:get/get.dart';
@@ -145,6 +146,11 @@ class _SettingScreenState extends State<SettingScreen> {
     context.pushNamed(RouteName.log_evaluation);
   }
 
+  /// 点击ONNX调试入口
+  void _onClickONNXDebug() {
+    context.pushNamed(RouteName.onnx_debug);
+  }
+
   @override
   Widget build(BuildContext context) {
     final themeNotifier = Provider.of<ThemeNotifier>(context);
@@ -245,6 +251,12 @@ class _SettingScreenState extends State<SettingScreen> {
                 title: 'Log Evaluation',
                 subtitle: 'Evaluate AI understanding performance',
                 onTap: _onClickLogEvaluation,
+              ),
+              SettingListTile(
+                leading: AssetsUtil.icon_feedback, // 临时使用现有图标
+                title: 'ONNX Debug',
+                subtitle: 'Debugging tools for ONNX models',
+                onTap: _onClickONNXDebug,
               ),
             ],
           ),

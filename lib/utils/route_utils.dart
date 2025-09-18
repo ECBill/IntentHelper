@@ -17,6 +17,7 @@ import 'package:app/views/kg_test_page.dart';
 import 'package:app/views/cache_debug_page.dart';
 import 'package:app/views/summary_list_screen.dart';
 import 'package:app/views/log_evaluation_screen.dart'; // 使用新的标签页版本
+import 'package:app/views/debug/onnx_debug_page.dart'; // 添加ONNX调试页面
 import 'package:go_router/go_router.dart';
 import '../views/entry/loading_screen.dart';
 import 'package:app/views/help_feedback/help_feedback_screen.dart';
@@ -145,6 +146,11 @@ class RouteUtils {
       name: RouteName.log_evaluation,
       builder: (_, state) => const LogEvaluationTabbedScreen(),
     ),
+    GoRoute(
+      path: RouteName.onnx_debug,
+      name: RouteName.onnx_debug,
+      builder: (_, state) => const OnnxDebugPage(),
+    ),
   ];
 }
 
@@ -185,4 +191,7 @@ class RouteName {
 
   /// log evaluation
   static const String log_evaluation = '/log_evaluation';
+
+  /// onnx debug
+  static const String onnx_debug = '/onnx_debug';
 }

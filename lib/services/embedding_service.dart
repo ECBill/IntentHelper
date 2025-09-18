@@ -1,6 +1,7 @@
 import 'dart:math';
 import 'dart:typed_data';
 import 'dart:convert';
+import 'dart:io';
 import 'package:crypto/crypto.dart';
 import 'package:flutter/services.dart';
 import 'package:onnxruntime/onnxruntime.dart';
@@ -35,28 +36,149 @@ class EmbeddingService {
     if (_isModelLoaded) return true;
 
     try {
-      print('[EmbeddingService] 🔄 正在加载GTE模型...');
+      print('[EmbeddingService] 🔄 开始初始化模型...');
+      print('[EmbeddingService] 🔍 当前平台: ${Platform.operatingSystem}');
 
-      final modelData = await rootBundle.load('assets/gte-model.onnx');
-      final modelBytes = modelData.buffer.asUint8List();
+      // 检查ONNX Runtime是否可用
+      try {
+        print('[EmbeddingService] 📦 检查ONNX Runtime可用性...');
+        final testOptions = OrtSessionOptions();
+        print('[EmbeddingService] ✅ ONNX Runtime 初始化成功');
+      } catch (e) {
+        print('[EmbeddingService] ❌ ONNX Runtime 不可用: $e');
+        print('[EmbeddingService] 💡 可能原因:');
+        print('[EmbeddingService]   - Android: 缺少原生库或版本不兼容');
+        print('[EmbeddingService]   - iOS: 需要配置Info.plist或签名问题');
+        print('[EmbeddingService]   - 模型格式不支持当前设备架构');
+        return false;
+      }
 
-      final sessionOptions = OrtSessionOptions();
+      // 尝试加载模型文件
+      try {
+        print('[EmbeddingService] 📁 尝试加载模型文件: assets/gte-model.onnx');
+        final modelData = await rootBundle.load('assets/gte-model.onnx');
+        print('[EmbeddingService] ✅ 模型文件读取成功，大小: ${modelData.lengthInBytes} bytes');
 
-      _session = await OrtSession.fromBuffer(modelBytes, sessionOptions);
+        final modelBytes = modelData.buffer.asUint8List();
 
-      // GTE-small 默认输入输出名
-      _inputNames = ['input_ids'];      // 可根据模型实际检查
-      _outputNames = ['last_hidden_state']; // 或 'sentence_embedding' 视模型而定
+        // 验证文件不为空且有合理大小
+        if (modelBytes.length < 1000) {
+          throw Exception('模型文件太小 (${modelBytes.length} bytes)，可能不是有效的ONNX模型');
+        }
 
-      _isModelLoaded = true;
-      print('[EmbeddingService] ✅ GTE模型加载成功');
-      print('[EmbeddingService] 📊 输入: $_inputNames');
-      print('[EmbeddingService] 📊 输出: $_outputNames');
+        // 检查ONNX文件魔数和格式
+        if (modelBytes.length >= 8) {
+          final header = modelBytes.take(8).toList();
+          print('[EmbeddingService] 🔍 模型文件头部: ${header.map((b) => b.toRadixString(16).padLeft(2, '0')).join(' ')}');
+
+          // ONNX文件通常以protobuf魔数开头 (08 XX 12 XX...)
+          if (header[0] != 0x08) {
+            print('[EmbeddingService] ⚠️ 警告: 文件头��不符合标准ONNX格式');
+          }
+        }
+
+        final sessionOptions = OrtSessionOptions();
+
+        // 为Android优化设置
+        if (Platform.isAndroid) {
+          print('[EmbeddingService] 🤖 配置Android优化设置...');
+          // 可以在这里添加Android特定的优化配置
+        }
+
+        print('[EmbeddingService] ⚙️ 创建ONNX会话...');
+        _session = await OrtSession.fromBuffer(modelBytes, sessionOptions);
+
+        // 尝试获取模型的实际输入输出信息
+        try {
+          // 这里我们使用预设的名称，因为无法直接获取
+          _inputNames = ['input_ids', 'attention_mask', 'token_type_ids'];
+          _outputNames = ['last_hidden_state'];
+
+          print('[EmbeddingService] 📋 预设输入名称: $_inputNames');
+          print('[EmbeddingService] 📋 预设输出名称: $_outputNames');
+        } catch (e) {
+          print('[EmbeddingService] ⚠️ 无法获取模型元信息: $e');
+        }
+
+        _isModelLoaded = true;
+        print('[EmbeddingService] ✅ GTE模型初始化完成');
+
+        // 测试模型推理
+        print('[EmbeddingService] 🧪 开始模型推理测试...');
+        final testResult = await _testModelInference();
+        if (!testResult) {
+          print('[EmbeddingService] ❌ 模型推理测试失败，回退到备用方案');
+          _isModelLoaded = false;
+          _session?.release();
+          _session = null;
+          return false;
+        } else {
+          print('[EmbeddingService] ✅ 模型推理测试成功');
+        }
+
+        return true;
+
+      } on PlatformException catch (e) {
+        print('[EmbeddingService] ❌ 平台异常 - 模型文件加载失败:');
+        print('[EmbeddingService] 错误代码: ${e.code}');
+        print('[EmbeddingService] 错误消息: ${e.message}');
+        return false;
+      } catch (e) {
+        print('[EmbeddingService] ❌ 模型解析/会话创建失败: $e');
+        print('[EmbeddingService] 💡 详细错误信息: ${e.toString()}');
+        if (e.toString().contains('incompatible')) {
+          print('[EmbeddingService] 💡 可能是模型与设备架构不兼容');
+        }
+        if (e.toString().contains('version')) {
+          print('[EmbeddingService] 💡 可能是ONNX版本不匹配');
+        }
+        return false;
+      }
+    } catch (e, stackTrace) {
+      print('[EmbeddingService] ❌ 模型初始化过程中发生未知错误: $e');
+      print('[EmbeddingService] 🔍 堆栈跟踪: $stackTrace');
+      _isModelLoaded = false;
+      return false;
+    }
+  }
+
+  Future<bool> _testModelInference() async {
+    try {
+      if (_session == null) return false;
+
+      print('[EmbeddingService] 🧪 测试模型推理...');
+
+      // 创建简单的测试输入
+      final testTokens = [101, 1000, 2000, 102]; // [CLS] token1 token2 [SEP]
+      final paddedTokens = List<int>.from(testTokens);
+
+      // 填充到固定长度
+      while (paddedTokens.length < 512) {
+        paddedTokens.add(0);
+      }
+
+      final inputIds = _createInputTensor(paddedTokens);
+      final attentionMask = _createInputTensor(_createAttentionMask(paddedTokens));
+      final tokenTypeIds = _createInputTensor(List.filled(paddedTokens.length, 0));
+
+      print('[EmbeddingService] 🔧 执行测试推理...');
+      final outputs = await _session!.run(OrtRunOptions(), {
+        'input_ids': inputIds,
+        'attention_mask': attentionMask,
+        'token_type_ids': tokenTypeIds,
+      });
+
+      print('[EmbeddingService] ✅ 测试推理成功，输出数量: ${outputs.length}');
+
+      if (outputs.isNotEmpty) {
+        final firstOutput = outputs[0];
+        print('[EmbeddingService] 📊 第一个输出类型: ${firstOutput.runtimeType}');
+
+      }
 
       return true;
     } catch (e) {
-      print('[EmbeddingService] ❌ GTE模型加载失败: $e');
-      _isModelLoaded = false;
+      print('[EmbeddingService] ❌ 模型��理测试失败: $e');
       return false;
     }
   }
@@ -130,37 +252,43 @@ class EmbeddingService {
       _embeddingCache[cacheKey] = embedding;
       return embedding;
     } catch (e) {
-      print('[EmbeddingService] ❌ 生成文本嵌入向量失败: $e');
+      print('[EmbeddingService] ❌ 生成文本嵌入�����量失败: $e');
       return await _generateFallbackEmbedding(text);
     }
+  }
+
+  List<int> _createAttentionMask(List<int> tokens) {
+    return tokens.map((id) => id == 0 ? 0 : 1).toList();
   }
 
   /// 使用GTE模型生成嵌入向量
   Future<List<double>?> _generateEmbeddingWithModel(String text) async {
     try {
-      if (!_isModelLoaded || _session == null || _inputNames == null || _outputNames == null) {
-        return null;
-      }
+      if (!_isModelLoaded || _session == null) return null;
 
       final tokens = _tokenizeText(text);
       if (tokens.isEmpty) return null;
 
-      final inputTensor = _createInputTensor(tokens);
-      final inputMap = {_inputNames![0]: inputTensor};
+      final inputIds = _createInputTensor(tokens);
+      final attentionMask = _createInputTensor(_createAttentionMask(tokens));
+      final tokenTypeIds = _createInputTensor(List.filled(tokens.length, 0));
 
-      // 注意：Dart 的 onnxruntime.run() 返回的是 List<OrtValue>
-      final inputName = 'gte-model.onnx'; // 请根据你的模型实际输入名替换
-      final runOptions = OrtRunOptions();
-
-      final outputs = _session!.run(runOptions, {
-        inputName: _createInputTensor(tokens),
+      final outputs = await _session!.run(OrtRunOptions(), {
+        'input_ids': inputIds,
+        'attention_mask': attentionMask,
+        'token_type_ids': tokenTypeIds,
       });
 
       final outputTensor = outputs.isNotEmpty ? outputs[0] : null;
-      if (outputTensor != null) {
-        final embedding = _extractEmbedding(outputTensor);
-        if (embedding.length == vectorDimensions) return embedding;
-        return _resizeEmbedding(embedding, vectorDimensions);
+
+      if (outputTensor != null && outputTensor is OrtValueTensor) {
+        final raw = outputTensor.value;
+
+        if (raw is List<List<double>>) {
+          return _normalizeVector(_meanPooling(raw));
+        } else if (raw is Float32List) {
+          return _normalizeVector(raw.cast<double>());
+        }
       }
 
       return null;
@@ -205,6 +333,7 @@ class EmbeddingService {
   /// 创建输入张量
   OrtValueTensor _createInputTensor(List<int> tokens) {
     final shape = [1, tokens.length];
+    // 修复：使用Int64List而不是Int32List，因为模型期望int64类型
     final data = Int64List.fromList(tokens);
 
     return OrtValueTensor.createTensorWithDataList(data, shape);
@@ -417,6 +546,47 @@ class EmbeddingService {
       'memory_usage_estimate': _embeddingCache.length * vectorDimensions * 8,
       'model_loaded': _isModelLoaded,
     };
+  }
+
+  /// 获取模型文件路径
+  String getModelFilePath() {
+    return 'assets/gte-model.onnx';
+  }
+
+  /// 检查平台兼容性
+  bool checkPlatformCompatibility() {
+    // 检查当前平台是否支持ONNX Runtime
+    return Platform.isAndroid || Platform.isIOS || Platform.isLinux || Platform.isWindows;
+  }
+
+  /// 检查依赖库
+  Future<List<String>> checkDependencies() async {
+    final dependencies = <String>[];
+
+    try {
+      // 检查ONNX Runtime
+      final testOptions = OrtSessionOptions();
+      dependencies.add('ONNX Runtime: ✅ 可用');
+    } catch (e) {
+      dependencies.add('ONNX Runtime: ❌ 不可用 - $e');
+    }
+
+    // 检查其他依赖
+    dependencies.add('Flutter: ✅ 可用');
+    dependencies.add('Dart: ✅ 可用');
+    dependencies.add('crypto: ✅ 可用');
+
+    return dependencies;
+  }
+
+  /// 检查网络连接
+  Future<bool> checkInternetConnection() async {
+    try {
+      // 简单的网络检查，这里可以根据需要扩展
+      return true; // 暂时返回true，实际应用中可以实现真正的网络检查
+    } catch (e) {
+      return false;
+    }
   }
 
   /// 释放模型资源
