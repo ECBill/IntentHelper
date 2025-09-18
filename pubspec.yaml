@@ -99,7 +99,7 @@ dependencies:
   # http requests for smart correction
   http: ^1.1.0
 
-dependency_overrides:
+  onnxruntime: ^1.4.1
 
 dev_dependencies:
   flutter_test:

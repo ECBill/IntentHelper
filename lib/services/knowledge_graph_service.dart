@@ -3,6 +3,7 @@ import 'package:app/models/graph_models.dart';
 import 'package:app/models/record_entity.dart';
 import 'package:app/services/llm.dart';
 import 'package:app/services/objectbox_service.dart';
+import 'package:app/services/embedding_service.dart';
 
 class KnowledgeGraphService {
   static final KnowledgeGraphService _instance = KnowledgeGraphService._internal();

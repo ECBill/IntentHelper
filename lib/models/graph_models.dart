@@ -105,6 +105,10 @@ class EventNode {
   DateTime lastUpdated; // 最后更新时间
   String? sourceContext; // 来源上下文ID
   
+  // 新增：向量嵌入字段用于语义搜索
+  @HnswIndex(dimensions: 384) // GTE-small输出384维向量
+  List<double>? embedding;
+
   EventNode({
     this.obxId = 0,
     required this.id,
@@ -118,7 +122,36 @@ class EventNode {
     this.description,
     DateTime? lastUpdated,
     this.sourceContext,
+    this.embedding,
   }) : lastUpdated = lastUpdated ?? DateTime.now();
+
+  // 生成用于嵌入的文本内容
+  String getEmbeddingText() {
+    final buffer = StringBuffer();
+
+    // 事件名称
+    buffer.write(name);
+
+    // 添加描述
+    if (description != null && description!.isNotEmpty) {
+      buffer.write(' ');
+      buffer.write(description!);
+    }
+
+    // 添加目的
+    if (purpose != null && purpose!.isNotEmpty) {
+      buffer.write(' 目的：');
+      buffer.write(purpose!);
+    }
+
+    // 添加结果
+    if (result != null && result!.isNotEmpty) {
+      buffer.write(' 结果：');
+      buffer.write(result!);
+    }
+
+    return buffer.toString().trim();
+  }
 }
 
 // 事件-实体关系模型
