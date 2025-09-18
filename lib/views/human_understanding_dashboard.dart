@@ -783,94 +783,955 @@ class _HumanUnderstandingDashboardState extends State<HumanUnderstandingDashboar
 
     final kgData = _currentState!.knowledgeGraphData;
 
-    // 🔥 修复：更宽松的数据判空逻辑，优先显示有用信息
-    final entities = (kgData?['entities'] as List? ?? []);
+    // 检查数据
     final events = (kgData?['events'] as List? ?? []);
+    final entities = (kgData?['entities'] as List? ?? []);
     final relations = (kgData?['relations'] as List? ?? []);
+    final topicStats = (kgData?['topic_match_stats'] as List? ?? []);
     final insights = (kgData?['insights'] as List? ?? []);
 
-    // 只有在真正没有任何数据且有错误时才显示空状态
-    final isDataEmpty = kgData == null ||
-        (entities.isEmpty && events.isEmpty && relations.isEmpty &&
-            insights.isEmpty && kgData['error'] != null);
+    final isDataEmpty = kgData == null || (events.isEmpty && entities.isEmpty && relations.isEmpty);
 
     return Padding(
       padding: EdgeInsets.all(16.w),
       child: Column(
         children: [
-          // 🔥 改进：状态栏显示更详细的数据信息
+          // 状态栏
           Container(
             width: double.infinity,
-            padding: EdgeInsets.all(8.w),
+            padding: EdgeInsets.all(12.w),
             decoration: BoxDecoration(
-              color: isDataEmpty ? Colors.red.withOpacity(0.1) : Colors.blue
-                  .withOpacity(0.1),
-              borderRadius: BorderRadius.circular(6.r),
+              gradient: LinearGradient(
+                colors: isDataEmpty
+                  ? [Colors.red.withOpacity(0.1), Colors.red.withOpacity(0.05)]
+                  : [Colors.blue.withOpacity(0.1), Colors.indigo.withOpacity(0.1)],
+              ),
+              borderRadius: BorderRadius.circular(8.r),
               border: Border.all(
-                  color: isDataEmpty ? Colors.red.withOpacity(0.3) : Colors.blue
-                      .withOpacity(0.3)),
+                color: isDataEmpty ? Colors.red.withOpacity(0.3) : Colors.blue.withOpacity(0.3)
+              ),
             ),
             child: Row(
               children: [
                 Icon(
-                    isDataEmpty ? Icons.error_outline : Icons.info_outline,
-                    size: 16.sp,
-                    color: isDataEmpty ? Colors.red[600] : Colors.blue[600]
+                  isDataEmpty ? Icons.error_outline : Icons.hub,
+                  size: 20.sp,
+                  color: isDataEmpty ? Colors.red[600] : Colors.blue[600]
                 ),
-                SizedBox(width: 8.w),
+                SizedBox(width: 12.w),
                 Expanded(
-                  child: Text(
-                    isDataEmpty
-                        ? '知识图谱数据加载失败或暂无数据'
-                        : '数据状态: ${entities.length}实体, ${events
-                        .length}事件, ${relations
-                        .length}关系 | 更新时间: ${_formatTimestamp(
-                        kgData?['generated_at'])}',
-                    style: TextStyle(fontSize: 12.sp,
-                        color: isDataEmpty ? Colors.red[600] : Colors
-                            .blue[700]),
+                  child: Column(
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    children: [
+                      Text(
+                        isDataEmpty
+                          ? '向量匹配未找到相关内容'
+                          : '向量匹配查询结果',
+                        style: TextStyle(
+                          fontSize: 14.sp,
+                          fontWeight: FontWeight.w600,
+                          color: isDataEmpty ? Colors.red[700] : Colors.blue[700],
+                        ),
+                      ),
+                      if (!isDataEmpty) ...[
+                        SizedBox(height: 4.h),
+                        Text(
+                          '${events.length}个相关事件 · ${entities.length}个相关实体 · ${topicStats.length}个主题参与匹配',
+                          style: TextStyle(
+                            fontSize: 12.sp,
+                            color: Colors.blue[600],
+                          ),
+                        ),
+                        Text(
+                          '更新时间: ${_formatTimestamp(kgData?['generated_at'])} · 查询方式: ${kgData?['query_method'] ?? '未知'}',
+                          style: TextStyle(
+                            fontSize: 11.sp,
+                            color: Colors.grey[600],
+                          ),
+                        ),
+                      ],
+                    ],
                   ),
                 ),
-                // 🔥 改进：手动刷新按钮
                 IconButton(
-                  icon: Icon(Icons.refresh, size: 16.sp),
+                  icon: Icon(Icons.refresh, size: 18.sp),
                   onPressed: () {
-                    print('[Dashboard] 🔄 手动刷新知识图谱数据');
-                    // 先清除缓存再重新加载
+                    print('[Dashboard] 🔄 手动刷新向量匹配结果');
                     _system.refreshKnowledgeGraphCache();
                     Future.delayed(Duration(milliseconds: 100), () {
                       _loadSystemData();
                     });
                   },
-                  tooltip: '刷新知识图谱',
+                  tooltip: '刷新匹配结果',
                 ),
               ],
             ),
           ),
-          SizedBox(height: 12.h),
+          SizedBox(height: 16.h),
 
           Text(
-            '知识图谱',
+            '知识图谱 - 向量匹配',
             style: TextStyle(fontSize: 18.sp, fontWeight: FontWeight.bold),
           ),
-          SizedBox(height: 12.h),
+          SizedBox(height: 16.h),
 
           Expanded(
             child: isDataEmpty
-                ? _buildEmptyKnowledgeGraphView(kgData)
+                ? _buildEmptyVectorMatchView(kgData)
                 : SingleChildScrollView(
-              child: Column(
-                children: [
-                  _buildKnowledgeGraphCard(kgData!),
-                  SizedBox(height: 16.h),
-                  _buildKnowledgeGraphInsightsCard(kgData),
-                ],
-              ),
-            ),
+                    child: Column(
+                      children: [
+                        // 主题匹配统计
+                        if (topicStats.isNotEmpty) ...[
+                          _buildTopicMatchStatsCard(topicStats),
+                          SizedBox(height: 16.h),
+                        ],
+
+                        // 相关事件（按相似度排序）
+                        if (events.isNotEmpty) ...[
+                          _buildVectorMatchEventsCard(events),
+                          SizedBox(height: 16.h),
+                        ],
+
+                        // 相关实体
+                        if (entities.isNotEmpty) ...[
+                          _buildVectorMatchEntitiesCard(entities),
+                          SizedBox(height: 16.h),
+                        ],
+
+                        // 洞察分析
+                        if (insights.isNotEmpty) ...[
+                          _buildVectorInsightsCard(insights),
+                        ],
+                      ],
+                    ),
+                  ),
           ),
         ],
       ),
     );
+  }
+
+  /// 主题匹配统计卡片
+  Widget _buildTopicMatchStatsCard(List topicStats) {
+    return Card(
+      elevation: 4,
+      shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12.r)),
+      child: Container(
+        decoration: BoxDecoration(
+          borderRadius: BorderRadius.circular(12.r),
+          gradient: LinearGradient(
+            begin: Alignment.topLeft,
+            end: Alignment.bottomRight,
+            colors: [Colors.indigo.shade50, Colors.purple.shade50],
+          ),
+        ),
+        child: Padding(
+          padding: EdgeInsets.all(20.w),
+          child: Column(
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              Row(
+                children: [
+                  Container(
+                    padding: EdgeInsets.all(8.w),
+                    decoration: BoxDecoration(
+                      color: Colors.indigo.withOpacity(0.1),
+                      borderRadius: BorderRadius.circular(8.r),
+                    ),
+                    child: Icon(Icons.analytics, color: Colors.indigo, size: 24.sp),
+                  ),
+                  SizedBox(width: 12.w),
+                  Text(
+                    '主题匹配统计',
+                    style: TextStyle(
+                      fontSize: 18.sp,
+                      fontWeight: FontWeight.bold,
+                      color: Colors.indigo.shade800,
+                    ),
+                  ),
+                ],
+              ),
+              SizedBox(height: 16.h),
+
+              // 主题匹配列表
+              Column(
+                children: topicStats.map<Widget>((stat) {
+                  final topicName = stat['topic_name']?.toString() ?? '未知主题';
+                  final topicWeight = (stat['topic_weight'] as double?) ?? 0.0;
+                  final eventsCount = (stat['events_count'] as int?) ?? 0;
+                  final entitiesCount = (stat['entities_count'] as int?) ?? 0;
+                  final avgSimilarity = (stat['avg_similarity'] as double?) ?? 0.0;
+                  final maxSimilarity = (stat['max_similarity'] as double?) ?? 0.0;
+
+                  return Container(
+                    margin: EdgeInsets.only(bottom: 12.h),
+                    padding: EdgeInsets.all(16.w),
+                    decoration: BoxDecoration(
+                      color: Colors.white,
+                      borderRadius: BorderRadius.circular(10.r),
+                      border: Border.all(color: Colors.indigo.withOpacity(0.2)),
+                      boxShadow: [
+                        BoxShadow(
+                          color: Colors.indigo.withOpacity(0.05),
+                          blurRadius: 8,
+                          offset: Offset(0, 2),
+                        ),
+                      ],
+                    ),
+                    child: Column(
+                      crossAxisAlignment: CrossAxisAlignment.start,
+                      children: [
+                        // 主题名称和权重
+                        Row(
+                          children: [
+                            Expanded(
+                              child: Text(
+                                topicName,
+                                style: TextStyle(
+                                  fontSize: 15.sp,
+                                  fontWeight: FontWeight.bold,
+                                  color: Colors.indigo.shade800,
+                                ),
+                              ),
+                            ),
+                            Container(
+                              padding: EdgeInsets.symmetric(horizontal: 8.w, vertical: 4.h),
+                              decoration: BoxDecoration(
+                                color: Colors.blue.withOpacity(0.1),
+                                borderRadius: BorderRadius.circular(8.r),
+                              ),
+                              child: Text(
+                                '权重: ${topicWeight.toStringAsFixed(2)}',
+                                style: TextStyle(
+                                  fontSize: 11.sp,
+                                  color: Colors.blue.shade700,
+                                  fontWeight: FontWeight.w600,
+                                ),
+                              ),
+                            ),
+                          ],
+                        ),
+                        SizedBox(height: 12.h),
+
+                        // 匹配统计
+                        Row(
+                          children: [
+                            Expanded(
+                              child: _buildTopicStatItem(
+                                '相关事件',
+                                eventsCount.toString(),
+                                Icons.event,
+                                Colors.green,
+                              ),
+                            ),
+                            Expanded(
+                              child: _buildTopicStatItem(
+                                '相关实体',
+                                entitiesCount.toString(),
+                                Icons.account_circle,
+                                Colors.blue,
+                              ),
+                            ),
+                            Expanded(
+                              child: _buildTopicStatItem(
+                                '最高相似度',
+                                maxSimilarity.toStringAsFixed(2),
+                                Icons.star,
+                                _getSimilarityColor(maxSimilarity),
+                              ),
+                            ),
+                          ],
+                        ),
+
+                        // 平均相似度进度条
+                        if (avgSimilarity > 0) ...[
+                          SizedBox(height: 12.h),
+                          Row(
+                            children: [
+                              Text(
+                                '平均相似度: ${avgSimilarity.toStringAsFixed(2)}',
+                                style: TextStyle(
+                                  fontSize: 12.sp,
+                                  color: Colors.grey.shade700,
+                                  fontWeight: FontWeight.w500,
+                                ),
+                              ),
+                              SizedBox(width: 12.w),
+                              Expanded(
+                                child: LinearProgressIndicator(
+                                  value: avgSimilarity,
+                                  backgroundColor: Colors.grey.shade300,
+                                  valueColor: AlwaysStoppedAnimation<Color>(
+                                    _getSimilarityColor(avgSimilarity),
+                                  ),
+                                ),
+                              ),
+                            ],
+                          ),
+                        ],
+                      ],
+                    ),
+                  );
+                }).toList(),
+              ),
+            ],
+          ),
+        ),
+      ),
+    );
+  }
+
+  /// 主题统计项
+  Widget _buildTopicStatItem(String label, String value, IconData icon, Color color) {
+    return Container(
+      padding: EdgeInsets.all(8.w),
+      margin: EdgeInsets.symmetric(horizontal: 2.w),
+      decoration: BoxDecoration(
+        color: color.withOpacity(0.1),
+        borderRadius: BorderRadius.circular(8.r),
+        border: Border.all(color: color.withOpacity(0.3)),
+      ),
+      child: Column(
+        children: [
+          Icon(icon, color: color, size: 16.sp),
+          SizedBox(height: 4.h),
+          Text(
+            value,
+            style: TextStyle(
+              fontSize: 14.sp,
+              fontWeight: FontWeight.bold,
+              color: color,
+            ),
+          ),
+          Text(
+            label,
+            style: TextStyle(
+              fontSize: 10.sp,
+              color: Colors.grey.shade600,
+            ),
+            textAlign: TextAlign.center,
+          ),
+        ],
+      ),
+    );
+  }
+
+  /// 向量匹配事件卡片
+  Widget _buildVectorMatchEventsCard(List events) {
+    return Card(
+      elevation: 4,
+      shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12.r)),
+      child: Container(
+        decoration: BoxDecoration(
+          borderRadius: BorderRadius.circular(12.r),
+          gradient: LinearGradient(
+            colors: [Colors.green.shade50, Colors.teal.shade50],
+          ),
+        ),
+        child: Padding(
+          padding: EdgeInsets.all(20.w),
+          child: Column(
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              Row(
+                children: [
+                  Container(
+                    padding: EdgeInsets.all(8.w),
+                    decoration: BoxDecoration(
+                      color: Colors.green.withOpacity(0.1),
+                      borderRadius: BorderRadius.circular(8.r),
+                    ),
+                    child: Icon(Icons.timeline, color: Colors.green, size: 24.sp),
+                  ),
+                  SizedBox(width: 12.w),
+                  Expanded(
+                    child: Column(
+                      crossAxisAlignment: CrossAxisAlignment.start,
+                      children: [
+                        Text(
+                          '相关事件 (${events.length})',
+                          style: TextStyle(
+                            fontSize: 18.sp,
+                            fontWeight: FontWeight.bold,
+                            color: Colors.green.shade800,
+                          ),
+                        ),
+                        Text(
+                          '按向量相似度排序',
+                          style: TextStyle(
+                            fontSize: 12.sp,
+                            color: Colors.green.shade600,
+                          ),
+                        ),
+                      ],
+                    ),
+                  ),
+                ],
+              ),
+              SizedBox(height: 16.h),
+
+              // 事件列表
+              Column(
+                children: events.take(8).map<Widget>((event) {
+                  final eventName = event['name']?.toString() ?? '未知事件';
+                  final eventType = event['type']?.toString() ?? '';
+                  final description = event['description']?.toString() ?? '';
+                  final similarity = (event['similarity_score'] as double?) ?? 0.0;
+                  final matchedByTopic = event['matched_by_topic']?.toString() ?? '未知主题';
+                  final topicWeight = (event['matched_by_topic_weight'] as double?) ?? 0.0;
+                  final formattedDate = event['formatted_date']?.toString() ?? '';
+                  final matchDetails = event['match_details'] as Map<String, dynamic>? ?? {};
+
+                  return Container(
+                    margin: EdgeInsets.only(bottom: 16.h),
+                    padding: EdgeInsets.all(16.w),
+                    decoration: BoxDecoration(
+                      color: Colors.white,
+                      borderRadius: BorderRadius.circular(12.r),
+                      border: Border.all(color: Colors.green.withOpacity(0.2)),
+                      boxShadow: [
+                        BoxShadow(
+                          color: Colors.green.withOpacity(0.08),
+                          blurRadius: 8,
+                          offset: Offset(0, 2),
+                        ),
+                      ],
+                    ),
+                    child: Column(
+                      crossAxisAlignment: CrossAxisAlignment.start,
+                      children: [
+                        // 事件标题和相似度
+                        Row(
+                          children: [
+                            Expanded(
+                              child: Text(
+                                eventName,
+                                style: TextStyle(
+                                  fontSize: 15.sp,
+                                  fontWeight: FontWeight.bold,
+                                  color: Colors.grey.shade800,
+                                ),
+                              ),
+                            ),
+                            Container(
+                              padding: EdgeInsets.symmetric(horizontal: 8.w, vertical: 4.h),
+                              decoration: BoxDecoration(
+                                gradient: LinearGradient(
+                                  colors: [
+                                    _getSimilarityColor(similarity).withOpacity(0.2),
+                                    _getSimilarityColor(similarity).withOpacity(0.1),
+                                  ],
+                                ),
+                                borderRadius: BorderRadius.circular(8.r),
+                                border: Border.all(
+                                  color: _getSimilarityColor(similarity).withOpacity(0.4),
+                                ),
+                              ),
+                              child: Row(
+                                mainAxisSize: MainAxisSize.min,
+                                children: [
+                                  Icon(
+                                    Icons.auto_awesome,
+                                    size: 12.sp,
+                                    color: _getSimilarityColor(similarity),
+                                  ),
+                                  SizedBox(width: 4.w),
+                                  Text(
+                                    similarity.toStringAsFixed(2),
+                                    style: TextStyle(
+                                      fontSize: 12.sp,
+                                      fontWeight: FontWeight.bold,
+                                      color: _getSimilarityColor(similarity),
+                                    ),
+                                  ),
+                                ],
+                              ),
+                            ),
+                          ],
+                        ),
+
+                        // 匹配主题信息
+                        SizedBox(height: 8.h),
+                        Container(
+                          padding: EdgeInsets.all(8.w),
+                          decoration: BoxDecoration(
+                            color: Colors.blue.withOpacity(0.08),
+                            borderRadius: BorderRadius.circular(8.r),
+                            border: Border.all(color: Colors.blue.withOpacity(0.2)),
+                          ),
+                          child: Row(
+                            children: [
+                              Icon(Icons.topic, size: 14.sp, color: Colors.blue.shade600),
+                              SizedBox(width: 6.w),
+                              Text(
+                                '匹配主题: ',
+                                style: TextStyle(
+                                  fontSize: 12.sp,
+                                  fontWeight: FontWeight.w600,
+                                  color: Colors.blue.shade700,
+                                ),
+                              ),
+                              Expanded(
+                                child: Text(
+                                  '$matchedByTopic (权重: ${topicWeight.toStringAsFixed(2)})',
+                                  style: TextStyle(
+                                    fontSize: 12.sp,
+                                    color: Colors.blue.shade600,
+                                  ),
+                                ),
+                              ),
+                            ],
+                          ),
+                        ),
+
+                        // 事件类型和时间
+                        if (eventType.isNotEmpty || formattedDate.isNotEmpty) ...[
+                          SizedBox(height: 8.h),
+                          Row(
+                            children: [
+                              if (eventType.isNotEmpty) ...[
+                                Container(
+                                  padding: EdgeInsets.symmetric(horizontal: 6.w, vertical: 2.h),
+                                  decoration: BoxDecoration(
+                                    color: Colors.orange.withOpacity(0.1),
+                                    borderRadius: BorderRadius.circular(6.r),
+                                  ),
+                                  child: Text(
+                                    eventType,
+                                    style: TextStyle(
+                                      fontSize: 10.sp,
+                                      color: Colors.orange.shade600,
+                                      fontWeight: FontWeight.w500,
+                                    ),
+                                  ),
+                                ),
+                                SizedBox(width: 8.w),
+                              ],
+                              if (formattedDate.isNotEmpty) ...[
+                                Icon(Icons.access_time, size: 12.sp, color: Colors.grey.shade500),
+                                SizedBox(width: 4.w),
+                                Text(
+                                  formattedDate,
+                                  style: TextStyle(
+                                    fontSize: 11.sp,
+                                    color: Colors.grey.shade600,
+                                  ),
+                                ),
+                              ],
+                            ],
+                          ),
+                        ],
+
+                        // 事件描述
+                        if (description.isNotEmpty) ...[
+                          SizedBox(height: 8.h),
+                          Text(
+                            description,
+                            style: TextStyle(
+                              fontSize: 12.sp,
+                              color: Colors.grey.shade600,
+                              height: 1.3,
+                            ),
+                            maxLines: 3,
+                            overflow: TextOverflow.ellipsis,
+                          ),
+                        ],
+
+                        // 匹配详情
+                        if (matchDetails.isNotEmpty) ...[
+                          SizedBox(height: 10.h),
+                          Container(
+                            padding: EdgeInsets.all(8.w),
+                            decoration: BoxDecoration(
+                              color: Colors.grey.withOpacity(0.05),
+                              borderRadius: BorderRadius.circular(6.r),
+                              border: Border.all(color: Colors.grey.withOpacity(0.2)),
+                            ),
+                            child: Column(
+                              crossAxisAlignment: CrossAxisAlignment.start,
+                              children: [
+                                Text(
+                                  '匹配详情:',
+                                  style: TextStyle(
+                                    fontSize: 11.sp,
+                                    fontWeight: FontWeight.w600,
+                                    color: Colors.grey.shade700,
+                                  ),
+                                ),
+                                SizedBox(height: 4.h),
+                                if (matchDetails['matched_text'] != null) ...[
+                                  Text(
+                                    '匹配文本: ${matchDetails['matched_text']}',
+                                    style: TextStyle(
+                                      fontSize: 10.sp,
+                                      color: Colors.grey.shade600,
+                                    ),
+                                  ),
+                                ],
+                                if (matchDetails['vector_distance'] != null) ...[
+                                  Text(
+                                    '向量距离: ${(matchDetails['vector_distance'] as double).toStringAsFixed(3)}',
+                                    style: TextStyle(
+                                      fontSize: 10.sp,
+                                      color: Colors.grey.shade600,
+                                    ),
+                                  ),
+                                ],
+                              ],
+                            ),
+                          ),
+                        ],
+                      ],
+                    ),
+                  );
+                }).toList(),
+              ),
+            ],
+          ),
+        ),
+      ),
+    );
+  }
+
+  /// 向量匹配实体卡片
+  Widget _buildVectorMatchEntitiesCard(List entities) {
+    return Card(
+      elevation: 4,
+      shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12.r)),
+      child: Container(
+        decoration: BoxDecoration(
+          borderRadius: BorderRadius.circular(12.r),
+          gradient: LinearGradient(
+            colors: [Colors.blue.shade50, Colors.cyan.shade50],
+          ),
+        ),
+        child: Padding(
+          padding: EdgeInsets.all(20.w),
+          child: Column(
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              Row(
+                children: [
+                  Container(
+                    padding: EdgeInsets.all(8.w),
+                    decoration: BoxDecoration(
+                      color: Colors.blue.withOpacity(0.1),
+                      borderRadius: BorderRadius.circular(8.r),
+                    ),
+                    child: Icon(Icons.people_outline, color: Colors.blue, size: 24.sp),
+                  ),
+                  SizedBox(width: 12.w),
+                  Text(
+                    '相关实体 (${entities.length})',
+                    style: TextStyle(
+                      fontSize: 18.sp,
+                      fontWeight: FontWeight.bold,
+                      color: Colors.blue.shade800,
+                    ),
+                  ),
+                ],
+              ),
+              SizedBox(height: 16.h),
+
+              // 实体网格
+              Wrap(
+                spacing: 12.w,
+                runSpacing: 12.h,
+                children: entities.take(15).map<Widget>((entity) {
+                  final entityName = entity['name']?.toString() ?? '未知实体';
+                  final entityType = entity['type']?.toString() ?? '';
+                  final similarity = (entity['similarity_score'] as double?) ?? 0.0;
+                  final matchedByTopic = entity['matched_by_topic']?.toString() ?? '未知主题';
+                  final aliases = (entity['aliases'] as List?)?.length ?? 0;
+
+                  return Container(
+                    constraints: BoxConstraints(maxWidth: 180.w),
+                    padding: EdgeInsets.all(12.w),
+                    decoration: BoxDecoration(
+                      color: Colors.white,
+                      borderRadius: BorderRadius.circular(10.r),
+                      border: Border.all(color: Colors.blue.withOpacity(0.3)),
+                      boxShadow: [
+                        BoxShadow(
+                          color: Colors.blue.withOpacity(0.05),
+                          blurRadius: 6,
+                          offset: Offset(0, 2),
+                        ),
+                      ],
+                    ),
+                    child: Column(
+                      crossAxisAlignment: CrossAxisAlignment.start,
+                      mainAxisSize: MainAxisSize.min,
+                      children: [
+                        // 实体名称和相似度
+                        Row(
+                          children: [
+                            Expanded(
+                              child: Text(
+                                entityName,
+                                style: TextStyle(
+                                  fontSize: 13.sp,
+                                  fontWeight: FontWeight.bold,
+                                  color: Colors.blue.shade800,
+                                ),
+                                maxLines: 2,
+                                overflow: TextOverflow.ellipsis,
+                              ),
+                            ),
+                            Container(
+                              padding: EdgeInsets.all(3.w),
+                              decoration: BoxDecoration(
+                                color: _getSimilarityColor(similarity).withOpacity(0.2),
+                                shape: BoxShape.circle,
+                              ),
+                              child: Text(
+                                similarity.toStringAsFixed(1),
+                                style: TextStyle(
+                                  fontSize: 9.sp,
+                                  fontWeight: FontWeight.bold,
+                                  color: _getSimilarityColor(similarity),
+                                ),
+                              ),
+                            ),
+                          ],
+                        ),
+
+                        // 实体类型
+                        if (entityType.isNotEmpty) ...[
+                          SizedBox(height: 6.h),
+                          Container(
+                            padding: EdgeInsets.symmetric(horizontal: 6.w, vertical: 2.h),
+                            decoration: BoxDecoration(
+                              color: Colors.indigo.withOpacity(0.1),
+                              borderRadius: BorderRadius.circular(6.r),
+                            ),
+                            child: Text(
+                              entityType,
+                              style: TextStyle(
+                                fontSize: 9.sp,
+                                color: Colors.indigo.shade600,
+                                fontWeight: FontWeight.w500,
+                              ),
+                            ),
+                          ),
+                        ],
+
+                        // 匹配主题
+                        SizedBox(height: 8.h),
+                        Container(
+                          padding: EdgeInsets.all(6.w),
+                          decoration: BoxDecoration(
+                            color: Colors.green.withOpacity(0.08),
+                            borderRadius: BorderRadius.circular(6.r),
+                          ),
+                          child: Column(
+                            crossAxisAlignment: CrossAxisAlignment.start,
+                            children: [
+                              Text(
+                                '匹配主题:',
+                                style: TextStyle(
+                                  fontSize: 9.sp,
+                                  color: Colors.green.shade700,
+                                  fontWeight: FontWeight.w600,
+                                ),
+                              ),
+                              SizedBox(height: 2.h),
+                              Text(
+                                matchedByTopic,
+                                style: TextStyle(
+                                  fontSize: 10.sp,
+                                  color: Colors.green.shade600,
+                                ),
+                                maxLines: 2,
+                                overflow: TextOverflow.ellipsis,
+                              ),
+                            ],
+                          ),
+                        ),
+
+                        // 别名数量
+                        if (aliases > 0) ...[
+                          SizedBox(height: 6.h),
+                          Text(
+                            '$aliases个别名',
+                            style: TextStyle(
+                              fontSize: 9.sp,
+                              color: Colors.grey.shade600,
+                            ),
+                          ),
+                        ],
+                      ],
+                    ),
+                  );
+                }).toList(),
+              ),
+            ],
+          ),
+        ),
+      ),
+    );
+  }
+
+  /// 向量洞察卡片
+  Widget _buildVectorInsightsCard(List insights) {
+    return Card(
+      elevation: 4,
+      shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12.r)),
+      child: Container(
+        decoration: BoxDecoration(
+          borderRadius: BorderRadius.circular(12.r),
+          gradient: LinearGradient(
+            colors: [Colors.purple.shade50, Colors.pink.shade50],
+          ),
+        ),
+        child: Padding(
+          padding: EdgeInsets.all(20.w),
+          child: Column(
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              Row(
+                children: [
+                  Container(
+                    padding: EdgeInsets.all(8.w),
+                    decoration: BoxDecoration(
+                      color: Colors.purple.withOpacity(0.1),
+                      borderRadius: BorderRadius.circular(8.r),
+                    ),
+                    child: Icon(Icons.psychology, color: Colors.purple, size: 24.sp),
+                  ),
+                  SizedBox(width: 12.w),
+                  Text(
+                    '向量匹配洞察',
+                    style: TextStyle(
+                      fontSize: 18.sp,
+                      fontWeight: FontWeight.bold,
+                      color: Colors.purple.shade800,
+                    ),
+                  ),
+                ],
+              ),
+              SizedBox(height: 16.h),
+
+              Column(
+                children: insights.map<Widget>((insight) {
+                  return Container(
+                    margin: EdgeInsets.only(bottom: 8.h),
+                    padding: EdgeInsets.all(12.w),
+                    decoration: BoxDecoration(
+                      color: Colors.white,
+                      borderRadius: BorderRadius.circular(8.r),
+                      border: Border.all(color: Colors.purple.withOpacity(0.2)),
+                    ),
+                    child: Row(
+                      children: [
+                        Container(
+                          padding: EdgeInsets.all(4.w),
+                          decoration: BoxDecoration(
+                            color: Colors.purple.withOpacity(0.1),
+                            shape: BoxShape.circle,
+                          ),
+                          child: Icon(
+                            Icons.lightbulb_outline,
+                            size: 14.sp,
+                            color: Colors.purple.shade600,
+                          ),
+                        ),
+                        SizedBox(width: 12.w),
+                        Expanded(
+                          child: Text(
+                            insight.toString(),
+                            style: TextStyle(
+                              fontSize: 13.sp,
+                              color: Colors.grey.shade700,
+                              height: 1.3,
+                            ),
+                          ),
+                        ),
+                      ],
+                    ),
+                  );
+                }).toList(),
+              ),
+            ],
+          ),
+        ),
+      ),
+    );
+  }
+
+  /// 空向量匹配视图
+  Widget _buildEmptyVectorMatchView(Map<String, dynamic>? kgData) {
+    final hasError = kgData?['error'] != null;
+    final activeTopicsCount = kgData?['active_topics_count'] ?? 0;
+
+    return Center(
+      child: Column(
+        mainAxisAlignment: MainAxisAlignment.center,
+        children: [
+          Icon(
+            hasError ? Icons.error_outline : Icons.search_off,
+            size: 64.sp,
+            color: hasError ? Colors.red : Colors.grey[400],
+          ),
+          SizedBox(height: 16.h),
+          Text(
+            hasError ? '向量匹配查询失败' : '没有找到相关的知识图谱内容',
+            style: TextStyle(
+              fontSize: 18.sp,
+              fontWeight: FontWeight.w600,
+              color: hasError ? Colors.red : Colors.grey[600],
+            ),
+          ),
+          SizedBox(height: 8.h),
+          if (hasError) ...[
+            Text(
+              '错误信息: ${kgData!['error']}',
+              style: TextStyle(fontSize: 12.sp, color: Colors.red),
+              textAlign: TextAlign.center,
+            ),
+          ] else ...[
+            Text(
+              activeTopicsCount > 0
+                ? '尝试了 $activeTopicsCount 个活跃主题的向量匹配\n但没有找到相似度足够高的内容'
+                : '当前没有活跃主题可用于向量匹配查询',
+              style: TextStyle(fontSize: 14.sp, color: Colors.grey[600]),
+              textAlign: TextAlign.center,
+            ),
+          ],
+          SizedBox(height: 24.h),
+          Row(
+            mainAxisAlignment: MainAxisAlignment.center,
+            children: [
+              ElevatedButton.icon(
+                onPressed: _loadSystemData,
+                icon: Icon(Icons.refresh, size: 16.sp),
+                label: Text('重新查询'),
+              ),
+              SizedBox(width: 12.w),
+              if (!hasError && activeTopicsCount == 0) ...[
+                ElevatedButton.icon(
+                  onPressed: () async {
+                    await _testAnalysis();
+                  },
+                  icon: Icon(Icons.science, size: 16.sp),
+                  label: Text('生成测试数据'),
+                ),
+              ],
+            ],
+          ),
+        ],
+      ),
+    );
+  }
+
+  /// 相似度颜色映射
+  Color _getSimilarityColor(double similarity) {
+    if (similarity >= 0.8) return Colors.green;
+    if (similarity >= 0.6) return Colors.lime;
+    if (similarity >= 0.4) return Colors.orange;
+    if (similarity >= 0.2) return Colors.deepOrange;
+    return Colors.red;
   }
 
   // 🔥 新增：空状态视图

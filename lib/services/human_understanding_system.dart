@@ -412,6 +412,17 @@ class HumanUnderstandingSystem {
     );
   }
 
+  /// 刷新知识图谱缓存
+  void refreshKnowledgeGraphCache() {
+    _knowledgeGraphManager.refreshCache();
+    print('[HumanUnderstandingSystem] 🔄 知识图谱缓存已刷新');
+  }
+
+  /// 获取知识图谱缓存状态
+  Map<String, dynamic> getKnowledgeGraphCacheStatus() {
+    return _knowledgeGraphManager.getCacheStatus();
+  }
+
   /// 🔥 核心修复：稳定的知识图谱数据生成
   Map<String, dynamic> _generateKnowledgeGraphData() {
     // 🔥 新增：开始计时
@@ -654,12 +665,6 @@ class HumanUnderstandingSystem {
     }
   }
 
-  /// 强制刷新缓存的方法
-  void refreshKnowledgeGraphCache() {
-    _cachedKnowledgeGraphData = null;
-    _lastKnowledgeGraphUpdate = null;
-    print('[HumanUnderstandingSystem] 🔄 知识图谱缓存已清除');
-  }
 
   /// 格式化事件日期
   String _formatEventDate(DateTime dateTime) {
