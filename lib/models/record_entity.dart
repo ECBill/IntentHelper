@@ -1,4 +1,3 @@
-import 'package:app/services/embeddings_service.dart';
 import 'package:objectbox/objectbox.dart';
 
 @Entity()

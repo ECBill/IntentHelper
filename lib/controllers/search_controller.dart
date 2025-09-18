@@ -1,6 +1,5 @@
 import 'package:app/models/record_entity.dart';
 import 'package:app/models/summary_entity.dart';
-import 'package:app/services/embeddings_service.dart';
 import 'package:app/services/objectbox_service.dart';
 
 class NativeSearchController {

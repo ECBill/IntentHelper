@@ -2,7 +2,6 @@ import 'dart:async';
 import 'dart:math';
 import 'package:app/models/llm_config.dart';
 import 'package:app/models/todo_entity.dart';
-import 'package:app/services/embeddings_service.dart';
 import 'package:path/path.dart' as p;
 import 'package:path_provider/path_provider.dart';
 

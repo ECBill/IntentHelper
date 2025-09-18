@@ -4,7 +4,6 @@ import 'package:shared_preferences/shared_preferences.dart';
 import '../constants/prompt_constants.dart';
 import '../models/record_entity.dart';
 import '../models/todo_entity.dart';
-import 'embeddings_service.dart';
 import 'llm.dart';
 import 'objectbox_service.dart';
 
