@@ -62,6 +62,26 @@ class _KGTestPageState extends State<KGTestPage> with TickerProviderStateMixin {
     }
   }
 
+  Future<void> _generateEmbeddingForAllEvents() async {
+    setState(() {
+      _isProcessing = true;
+      _processResult = '🔄 正在为所有事件生成嵌入向量...\n';
+    });
+
+    try {
+      await KnowledgeGraphService.generateEmbeddingsForAllEvents(force: false);
+      _processResult += '✅ 向量生成完成，请刷新查看效果\n';
+      await _loadKGData();
+    } catch (e) {
+      _processResult += '❌ 生成过程中出错：$e\n';
+    } finally {
+      setState(() {
+        _isProcessing = false;
+      });
+    }
+  }
+
+
   @override
   Widget build(BuildContext context) {
     return Scaffold(
@@ -797,6 +817,19 @@ class _KGTestPageState extends State<KGTestPage> with TickerProviderStateMixin {
               ),
             ],
           ),
+
+          SizedBox(height: 20.h),
+
+          ElevatedButton.icon(
+            onPressed: _isProcessing ? null : _generateEmbeddingForAllEvents,
+            icon: Icon(Icons.memory),
+            label: Text('为所有事件生成向量'),
+            style: ElevatedButton.styleFrom(
+              backgroundColor: Colors.deepPurple,
+              foregroundColor: Colors.white,
+            ),
+          ),
+
 
           SizedBox(height: 20.h),
 

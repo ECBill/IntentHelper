@@ -1027,6 +1027,104 @@ ${_generateUserStatePromptContext(userStateContext)}
     }
   }
 
+  /// 🔍 根据输入文本，返回与之语义相似的历史事件
+  static Future<List<Map<String, dynamic>>> searchEventsByText(
+      String queryText, {
+        int topK = 10,
+        double similarityThreshold = 0.5,
+      }) async {
+    try {
+      final objectBox = ObjectBoxService();
+      final embeddingService = EmbeddingService();
+
+      final queryVector = await embeddingService.generateTextEmbedding(queryText);
+      if (queryVector == null) {
+        print('[KnowledgeGraphService] ❌ 文本嵌入失败');
+        return [];
+      }
+
+      final allEvents = objectBox.queryEventNodes();
+      final results = await embeddingService.findSimilarEvents(
+        queryVector,
+        allEvents,
+        topK: topK,
+        threshold: similarityThreshold,
+      );
+
+      print('[KnowledgeGraphService] 🔍 相似事件查询完成: ${results.length} 个');
+      return results;
+    } catch (e) {
+      print('[KnowledgeGraphService] ❌ searchEventsByText 错误: $e');
+      return [];
+    }
+  }
+
+  /// ✨ 生成并保存指定事件的嵌入向量（如果尚未生成）
+  static Future<void> generateAndSaveEmbeddingForEvent(EventNode eventNode) async {
+    try {
+      final objectBox = ObjectBoxService();
+      final embeddingService = EmbeddingService();
+
+      if (eventNode.embedding != null && eventNode.embedding!.isNotEmpty) {
+        print('[KnowledgeGraphService] ✅ 事件已存在嵌入，无需生成: ${eventNode.name}');
+        return;
+      }
+
+      final embedding = await embeddingService.generateEventEmbedding(eventNode);
+      if (embedding != null) {
+        eventNode.embedding = embedding;
+        objectBox.updateEventNode(eventNode);
+        print('[KnowledgeGraphService] 💾 嵌入向量已保存: ${eventNode.name}');
+      } else {
+        print('[KnowledgeGraphService] ⚠️ 未能生成嵌入向量: ${eventNode.name}');
+      }
+    } catch (e) {
+      print('[KnowledgeGraphService] ❌ generateAndSaveEmbeddingForEvent 错误: $e');
+    }
+  }
+
+
+  /// 🧠 为所有缺失嵌入的事件生成嵌入向量
+  static Future<void> generateEmbeddingsForAllEvents({bool force = false}) async {
+    try {
+      final objectBox = ObjectBoxService();
+      final embeddingService = EmbeddingService();
+
+      final allEvents = objectBox.queryEventNodes();
+      int updatedCount = 0;
+
+      for (final event in allEvents) {
+        if (force || event.embedding == null || event.embedding!.isEmpty) {
+          final embedding = await embeddingService.generateEventEmbedding(event);
+          if (embedding != null) {
+            event.embedding = embedding;
+            objectBox.updateEventNode(event);
+            updatedCount++;
+          }
+        }
+      }
+
+      print('[KnowledgeGraphService] ✅ 批量嵌入完成，共更新 $updatedCount 个事件');
+    } catch (e) {
+      print('[KnowledgeGraphService] ❌ generateEmbeddingsForAllEvents 错误: $e');
+    }
+  }
+
+
+  /// 🧮 计算两个事件的嵌入向量相似度（余弦）
+  static double? calculateEventSimilarity(EventNode a, EventNode b) {
+    try {
+      final embeddingService = EmbeddingService();
+
+      if (a.embedding == null || b.embedding == null) return null;
+      return embeddingService.calculateCosineSimilarity(a.embedding!, b.embedding!);
+    } catch (e) {
+      print('[KnowledgeGraphService] ❌ calculateEventSimilarity 错误: $e');
+      return null;
+    }
+  }
+
+
   // 🔥 新增：只提取事件和实体信息，不写入数据库（用于上下文分析）
   static Future<Map<String, dynamic>> analyzeEventsAndEntitiesFromText(
     String conversationText,
