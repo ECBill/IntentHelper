@@ -2,13 +2,10 @@ import 'dart:math';
 import 'dart:typed_data';
 import 'dart:convert';
 import 'dart:io';
-import 'dart:async';
 import 'package:crypto/crypto.dart';
 import 'package:flutter/services.dart';
-import 'package:app/utils/onnx_ffi_bindings.dart' as onnx;
+import 'package:onnxruntime/onnxruntime.dart';
 import 'package:app/models/graph_models.dart';
-import 'dart:ffi' as ffi;
-import 'package:ffi/ffi.dart';
 
 /// 嵌入服务 - 专门为EventNode提供向量嵌入功能
 class EmbeddingService {
@@ -22,274 +19,163 @@ class EmbeddingService {
   // 缓存已计算的向量，避免重复计算
   final Map<String, List<double>> _embeddingCache = {};
 
-  // ONNX FFI 组件
-  ffi.Pointer<onnx.OrtEnv> _ortEnv = ffi.nullptr;
-  ffi.Pointer<onnx.OrtSessionOptions> _ortSessionOptions = ffi.nullptr;
-  ffi.Pointer<onnx.OrtSession> _ortSession = ffi.nullptr;
-  // 直接通过 getter 获取 OrtApi，避免类型和初始化问题
-  ffi.Pointer<onnx.OrtApi> get _ortApi {
-    final apiBasePtr = onnx.onnxBindings.GetApiBase();
-    final getApi = apiBasePtr.ref.GetApi.asFunction<onnx.GetApi_dart_t>();
-    return getApi(onnx.ORT_API_VERSION);
-  }
-
+  // ONNX 会话和相关组件
+  OrtSession? _session;
   bool _isModelLoaded = false;
   List<String>? _inputNames;
   List<String>? _outputNames;
-  Completer<bool>? _initCompleter;
 
   /// 初始化服务
   Future<bool> initialize() async {
     if (_isModelLoaded) return true;
-    if (_initCompleter != null) {
-      // 有其他初始化在进行，等待其完成
-      return await _initCompleter!.future;
-    }
-    _initCompleter = Completer<bool>();
-    try {
-      final result = await _initializeModel();
-      _initCompleter!.complete(result);
-      return result;
-    } catch (e) {
-      _initCompleter!.complete(false);
-      rethrow;
-    } finally {
-      _initCompleter = null;
-    }
+    return await _initializeModel();
   }
 
   /// 初始化GTE模型
   Future<bool> _initializeModel() async {
     if (_isModelLoaded) return true;
+
     try {
-      print('[EmbeddingService] 🔄 开始初始化模型 (FFI)...');
-      print('[EmbeddingService] 📋 平台: \\${Platform.operatingSystem}, ABI: \\${Platform.version}');
-      // 1. 获取 API
-      if (!_isModelLoaded) {
-        final apiBasePtr = onnx.onnxBindings.GetApiBase();
-        print('[EmbeddingService] 📋 apiBasePtr: 0xt\\${apiBasePtr.address.toRadixString(16)}');
-        if (apiBasePtr == ffi.nullptr) {
-          throw Exception('Failed to get ONNX Runtime API base.');
-        }
-        final getApi = apiBasePtr.ref.GetApi.asFunction<onnx.GetApi_dart_t>();
-        final apiPtr = getApi(onnx.ORT_API_VERSION);
-        print('[EmbeddingService] 📋 apiPtr: 0xt\\${apiPtr.address.toRadixString(16)}');
-        print('[EmbeddingService] ✅ API 获取成功');
-      }
+      print('[EmbeddingService] 🔄 开始初始化模型...');
+      print('[EmbeddingService] 🔍 当前平台: ${Platform.operatingSystem}');
 
-      // 2. 创建环境
-      print('[EmbeddingService] 🔧 调用 createEnv...');
-      final envPtrPtr = calloc<ffi.Pointer<onnx.OrtEnv>>();
-      var status = _ortApi.cast<onnx.OrtApiStruct>().ref.createEnv.asFunction<onnx.CreateEnv_dart_t>()(
-          ffi.nullptr,
-          onnx.OrtLoggingLevel.verbose.index,
-          'Default'.toNativeUtf8(),
-          envPtrPtr);
-      print('[EmbeddingService] 🔧 createEnv 返回 status: 0xt\\${status.address.toRadixString(16)}');
-      if (status.address != 0) {
-        final errorMsgPtr = _ortApi.cast<onnx.OrtApiStruct>().ref.getErrorMessage.asFunction<onnx.GetErrorMessage_dart_t>()(status);
-        String errorMessage;
-        if (errorMsgPtr == ffi.nullptr) {
-          errorMessage = 'Unknown error (error message pointer is nullptr)';
-          print('[EmbeddingService] ⚠️ getErrorMessage returned nullptr for status: 0xt\\${status.address.toRadixString(16)}');
-        } else {
-          errorMessage = errorMsgPtr.toDartString();
-        }
-        _ortApi.cast<onnx.OrtApiStruct>().ref.releaseStatus.asFunction<onnx.ReleaseStatus_dart_t>()(status);
-        throw Exception('ONNX Runtime FFI error: $errorMessage');
-      }
-      _ortEnv = envPtrPtr.value;
-      calloc.free(envPtrPtr);
-      _checkStatus(status);
-      print('[EmbeddingService] ✅ 环境创建成功');
-
-      // 3. 创建会话选项
-      print('[EmbeddingService] 🔧 调用 createSessionOptions...');
-      final sessionOptionsPtrPtr = calloc<ffi.Pointer<onnx.OrtSessionOptions>>();
-      status = _ortApi.cast<onnx.OrtApiStruct>().ref.createSessionOptions.asFunction<onnx.CreateSessionOptions_dart_t>()(sessionOptionsPtrPtr);
-      print('[EmbeddingService] 🔧 createSessionOptions 返回 status: 0xt\\${status.address.toRadixString(16)}');
-      _ortSessionOptions = sessionOptionsPtrPtr.value;
-      calloc.free(sessionOptionsPtrPtr);
-      _checkStatus(status);
-      print('[EmbeddingService] ✅ 会话选项创建成功');
-
-      // 4. 加载模型文件并创建会话
-      print('[EmbeddingService] 📁 尝试加载模型文件: assets/gte-model.onnx');
-      final modelData = await rootBundle.load('assets/gte-model.onnx');
-      final modelBytes = modelData.buffer.asUint8List();
-      print('[EmbeddingService] 📁 模型文件长度: \\${modelBytes.length} 字节');
-
-      final modelDataPtr = calloc<ffi.Uint8>(modelBytes.length);
-      modelDataPtr.asTypedList(modelBytes.length).setAll(0, modelBytes);
-
-      print('[EmbeddingService] 🔧 调用 createSessionFromArray...');
-      final sessionPtrPtr = calloc<ffi.Pointer<onnx.OrtSession>>();
-      status = _ortApi.cast<onnx.OrtApiStruct>().ref.createSessionFromArray.asFunction<onnx.CreateSessionFromArray_dart_t>()(
-          _ortEnv, modelDataPtr.cast<ffi.Void>(), modelBytes.length, _ortSessionOptions, sessionPtrPtr);
-      print('[EmbeddingService] 🔧 createSessionFromArray 返回 status: 0xt\\${status.address.toRadixString(16)}');
-
-      _ortSession = sessionPtrPtr.value;
-      calloc.free(sessionPtrPtr);
-      calloc.free(modelDataPtr);
-      _checkStatus(status);
-      print('[EmbeddingService] ✅ ONNX会话创建成功');
-
-      // 尝试获取模型的实际输入输出信息
+      // 检查ONNX Runtime是否可用
       try {
-        // 这里我们使用预设的名称，因为无法直接获取
-        _inputNames = ['input_ids', 'attention_mask', 'token_type_ids'];
-        _outputNames = ['last_hidden_state'];
-
-        print('[EmbeddingService] 📋 预设输入名称: $_inputNames');
-        print('[EmbeddingService] 📋 预设输出名称: $_outputNames');
+        print('[EmbeddingService] 📦 检查ONNX Runtime可用性...');
+        final testOptions = OrtSessionOptions();
+        print('[EmbeddingService] ✅ ONNX Runtime 初始化成功');
       } catch (e) {
-        print('[EmbeddingService] ⚠️ 无法获取模型元信息: $e');
-      }
-
-      _isModelLoaded = true;
-      print('[EmbeddingService] ✅ GTE模型初始化完成');
-
-      // 测试模型推理
-      print('[EmbeddingService] 🧪 开始模型推理测试...');
-      final testResult = await _testModelInference();
-      if (!testResult) {
-        print('[EmbeddingService] ❌ 模型推理测试失败，回退到备用方案');
-        dispose(); // 清理已创建的 FFI 资源
+        print('[EmbeddingService] ❌ ONNX Runtime 不可用: $e');
         return false;
-      } else {
-        print('[EmbeddingService] ✅ 模型推理测试成功');
       }
 
-      return true;
+      // 尝试加载模型文件
+      try {
+        print('[EmbeddingService] 📁 尝试加载模型文件: assets/gte-model.onnx');
+        final modelData = await rootBundle.load('assets/gte-model.onnx');
+        print('[EmbeddingService] ✅ 模型文件读取成功，大小: ${modelData.lengthInBytes} bytes');
 
-    } on PlatformException catch (e) {
-      print('[EmbeddingService] ❌ 平台异常 - 模型文件加载失败:');
-      print('[EmbeddingService] 错误代码: ${e.code}');
-      print('[EmbeddingService] 错误消息: ${e.message}');
+        final modelBytes = modelData.buffer.asUint8List();
+
+        // 验证文件不为空且有合理大小
+        if (modelBytes.length < 1000) {
+          throw Exception('模型文件太小 (${modelBytes.length} bytes)，可能不是有效的ONNX模型');
+        }
+
+        // 检查ONNX文件魔数和格式
+        if (modelBytes.length >= 8) {
+          final header = modelBytes.take(8).toList();
+          print('[EmbeddingService] 🔍 模型文件头部: ${header.map((b) => b.toRadixString(16).padLeft(2, '0')).join(' ')}');
+
+          // ONNX文件通常以protobuf魔数开头 (08 XX 12 XX...)
+          if (header[0] != 0x08) {
+            print('[EmbeddingService] ⚠️ 警告: 文件头��不符合标准ONNX格式');
+          }
+        }
+
+        final sessionOptions = OrtSessionOptions();
+
+        // 为Android优化设置
+        if (Platform.isAndroid) {
+          print('[EmbeddingService] 🤖 配置Android优化设置...');
+          // 可以在这里添加Android特定的优化配置
+        }
+
+        print('[EmbeddingService] ⚙️ 创建ONNX会话...');
+        _session = await OrtSession.fromBuffer(modelBytes, sessionOptions);
+
+        // 尝试获取模型的实际输入输出信息
+        try {
+          // 这里我们使用预设的名称，因为无法直接获取
+          _inputNames = ['input_ids', 'attention_mask', 'token_type_ids'];
+          _outputNames = ['last_hidden_state'];
+
+          print('[EmbeddingService] 📋 预设输入名称: $_inputNames');
+          print('[EmbeddingService] 📋 预设输出名称: $_outputNames');
+        } catch (e) {
+          print('[EmbeddingService] ⚠️ 无法获取模型元信息: $e');
+        }
+
+        _isModelLoaded = true;
+        print('[EmbeddingService] ✅ GTE模型初始化完成');
+
+        // 测试模型推理
+        print('[EmbeddingService] 🧪 开始模型推理测试...');
+        final testResult = await _testModelInference();
+        if (!testResult) {
+          print('[EmbeddingService] ❌ 模型推理测试失败，回退到备用方案');
+          _isModelLoaded = false;
+          _session?.release();
+          _session = null;
+          return false;
+        } else {
+          print('[EmbeddingService] ✅ 模型推理测试成功');
+        }
+
+        return true;
+
+      } on PlatformException catch (e) {
+        print('[EmbeddingService] ❌ 平台异常 - 模型文件加载失败:');
+        print('[EmbeddingService] 错误代码: ${e.code}');
+        print('[EmbeddingService] 错误消息: ${e.message}');
+        return false;
+      } catch (e) {
+        print('[EmbeddingService] ❌ 模型解析/会话创建失败: $e');
+        print('[EmbeddingService] 💡 详细错误信息: ${e.toString()}');
+        if (e.toString().contains('incompatible')) {
+          print('[EmbeddingService] 💡 可能是模型与设备架构不兼容');
+        }
+        if (e.toString().contains('version')) {
+          print('[EmbeddingService] 💡 可能是ONNX版本不匹配');
+        }
+        return false;
+      }
+    } catch (e, stackTrace) {
+      print('[EmbeddingService] ❌ 模型初始化过程中发生未知错误: $e');
+      print('[EmbeddingService] 🔍 堆栈跟踪: $stackTrace');
+      _isModelLoaded = false;
       return false;
-    } catch (e) {
-      print('[EmbeddingService] ❌ 模型解析/会话创建失败: $e');
-      print('[EmbeddingService] 💡 详细错误信息: ${e.toString()}');
-      if (e.toString().contains('incompatible')) {
-        print('[EmbeddingService] 💡 可能是模型与设备架构不兼容');
-      }
-      if (e.toString().contains('version')) {
-        print('[EmbeddingService] 💡 可能是ONNX版本不匹配');
-      }
-      return false;
-    }
-  }
-
-  void _checkStatus(ffi.Pointer<onnx.OrtStatus> status) {
-    if (status != ffi.nullptr) {
-      final errorMsgPtr = _ortApi.cast<onnx.OrtApiStruct>().ref.getErrorMessage.asFunction<onnx.GetErrorMessage_dart_t>()(status);
-      String errorMessage;
-      if (errorMsgPtr == ffi.nullptr) {
-        errorMessage = 'Unknown error (error message pointer is nullptr)';
-      } else {
-        errorMessage = errorMsgPtr.toDartString();
-      }
-      _ortApi.cast<onnx.OrtApiStruct>().ref.releaseStatus.asFunction<onnx.ReleaseStatus_dart_t>()(status);
-      throw Exception('ONNX Runtime FFI error: $errorMessage');
     }
   }
 
   Future<bool> _testModelInference() async {
-    final List<ffi.Pointer<onnx.OrtValue>> inputTensors = [];
-    final List<ffi.Pointer<Utf8>> inputNames = [];
-    final List<ffi.Pointer<Utf8>> outputNames = [];
-    ffi.Pointer<ffi.Pointer<onnx.OrtValue>>? outputTensorsPtr;
-    ffi.Pointer<ffi.Pointer<Utf8>>? inputNamesPtr;
-    ffi.Pointer<ffi.Pointer<Utf8>>? outputNamesPtr;
-
     try {
-      if (_ortSession == ffi.nullptr) return false;
+      if (_session == null) return false;
 
       print('[EmbeddingService] 🧪 测试模型推理...');
 
-      // 1. 创建简单的测试输入
+      // 创建简单的测试输入
       final testTokens = [101, 1000, 2000, 102]; // [CLS] token1 token2 [SEP]
       final paddedTokens = List<int>.from(testTokens);
-      const maxLength = 512;
-      while (paddedTokens.length < maxLength) {
+
+      // 填充到固定长度
+      while (paddedTokens.length < 512) {
         paddedTokens.add(0);
       }
 
-      final shape = [1, maxLength];
-      final inputIds = _createInt64Tensor(paddedTokens, shape);
-      inputTensors.add(inputIds);
+      final inputIds = _createInputTensor(paddedTokens);
+      final attentionMask = _createInputTensor(_createAttentionMask(paddedTokens));
+      final tokenTypeIds = _createInputTensor(List.filled(paddedTokens.length, 0));
 
-      final attentionMask = _createInt64Tensor(_createAttentionMask(paddedTokens), shape);
-      inputTensors.add(attentionMask);
-
-      final tokenTypeIds = _createInt64Tensor(List.filled(maxLength, 0), shape);
-      inputTensors.add(tokenTypeIds);
-
-      // 2. 准备输入/输出名称
-      for (final name in _inputNames!) {
-        inputNames.add(name.toNativeUtf8());
-      }
-      outputNames.addAll(_outputNames!.map((name) => name.toNativeUtf8()).toList());
-
-      inputNamesPtr = calloc<ffi.Pointer<Utf8>>(_inputNames!.length);
-      for (int i = 0; i < _inputNames!.length; i++) {
-        inputNamesPtr![i] = inputNames[i];
-      }
-
-      outputNamesPtr = calloc<ffi.Pointer<Utf8>>(_outputNames!.length);
-      for (int i = 0; i < _outputNames!.length; i++) {
-        outputNamesPtr![i] = outputNames[i];
-      }
-
-      // 3. 准备输入/输出值指针数组
-      final inputTensorsPtr = calloc<ffi.Pointer<onnx.OrtValue>>(inputTensors.length);
-      for (int i = 0; i < inputTensors.length; i++) {
-        inputTensorsPtr[i] = inputTensors[i];
-      }
-
-      outputTensorsPtr = calloc<ffi.Pointer<onnx.OrtValue>>(_outputNames!.length);
-
-      // 4. 执行推理
       print('[EmbeddingService] 🔧 执行测试推理...');
-      final status = _ortApi.cast<onnx.OrtApiStruct>().ref.run.asFunction<onnx.Run_dart_t>()(
-        _ortSession,
-        ffi.nullptr, // RunOptions
-        inputNamesPtr,
-        inputTensorsPtr,
-        inputTensors.length,
-        outputNamesPtr,
-        _outputNames!.length,
-        outputTensorsPtr,
-      );
-      _checkStatus(status);
-      print('[EmbeddingService] ✅ 测试推理成功');
+      final outputs = await _session!.run(OrtRunOptions(), {
+        'input_ids': inputIds,
+        'attention_mask': attentionMask,
+        'token_type_ids': tokenTypeIds,
+      });
 
-      // 5. 简单验证输出
-      if (outputTensorsPtr.value == ffi.nullptr) {
-        throw Exception('Test inference produced null output.');
+      print('[EmbeddingService] ✅ 测试推理成功，输出数量: ${outputs.length}');
+
+      if (outputs.isNotEmpty) {
+        final firstOutput = outputs[0];
+        print('[EmbeddingService] 📊 第一个输出类型: ${firstOutput.runtimeType}');
+
       }
 
       return true;
     } catch (e) {
-      print('[EmbeddingService] ❌ 模型推理测试失败: $e');
+      print('[EmbeddingService] ❌ 模型��理测试失败: $e');
       return false;
-    } finally {
-      // 6. 释放所有资源
-      for (final tensor in inputTensors) {
-        _ortApi.cast<onnx.OrtApiStruct>().ref.releaseValue.asFunction<onnx.ReleaseValue_dart_t>()(tensor);
-      }
-      if (outputTensorsPtr != null) {
-        for (int i = 0; i < _outputNames!.length; i++) {
-           if (outputTensorsPtr[i] != ffi.nullptr) {
-             _ortApi.cast<onnx.OrtApiStruct>().ref.releaseValue.asFunction<onnx.ReleaseValue_dart_t>()(outputTensorsPtr[i]);
-           }
-        }
-        calloc.free(outputTensorsPtr);
-      }
-      inputNames.forEach(calloc.free);
-      outputNames.forEach(calloc.free);
-      if (inputNamesPtr != null) calloc.free(inputNamesPtr);
-      if (outputNamesPtr != null) calloc.free(outputNamesPtr);
     }
   }
 
@@ -371,117 +257,66 @@ class EmbeddingService {
     return tokens.map((id) => id == 0 ? 0 : 1).toList();
   }
 
-  /// 使用GTE模型生成嵌入���量
+  /// 使用GTE模型生成嵌入向量
   Future<List<double>?> _generateEmbeddingWithModel(String text) async {
-    final List<ffi.Pointer<onnx.OrtValue>> inputTensors = [];
-    final List<ffi.Pointer<Utf8>> inputNamePtrs = [];
-    final List<ffi.Pointer<Utf8>> outputNamePtrs = [];
-    ffi.Pointer<ffi.Pointer<onnx.OrtValue>>? outputTensorsPtr;
-    ffi.Pointer<ffi.Pointer<Utf8>>? inputNamesPtr;
-    ffi.Pointer<ffi.Pointer<Utf8>>? outputNamesPtr;
-
     try {
-      if (!_isModelLoaded || _ortSession == ffi.nullptr) return null;
+      if (!_isModelLoaded || _session == null) {
+        print('[EmbeddingService] ⚠️ 模型未加载或会话为空');
+        return null;
+      }
 
       final tokens = _tokenizeText(text);
-      if (tokens.isEmpty) return null;
-
-      // 1. 创建输入张量
-      final shape = [1, tokens.length];
-      final inputIds = _createInt64Tensor(tokens, shape);
-      inputTensors.add(inputIds);
-
-      final attentionMask = _createInt64Tensor(_createAttentionMask(tokens), shape);
-      inputTensors.add(attentionMask);
-
-      final tokenTypeIds = _createInt64Tensor(List.filled(tokens.length, 0), shape);
-      inputTensors.add(tokenTypeIds);
-
-      // 2. 准备输入/输出名称
-      for (final name in _inputNames!) {
-        inputNamePtrs.add(name.toNativeUtf8());
-      }
-      for (final name in _outputNames!) {
-        outputNamePtrs.add(name.toNativeUtf8());
+      print('[EmbeddingService] 📝 输入文本: "$text"');
+      print('[EmbeddingService] 📝 分词结果: ${tokens.length} tokens, 前10: ${tokens.take(10).toList()}');
+      if (tokens.isEmpty) {
+        print('[EmbeddingService] ⚠️ 分词后为空，跳过嵌入生成');
+        return null;
       }
 
-      inputNamesPtr = calloc<ffi.Pointer<Utf8>>(_inputNames!.length);
-      for (int i = 0; i < _inputNames!.length; i++) {
-        inputNamesPtr![i] = inputNamePtrs[i];
+      final inputIds = _createInputTensor(tokens);
+      final attentionMask = _createInputTensor(_createAttentionMask(tokens));
+      final tokenTypeIds = _createInputTensor(List.filled(tokens.length, 0));
+      print('[EmbeddingService] 📝 inputIds类型: \\${inputIds.runtimeType}, attentionMask类型: \\${attentionMask.runtimeType}');
+
+      print('[EmbeddingService] 🔧 执行模型推理...');
+      final outputs = await _session!.run(OrtRunOptions(), {
+        'input_ids': inputIds,
+        'attention_mask': attentionMask,
+        'token_type_ids': tokenTypeIds,
+      });
+      print('[EmbeddingService] 📝 推理输出数量: \\${outputs.length}');
+      for (int i = 0; i < outputs.length; i++) {
+        print('[EmbeddingService] 📝 输出[\\$i]类型: \\${outputs[i].runtimeType}');
       }
 
-      outputNamesPtr = calloc<ffi.Pointer<Utf8>>(_outputNames!.length);
-      for (int i = 0; i < _outputNames!.length; i++) {
-        outputNamesPtr![i] = outputNamePtrs[i];
-      }
+      final outputTensor = outputs.isNotEmpty ? outputs[0] : null;
+      print('[EmbeddingService] 📝 outputTensor类型: \\${outputTensor?.runtimeType}');
 
-      // 3. 准备输入/输出值指针数组
-      final inputTensorsPtr = calloc<ffi.Pointer<onnx.OrtValue>>(inputTensors.length);
-      for (int i = 0; i < inputTensors.length; i++) {
-        inputTensorsPtr[i] = inputTensors[i];
-      }
-
-      outputTensorsPtr = calloc<ffi.Pointer<onnx.OrtValue>>(_outputNames!.length);
-
-      // 4. 执行推理
-      print('[EmbeddingService] 🔧 执行 FFI 推理...');
-      final status = _ortApi.cast<onnx.OrtApiStruct>().ref.run.asFunction<onnx.Run_dart_t>()(
-        _ortSession,
-        ffi.nullptr, // RunOptions
-        inputNamesPtr,
-        inputTensorsPtr,
-        inputTensors.length,
-        outputNamesPtr,
-        _outputNames!.length,
-        outputTensorsPtr,
-      );
-      _checkStatus(status);
-      print('[EmbeddingService] ✅ FFI 推理成功');
-
-      // 5. 解析输出
-      final outputValue = outputTensorsPtr.value;
-      final outputDataPtrPtr = calloc<ffi.Pointer<ffi.Void>>();
-      _checkStatus(_ortApi.cast<onnx.OrtApiStruct>().ref.getTensorMutableData.asFunction<onnx.GetTensorMutableData_dart_t>()(outputValue, outputDataPtrPtr));
-
-      final outputDataPtr = outputDataPtrPtr.value.cast<ffi.Float>();
-      // The output shape is [1, sequence_length, hidden_size], e.g., [1, 512, 384]
-      // We need to perform mean pooling over the sequence_length dimension.
-      final sequenceLength = tokens.length;
-      final hiddenSize = vectorDimensions;
-      final pooled = List<double>.filled(hiddenSize, 0.0);
-      for (int i = 0; i < sequenceLength; i++) {
-        for (int j = 0; j < hiddenSize; j++) {
-          pooled[j] += outputDataPtr[i * hiddenSize + j];
+      if (outputTensor != null && outputTensor is OrtValueTensor) {
+        final raw = outputTensor.value;
+        print('[EmbeddingService] 📝 outputTensor.value类型: \\${raw.runtimeType}');
+        if (raw is List<List<List<double>>>) {
+          print('[EmbeddingService] 📝 outputTensor.value shape: [\\${raw.length}, \\${raw[0].length}, \\${raw[0][0].length}]');
+          // 取 batch 维第一个元素
+          return _normalizeVector(_meanPooling(raw[0]));
+        } else if (raw is List<List<double>>) {
+          print('[EmbeddingService] 📝 outputTensor.value shape: [\\${raw.length}, \\${raw[0].length}]');
+          return _normalizeVector(_meanPooling(raw));
+        } else if (raw is Float32List) {
+          print('[EmbeddingService] 📝 outputTensor.value Float32List长度: \\${raw.length}');
+          return _normalizeVector(raw.cast<double>());
+        } else {
+          print('[EmbeddingService] ⚠️ outputTensor.value 类型未知: \\${raw.runtimeType}');
         }
+      } else {
+        print('[EmbeddingService] ⚠️ outputTensor为空或类型不是OrtValueTensor');
       }
-      for (int j = 0; j < hiddenSize; j++) {
-        pooled[j] /= sequenceLength;
-      }
 
-      calloc.free(outputDataPtrPtr);
-
-      return _normalizeVector(pooled);
-
-    } catch (e) {
-      print('[EmbeddingService] ❌ GTE模型推理失败: $e');
       return null;
-    } finally {
-      // 6. 释放所有资源
-      for (final tensor in inputTensors) {
-        _ortApi.cast<onnx.OrtApiStruct>().ref.releaseValue.asFunction<onnx.ReleaseValue_dart_t>()(tensor);
-      }
-      if (outputTensorsPtr != null) {
-        for (int i = 0; i < _outputNames!.length; i++) {
-           if (outputTensorsPtr[i] != ffi.nullptr) {
-             _ortApi.cast<onnx.OrtApiStruct>().ref.releaseValue.asFunction<onnx.ReleaseValue_dart_t>()(outputTensorsPtr[i]);
-           }
-        }
-        calloc.free(outputTensorsPtr);
-      }
-      inputNamePtrs.forEach(calloc.free);
-      outputNamePtrs.forEach(calloc.free);
-      if (inputNamesPtr != null) calloc.free(inputNamesPtr);
-      if (outputNamesPtr != null) calloc.free(outputNamesPtr);
+    } catch (e, stackTrace) {
+      print('[EmbeddingService] ❌ GTE模型推理失败: $e');
+      print('[EmbeddingService] 🔍 堆栈: $stackTrace');
+      return null;
     }
   }
 
@@ -517,69 +352,36 @@ class EmbeddingService {
     return tokens;
   }
 
-  /// 创建输入张量 (FFI)
-  ffi.Pointer<onnx.OrtValue> _createInt64Tensor(List<int> data, List<int> shape) {
-    // 1. 创建内存信息
-    final memoryInfoPtrPtr = calloc<ffi.Pointer<onnx.OrtMemoryInfo>>();
-    var status = _ortApi.cast<onnx.OrtApiStruct>().ref.createCpuMemoryInfo.asFunction<onnx.CreateCpuMemoryInfo_dart_t>()(
-        onnx.OrtAllocatorType.arena.index, onnx.OrtMemType.default_.index, memoryInfoPtrPtr);
-    final memoryInfo = memoryInfoPtrPtr.value;
-    calloc.free(memoryInfoPtrPtr);
-    _checkStatus(status);
+  /// 创建输入张量
+  OrtValueTensor _createInputTensor(List<int> tokens) {
+    final shape = [1, tokens.length];
+    // 修复：使用Int64List而不是Int32List，因为模型期望int64类型
+    final data = Int64List.fromList(tokens);
 
-    // 2. 准备数据 - 使用指针算术直接写入，避免 asTypedList
-    final dataPtr = calloc<ffi.Int64>(data.length);
-    for (int i = 0; i < data.length; i++) {
-      dataPtr[i] = data[i];
-    }
-
-    // 3. 准备形状 - 使用指针算术直接写入
-    final shapePtr = calloc<ffi.Int64>(shape.length);
-    for (int i = 0; i < shape.length; i++) {
-      shapePtr[i] = shape[i];
-    }
-
-    // 4. 创建张量
-    final valuePtrPtr = calloc<ffi.Pointer<onnx.OrtValue>>();
-    status = _ortApi.cast<onnx.OrtApiStruct>().ref.createTensorWithDataAsOrtValue.asFunction<onnx.CreateTensorWithDataAsOrtValue_dart_t>()(
-        memoryInfo,
-        dataPtr.cast<ffi.Void>(),
-        data.length * ffi.sizeOf<ffi.Int64>(), // size in bytes
-        shapePtr,
-        shape.length,
-        onnx.ONNXTensorElementDataType.int64.index,
-        valuePtrPtr);
-
-    final ortValue = valuePtrPtr.value;
-    calloc.free(valuePtrPtr);
-
-    // 5. 清理
-    _ortApi.cast<onnx.OrtApiStruct>().ref.releaseMemoryInfo.asFunction<onnx.ReleaseMemoryInfo_dart_t>()(memoryInfo);
-    _checkStatus(status);
-
-    // IMPORTANT: Do NOT free dataPtr and shapePtr here.
-    // ONNX Runtime takes ownership of these pointers when creating the tensor.
-    // They will be freed when the OrtValue is released.
-    return ortValue;
+    return OrtValueTensor.createTensorWithDataList(data, shape);
   }
 
 
   /// 从输出张量提取嵌入向量
-  // List<double> _extractEmbedding(OrtValue outputTensor) { // This will be replaced
-  //   if (outputTensor is OrtValueTensor) {
-  //     final raw = outputTensor.value;
+  List<double> _extractEmbedding(OrtValue outputTensor) {
+    if (outputTensor is OrtValueTensor) {
+      final raw = outputTensor.value;
 
-  //     if (raw is Float32List) {
-  //       return _normalizeVector(raw.cast<double>());
-  //     } else if (raw is List<double>) {
-  //       return _normalizeVector(raw);
-  //     } else if (raw is List<List<double>>) {
-  //       return _normalizeVector(raw[0]);
-  //     }
-  //   }
+      if (raw is Float32List) {
+        return _normalizeVector(raw.cast<double>());
+      } else if (raw is List<double>) {
+        return _normalizeVector(raw);
+      } else if (raw is List<List<double>>) {
+        return _normalizeVector(raw[0]);
+      } else if (raw is List<List<List<double>>>) {
+        // 处理 [1, 512, 384]，取 raw[0] 得到 [512, 384]，做 mean pooling
+        final pooled = _meanPooling(raw[0]);
+        return _normalizeVector(pooled);
+      }
+    }
 
-  //   return _generateFallbackVector();
-  // }
+    return _generateFallbackVector();
+  }
 
 
   /// 对序列进行平均池化
@@ -789,8 +591,8 @@ class EmbeddingService {
 
     try {
       // 检查ONNX Runtime
-      // final testOptions = OrtSessionOptions(); // This will be replaced
-      dependencies.add('ONNX Runtime: ✅ 可用 (FFI)');
+      final testOptions = OrtSessionOptions();
+      dependencies.add('ONNX Runtime: ✅ 可用');
     } catch (e) {
       dependencies.add('ONNX Runtime: ❌ 不可用 - $e');
     }
@@ -816,20 +618,8 @@ class EmbeddingService {
   /// 释放模型资源
   void dispose() {
     try {
-      print('[EmbeddingService] 🧹 释放 FFI 模型资源...');
-      if (_ortSession != ffi.nullptr) {
-        _ortApi.cast<onnx.OrtApiStruct>().ref.releaseSession.asFunction<onnx.ReleaseSession_dart_t>()(_ortSession);
-        _ortSession = ffi.nullptr;
-      }
-      if (_ortSessionOptions != ffi.nullptr) {
-        _ortApi.cast<onnx.OrtApiStruct>().ref.releaseSessionOptions.asFunction<onnx.ReleaseSessionOptions_dart_t>()(_ortSessionOptions);
-        _ortSessionOptions = ffi.nullptr;
-      }
-      if (_ortEnv != ffi.nullptr) {
-        _ortApi.cast<onnx.OrtApiStruct>().ref.releaseEnv.asFunction<onnx.ReleaseEnv_dart_t>()(_ortEnv);
-        _ortEnv = ffi.nullptr;
-      }
-
+      _session?.release();
+      _session = null;
       _isModelLoaded = false;
       _inputNames = null;
       _outputNames = null;

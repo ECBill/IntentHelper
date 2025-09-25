@@ -33,7 +33,7 @@ class _KGTestPageState extends State<KGTestPage> with TickerProviderStateMixin {
   @override
   void initState() {
     super.initState();
-    _tabController = TabController(length: 4, vsync: this);
+    _tabController = TabController(length: 5, vsync: this);
     _loadKGData();
 
     // 默认设置为最近一周
@@ -95,6 +95,7 @@ class _KGTestPageState extends State<KGTestPage> with TickerProviderStateMixin {
             Tab(text: '图谱维护'),
             Tab(text: '数据验证'),
             Tab(text: '图谱清理'),
+            Tab(text: '事件向量查询'),
           ],
         ),
         actions: [
@@ -107,14 +108,15 @@ class _KGTestPageState extends State<KGTestPage> with TickerProviderStateMixin {
       body: _isLoading
           ? Center(child: CircularProgressIndicator())
           : TabBarView(
-              controller: _tabController,
-              children: [
-                _buildDataBrowseTab(),
-                _buildMaintenanceTab(),
-                _buildValidationTab(),
-                _buildCleanupTab(),
-              ],
-            ),
+        controller: _tabController,
+        children: [
+          _buildDataBrowseTab(),
+          _buildMaintenanceTab(),
+          _buildValidationTab(),
+          _buildCleanupTab(),
+          _buildVectorSearchTab(),
+        ],
+      ),
     );
   }
 
@@ -133,6 +135,9 @@ class _KGTestPageState extends State<KGTestPage> with TickerProviderStateMixin {
               border: OutlineInputBorder(),
             ),
             onChanged: (value) {
+              setState(() => _searchQuery = value.toLowerCase());
+            },
+            onSubmitted: (value) {
               setState(() => _searchQuery = value.toLowerCase());
             },
           ),
@@ -200,17 +205,17 @@ class _KGTestPageState extends State<KGTestPage> with TickerProviderStateMixin {
   List<Node> get _filteredNodes {
     if (_searchQuery.isEmpty) return _allNodes;
     return _allNodes.where((node) =>
-      node.name.toLowerCase().contains(_searchQuery) ||
-      node.type.toLowerCase().contains(_searchQuery)
+    node.name.toLowerCase().contains(_searchQuery) ||
+        node.type.toLowerCase().contains(_searchQuery)
     ).toList();
   }
 
   List<EventNode> get _filteredEvents {
     if (_searchQuery.isEmpty) return _allEventNodes;
     return _allEventNodes.where((event) =>
-      event.name.toLowerCase().contains(_searchQuery) ||
-      event.type.toLowerCase().contains(_searchQuery) ||
-      (event.description?.toLowerCase().contains(_searchQuery) ?? false)
+    event.name.toLowerCase().contains(_searchQuery) ||
+        event.type.toLowerCase().contains(_searchQuery) ||
+        (event.description?.toLowerCase().contains(_searchQuery) ?? false)
     ).toList();
   }
 
@@ -247,7 +252,7 @@ class _KGTestPageState extends State<KGTestPage> with TickerProviderStateMixin {
     final participants = participantRelations
         .map((r) => _allNodes.firstWhere(
             (e) => e.id == r.entityId,
-            orElse: () => Node(id: r.entityId, name: r.entityId, type: '未知')))
+        orElse: () => Node(id: r.entityId, name: r.entityId, type: '未知')))
         .toList();
 
     return Card(
@@ -330,11 +335,11 @@ class _KGTestPageState extends State<KGTestPage> with TickerProviderStateMixin {
                 Wrap(
                   spacing: 4.w,
                   children: participants.take(3).map((participant) =>
-                    Chip(
-                      label: Text(participant.name, style: TextStyle(fontSize: 10.sp)),
-                      materialTapTargetSize: MaterialTapTargetSize.shrinkWrap,
-                      visualDensity: VisualDensity.compact,
-                    )
+                      Chip(
+                        label: Text(participant.name, style: TextStyle(fontSize: 10.sp)),
+                        materialTapTargetSize: MaterialTapTargetSize.shrinkWrap,
+                        visualDensity: VisualDensity.compact,
+                      )
                   ).toList()
                     ..addAll(participants.length > 3 ? [
                       Chip(
@@ -481,7 +486,7 @@ class _KGTestPageState extends State<KGTestPage> with TickerProviderStateMixin {
     final relatedEvents = relatedEventRelations
         .map((r) => _allEventNodes.firstWhere(
             (e) => e.id == r.eventId,
-            orElse: () => EventNode(id: r.eventId, name: '未知事件', type: '未知')))
+        orElse: () => EventNode(id: r.eventId, name: '未知事件', type: '未知')))
         .toList();
 
     showModalBottomSheet(
@@ -538,15 +543,15 @@ class _KGTestPageState extends State<KGTestPage> with TickerProviderStateMixin {
                 Text('属性信息', style: TextStyle(fontWeight: FontWeight.bold)),
                 SizedBox(height: 8.h),
                 ...entity.attributes.entries.map((attr) =>
-                  Padding(
-                    padding: EdgeInsets.symmetric(vertical: 2.h),
-                    child: Row(
-                      children: [
-                        Text('${attr.key}: ', style: TextStyle(color: Colors.grey[600])),
-                        Expanded(child: Text(attr.value)),
-                      ],
-                    ),
-                  )
+                    Padding(
+                      padding: EdgeInsets.symmetric(vertical: 2.h),
+                      child: Row(
+                        children: [
+                          Text('${attr.key}: ', style: TextStyle(color: Colors.grey[600])),
+                          Expanded(child: Text(attr.value)),
+                        ],
+                      ),
+                    )
                 ),
                 SizedBox(height: 16.h),
               ],
@@ -587,11 +592,11 @@ class _KGTestPageState extends State<KGTestPage> with TickerProviderStateMixin {
                       title: Text(event.name),
                       subtitle: Text('${event.type} • ${relation.role}'),
                       trailing: event.startTime != null
-                        ? Text(
-                            DateFormat('MM/dd').format(event.startTime!),
-                            style: TextStyle(fontSize: 11.sp, color: Colors.grey[600]),
-                          )
-                        : null,
+                          ? Text(
+                        DateFormat('MM/dd').format(event.startTime!),
+                        style: TextStyle(fontSize: 11.sp, color: Colors.grey[600]),
+                      )
+                          : null,
                       onTap: () {
                         Navigator.pop(context);
                         final participants = [entity]; // 至少包含当前实体
@@ -697,8 +702,8 @@ class _KGTestPageState extends State<KGTestPage> with TickerProviderStateMixin {
                             Text('开始日期', style: TextStyle(fontSize: 12.sp, color: Colors.grey[600])),
                             Text(
                               _selectedStartDate != null
-                                ? DateFormat('yyyy-MM-dd').format(_selectedStartDate!)
-                                : '选择开始日期',
+                                  ? DateFormat('yyyy-MM-dd').format(_selectedStartDate!)
+                                  : '选择开始日期',
                               style: TextStyle(fontSize: 14.sp),
                             ),
                           ],
@@ -730,8 +735,8 @@ class _KGTestPageState extends State<KGTestPage> with TickerProviderStateMixin {
                             Text('结束日期', style: TextStyle(fontSize: 12.sp, color: Colors.grey[600])),
                             Text(
                               _selectedEndDate != null
-                                ? DateFormat('yyyy-MM-dd').format(_selectedEndDate!)
-                                : '选择结束日期',
+                                  ? DateFormat('yyyy-MM-dd').format(_selectedEndDate!)
+                                  : '选择结束日期',
                               style: TextStyle(fontSize: 14.sp),
                             ),
                           ],
@@ -797,15 +802,15 @@ class _KGTestPageState extends State<KGTestPage> with TickerProviderStateMixin {
               Expanded(
                 child: ElevatedButton.icon(
                   onPressed: (_isProcessing || _selectedStartDate == null || _selectedEndDate == null)
-                    ? null
-                    : _processDateRangeKG,
+                      ? null
+                      : _processDateRangeKG,
                   icon: _isProcessing
-                    ? SizedBox(
-                        width: 16,
-                        height: 16,
-                        child: CircularProgressIndicator(strokeWidth: 2),
-                      )
-                    : Icon(Icons.auto_fix_high),
+                      ? SizedBox(
+                    width: 16,
+                    height: 16,
+                    child: CircularProgressIndicator(strokeWidth: 2),
+                  )
+                      : Icon(Icons.auto_fix_high),
                   label: Text(_isProcessing ? '处理中...' : '开始整理'),
                 ),
               ),
@@ -864,8 +869,8 @@ class _KGTestPageState extends State<KGTestPage> with TickerProviderStateMixin {
         setState(() {
           _selectedEndDate = DateTime.now();
           _selectedStartDate = daysBack == 0
-            ? DateTime(_selectedEndDate!.year, _selectedEndDate!.month, _selectedEndDate!.day)
-            : _selectedEndDate!.subtract(Duration(days: daysBack));
+              ? DateTime(_selectedEndDate!.year, _selectedEndDate!.month, _selectedEndDate!.day)
+              : _selectedEndDate!.subtract(Duration(days: daysBack));
         });
       },
     );
@@ -910,11 +915,11 @@ class _KGTestPageState extends State<KGTestPage> with TickerProviderStateMixin {
       final endMs = _selectedEndDate!.add(Duration(days: 1)).millisecondsSinceEpoch;
 
       final records = objectBox.queryRecords().where((r) =>
-        r.createdAt != null &&
-        r.createdAt! >= startMs &&
-        r.createdAt! < endMs &&
-        r.content != null &&
-        r.content!.trim().isNotEmpty
+      r.createdAt != null &&
+          r.createdAt! >= startMs &&
+          r.createdAt! < endMs &&
+          r.content != null &&
+          r.content!.trim().isNotEmpty
       ).toList();
 
       final totalChars = records.fold<int>(0, (sum, r) => sum + (r.content?.length ?? 0));
@@ -946,11 +951,11 @@ class _KGTestPageState extends State<KGTestPage> with TickerProviderStateMixin {
 
       // 获取指定日期范围内的对话记录
       final records = objectBox.queryRecords().where((r) =>
-        r.createdAt != null &&
-        r.createdAt! >= startMs &&
-        r.createdAt! < endMs &&
-        r.content != null &&
-        r.content!.trim().isNotEmpty
+      r.createdAt != null &&
+          r.createdAt! >= startMs &&
+          r.createdAt! < endMs &&
+          r.content != null &&
+          r.content!.trim().isNotEmpty
       ).toList();
 
       if (records.isEmpty) {
@@ -1045,8 +1050,8 @@ class _KGTestPageState extends State<KGTestPage> with TickerProviderStateMixin {
 
     // 找到最近的几个会话
     final recentRecords = allRecords.where((r) =>
-      r.createdAt != null &&
-      r.createdAt! > DateTime.now().subtract(Duration(days: 3)).millisecondsSinceEpoch
+    r.createdAt != null &&
+        r.createdAt! > DateTime.now().subtract(Duration(days: 3)).millisecondsSinceEpoch
     ).toList();
 
     final sessions = _groupRecordsIntoSessions(recentRecords);
@@ -1065,14 +1070,14 @@ class _KGTestPageState extends State<KGTestPage> with TickerProviderStateMixin {
               final firstRecord = session.first;
               final lastRecord = session.last;
               final duration = Duration(
-                milliseconds: (lastRecord.createdAt ?? 0) - (firstRecord.createdAt ?? 0)
+                  milliseconds: (lastRecord.createdAt ?? 0) - (firstRecord.createdAt ?? 0)
               );
 
               return ListTile(
                 title: Text('会话 ${index + 1}'),
                 subtitle: Text(
-                  '${DateFormat('MM-dd HH:mm').format(DateTime.fromMillisecondsSinceEpoch(firstRecord.createdAt ?? 0))}\n'
-                  '${session.length} 条记录，持续 ${duration.inMinutes} 分钟'
+                    '${DateFormat('MM-dd HH:mm').format(DateTime.fromMillisecondsSinceEpoch(firstRecord.createdAt ?? 0))}\n'
+                        '${session.length} 条记录，持续 ${duration.inMinutes} 分钟'
                 ),
                 onTap: () {
                   Navigator.pop(context);
@@ -1134,6 +1139,42 @@ class _KGTestPageState extends State<KGTestPage> with TickerProviderStateMixin {
                 onPressed: _validateGraphIntegrity,
                 icon: Icon(Icons.check_circle),
                 label: Text('完整性检查'),
+              ),
+              // 新增 embedding 检查按钮
+              ElevatedButton.icon(
+                onPressed: () {
+                  showDialog(
+                    context: context,
+                    builder: (context) {
+                      return AlertDialog(
+                        title: Text('事件 embedding 检查'),
+                        content: SizedBox(
+                          width: 400,
+                          height: 400,
+                          child: Scrollbar(
+                            child: ListView(
+                              children: _allEventNodes.map((event) {
+                                final emb = event.embedding;
+                                return Text(
+                                  '事件: \\${event.name}\nembedding 长度: \\${emb?.length ?? 0}\n前5: \\${emb != null ? emb.take(5).toList() : '无'}\n',
+                                  style: TextStyle(fontSize: 13),
+                                );
+                              }).toList(),
+                            ),
+                          ),
+                        ),
+                        actions: [
+                          TextButton(
+                            onPressed: () => Navigator.of(context).pop(),
+                            child: Text('关闭'),
+                          ),
+                        ],
+                      );
+                    },
+                  );
+                },
+                icon: Icon(Icons.check),
+                label: Text('检查事件 embedding'),
               ),
             ],
           ),
@@ -1265,7 +1306,7 @@ class _KGTestPageState extends State<KGTestPage> with TickerProviderStateMixin {
   int _getOrphanedEntitiesCount() {
     // 修正：使用新的事件中心结构来检测孤立节点
     return _allNodes.where((node) =>
-      !_allEventRelations.any((rel) => rel.entityId == node.id)
+    !_allEventRelations.any((rel) => rel.entityId == node.id)
     ).length;
   }
 
@@ -1328,13 +1369,13 @@ class _KGTestPageState extends State<KGTestPage> with TickerProviderStateMixin {
         buffer.writeln('\n📅 时间分布分析:');
         final now = DateTime.now();
         final today = _allEventNodes.where((e) =>
-          (e.startTime ?? e.lastUpdated).isAfter(DateTime(now.year, now.month, now.day))
+            (e.startTime ?? e.lastUpdated).isAfter(DateTime(now.year, now.month, now.day))
         ).length;
         final thisWeek = _allEventNodes.where((e) =>
-          (e.startTime ?? e.lastUpdated).isAfter(now.subtract(Duration(days: 7)))
+            (e.startTime ?? e.lastUpdated).isAfter(now.subtract(Duration(days: 7)))
         ).length;
         final thisMonth = _allEventNodes.where((e) =>
-          (e.startTime ?? e.lastUpdated).isAfter(now.subtract(Duration(days: 30)))
+            (e.startTime ?? e.lastUpdated).isAfter(now.subtract(Duration(days: 30)))
         ).length;
 
         buffer.writeln('• 今日事件: $today 个');
@@ -1370,7 +1411,7 @@ class _KGTestPageState extends State<KGTestPage> with TickerProviderStateMixin {
       for (int i = 0; i < sortedEntities.take(10).length; i++) {
         final entry = sortedEntities[i];
         final entity = _allNodes.firstWhere(
-          (e) => e.id == entry.key,
+              (e) => e.id == entry.key,
           orElse: () => Node(id: entry.key, name: entry.key, type: '未知'),
         );
         buffer.writeln('${i + 1}. ${entity.name} (${entity.type}) - ${entry.value} 个事件');
@@ -1391,7 +1432,7 @@ class _KGTestPageState extends State<KGTestPage> with TickerProviderStateMixin {
 
       // 孤立实体详情
       final orphanedEntities = _allNodes.where((node) =>
-        !_allEventRelations.any((rel) => rel.entityId == node.id)
+      !_allEventRelations.any((rel) => rel.entityId == node.id)
       ).toList();
 
       if (orphanedEntities.isNotEmpty) {
@@ -1804,6 +1845,84 @@ class _KGTestPageState extends State<KGTestPage> with TickerProviderStateMixin {
     );
   }
 
+  Widget _buildVectorSearchTab() {
+    final TextEditingController _vectorSearchController = TextEditingController();
+    List<Map<String, dynamic>> _vectorResults = [];
+    bool _isSearching = false;
+
+    return StatefulBuilder(
+      builder: (context, setState) => Padding(
+        padding: EdgeInsets.all(16.w),
+        child: Column(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            Text('事件向量查询', style: TextStyle(fontSize: 18.sp, fontWeight: FontWeight.bold)),
+            SizedBox(height: 12.h),
+            TextField(
+              controller: _vectorSearchController,
+              decoration: InputDecoration(
+                labelText: '输入一段话，匹配相关事件',
+                hintText: '例如：我昨天在星巴克用MacBook写代码',
+                border: OutlineInputBorder(),
+                suffixIcon: IconButton(
+                  icon: Icon(Icons.search),
+                  onPressed: _isSearching
+                      ? null
+                      : () async {
+                    final query = _vectorSearchController.text.trim();
+                    if (query.isEmpty) return;
+
+                    setState(() => _isSearching = true);
+
+                    final results = await KnowledgeGraphService.searchEventsByText(query);
+                    setState(() {
+                      _vectorResults = results;
+                      _isSearching = false;
+                    });
+                  },
+                ),
+              ),
+            ),
+            SizedBox(height: 20.h),
+
+            if (_isSearching)
+              Center(child: CircularProgressIndicator())
+            else if (_vectorResults.isEmpty)
+              Text('没有找到匹配的事件', style: TextStyle(color: Colors.grey))
+            else
+              Expanded(
+                child: ListView.builder(
+                  itemCount: _vectorResults.length,
+                  itemBuilder: (context, index) {
+                    final result = _vectorResults[index];
+                    final similarity = (result['similarity'] as double?)?.toStringAsFixed(2) ?? 'N/A';
+                    final event = result['event'] as EventNode?;
+
+                    if (event == null) return SizedBox.shrink();
+
+                    return ListTile(
+                      title: Text(event.name),
+                      subtitle: Text('${event.type} • 相似度: $similarity'),
+                      trailing: event.startTime != null
+                          ? Text(DateFormat('MM/dd HH:mm').format(event.startTime!))
+                          : null,
+                      onTap: () {
+                        final participants = _allNodes.where((n) =>
+                            _allEventRelations.any((r) => r.eventId == event.id && r.entityId == n.id)
+                        ).toList();
+                        _showEventDetails(event, participants);
+                      },
+                    );
+                  },
+                ),
+              ),
+          ],
+        ),
+      ),
+    );
+  }
+
+
   // 新增：分析孤立实体的详细调试方法
   Future<void> _analyzeOrphanedEntities() async {
     setState(() => _isLoading = true);
@@ -1826,7 +1945,7 @@ class _KGTestPageState extends State<KGTestPage> with TickerProviderStateMixin {
 
       // 分析孤立实体
       final orphanedEntities = allNodes.where((node) =>
-        !allEventRelations.any((rel) => rel.entityId == node.id)
+      !allEventRelations.any((rel) => rel.entityId == node.id)
       ).toList();
 
       buffer.writeln('\n⚠️ 孤立实体分析:');
@@ -1849,7 +1968,7 @@ class _KGTestPageState extends State<KGTestPage> with TickerProviderStateMixin {
       final entitiesWithOldEdges = <String>[];
       for (final entity in orphanedEntities) {
         final hasOldEdge = allEdges.any((edge) =>
-          edge.source == entity.id || edge.target == entity.id);
+        edge.source == entity.id || edge.target == entity.id);
         if (hasOldEdge) {
           entitiesWithOldEdges.add(entity.id);
         }
@@ -1877,7 +1996,7 @@ class _KGTestPageState extends State<KGTestPage> with TickerProviderStateMixin {
       // 检查最近创建的孤立实体
       final now = DateTime.now();
       final recentOrphaned = orphanedEntities.where((entity) =>
-        entity.lastUpdated.isAfter(now.subtract(Duration(days: 7)))
+          entity.lastUpdated.isAfter(now.subtract(Duration(days: 7)))
       ).toList();
 
       buffer.writeln('\n⏰ 最近一周的孤立实体:');
@@ -1901,8 +2020,8 @@ class _KGTestPageState extends State<KGTestPage> with TickerProviderStateMixin {
   // 新增：清除孤立节点功能
   Future<void> _clearOrphanedNodes() async {
     final confirmed = await _showConfirmDialog(
-      '清除孤立节点',
-      '这将删除所有没有与事件关联的孤立实体节点。\n\n注意：此操作不可恢复，建议先进行"孤立实体分析"确认要删除的节点。\n\n确定继续吗？'
+        '清除孤立节点',
+        '这将删除所有没有与事件关联的孤立实体节点。\n\n注意：此操作不可恢复，建议先进行"孤立实体分析"确认要删除的节点。\n\n确定继续吗？'
     );
     if (!confirmed) return;
 
@@ -1915,7 +2034,7 @@ class _KGTestPageState extends State<KGTestPage> with TickerProviderStateMixin {
       final allEventRelations = objectBox.queryEventEntityRelations();
 
       final orphanedEntities = allNodes.where((node) =>
-        !allEventRelations.any((rel) => rel.entityId == node.id)
+      !allEventRelations.any((rel) => rel.entityId == node.id)
       ).toList();
 
       if (orphanedEntities.isEmpty) {
@@ -1935,7 +2054,7 @@ class _KGTestPageState extends State<KGTestPage> with TickerProviderStateMixin {
 
       for (final entity in orphanedEntities) {
         try {
-          // 使用ObjectBox的remove方法删除节点（通过数据库ID）
+          // 使用ObjectBox的remove方法删除节点（通��数据库ID）
           if (entity.obxId != null && entity.obxId! > 0) {
             final success = ObjectBoxService.nodeBox.remove(entity.obxId!);
             if (success) {
@@ -1970,7 +2089,7 @@ class _KGTestPageState extends State<KGTestPage> with TickerProviderStateMixin {
           ..sort((a, b) => b.value.length.compareTo(a.value.length))
           ..forEach((entry) {
             final deletedInType = entry.value.where((entity) =>
-              !_allNodes.any((node) => node.id == entity.id)
+            !_allNodes.any((node) => node.id == entity.id)
             ).length;
             buffer.writeln('• ${entry.key}: 清除 $deletedInType/${entry.value.length} 个');
           });
