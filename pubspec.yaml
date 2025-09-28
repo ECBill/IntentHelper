@@ -41,7 +41,7 @@ dependencies:
   sherpa_onnx: ^1.12.6
   objectbox: ^4.0.3
   provider: ^6.0.5
-  objectbox_flutter_libs: any
+  objectbox_flutter_libs: ^4.0.3
   flutter_foreground_task: 8.13.0
   # image
   extended_image: ^8.3.1
@@ -112,6 +112,7 @@ dev_dependencies:
   # rules and activating additional ones.
   flutter_lints: ^4.0.0
   build_runner: ^2.4.15
+  objectbox_generator: ^4.0.3
 
 # For information on the generic Dart part of this file, see the
 # following page: https://dart.dev/tools/pub/pubspec

@@ -104,10 +104,10 @@ class EventNode {
   String? description; // 事件描述
   DateTime lastUpdated; // 最后更新时间
   String? sourceContext; // 来源上下文ID
-  
-  // 新增：向量嵌入字段用于语义搜索
-  @HnswIndex(dimensions: 384) // GTE-small输出384维向量
-  List<double>? embedding;
+
+  @HnswIndex(dimensions: 384)
+  @Property(type: PropertyType.floatVector)
+  List<double> embedding;
 
   EventNode({
     this.obxId = 0,
@@ -122,8 +122,9 @@ class EventNode {
     this.description,
     DateTime? lastUpdated,
     this.sourceContext,
-    this.embedding,
-  }) : lastUpdated = lastUpdated ?? DateTime.now();
+    List<double>? embedding,
+  })  : lastUpdated = lastUpdated ?? DateTime.now(),
+        embedding = embedding ?? <double>[];
 
   // 生成用于嵌入的文本内容
   String getEmbeddingText() {
@@ -152,6 +153,38 @@ class EventNode {
 
     return buffer.toString().trim();
   }
+
+  Map<String, dynamic> toJson() => {
+    'obxId': obxId,
+    'id': id,
+    'name': name,
+    'type': type,
+    'startTime': startTime?.toIso8601String(),
+    'endTime': endTime?.toIso8601String(),
+    'location': location,
+    'purpose': purpose,
+    'result': result,
+    'description': description,
+    'lastUpdated': lastUpdated.toIso8601String(),
+    'sourceContext': sourceContext,
+    'embedding': embedding,
+  };
+
+  factory EventNode.fromJson(Map<String, dynamic> json) => EventNode(
+    obxId: json['obxId'] ?? 0,
+    id: json['id'],
+    name: json['name'],
+    type: json['type'],
+    startTime: json['startTime'] != null ? DateTime.parse(json['startTime']) : null,
+    endTime: json['endTime'] != null ? DateTime.parse(json['endTime']) : null,
+    location: json['location'],
+    purpose: json['purpose'],
+    result: json['result'],
+    description: json['description'],
+    lastUpdated: json['lastUpdated'] != null ? DateTime.parse(json['lastUpdated']) : DateTime.now(),
+    sourceContext: json['sourceContext'],
+    embedding: (json['embedding'] as List?)?.map((e) => (e as num).toDouble()).toList(),
+  );
 }
 
 // 事件-实体关系模型

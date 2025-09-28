@@ -63,6 +63,7 @@ class _KGTestPageState extends State<KGTestPage> with TickerProviderStateMixin {
   }
 
   Future<void> _generateEmbeddingForAllEvents() async {
+    // KnowledgeGraphService.debugPrintAllEventEmbeddingTexts();
     setState(() {
       _isProcessing = true;
       _processResult = '🔄 正在为所有事件生成嵌入向量...\n';

@@ -297,11 +297,11 @@ class EmbeddingService {
         print('[EmbeddingService] 📝 outputTensor.value类型: \\${raw.runtimeType}');
         if (raw is List<List<List<double>>>) {
           print('[EmbeddingService] 📝 outputTensor.value shape: [\\${raw.length}, \\${raw[0].length}, \\${raw[0][0].length}]');
-          // 取 batch 维第一个元素
-          return _normalizeVector(_meanPooling(raw[0]));
+          // 只取 [CLS] token 的 embedding
+          return _normalizeVector(raw[0][0]);
         } else if (raw is List<List<double>>) {
           print('[EmbeddingService] 📝 outputTensor.value shape: [\\${raw.length}, \\${raw[0].length}]');
-          return _normalizeVector(_meanPooling(raw));
+          return _normalizeVector(raw[0]);
         } else if (raw is Float32List) {
           print('[EmbeddingService] 📝 outputTensor.value Float32List长度: \\${raw.length}');
           return _normalizeVector(raw.cast<double>());
@@ -487,12 +487,18 @@ class EmbeddingService {
         int topK = 10,
         double threshold = 0.5,
       }) async {
+    print('[EmbeddingService][调试] eventNodes 长度: \\${eventNodes.length}');
     final results = <Map<String, dynamic>>[];
-
+    int debugCount = 0;
     for (final eventNode in eventNodes) {
+      print('[EmbeddingService][调试] eventNode: \\${eventNode.name}, embedding: \\${eventNode.embedding}');
       if (eventNode.embedding != null && eventNode.embedding!.isNotEmpty) {
         final similarity = calculateCosineSimilarity(queryVector, eventNode.embedding!);
-
+        if (debugCount < 10) {
+          print('[EmbeddingService][调试] 事件: "\\${eventNode.name}", embeddingText: "\\${eventNode.getEmbeddingText()}"');
+          print('[EmbeddingService][调试] 相似度: \\${similarity}');
+          debugCount++;
+        }
         if (similarity >= threshold) {
           results.add({
             'event': eventNode,
@@ -501,7 +507,6 @@ class EmbeddingService {
         }
       }
     }
-
     // 按相似度降序排序
     results.sort((a, b) => (b['similarity'] as double).compareTo(a['similarity'] as double));
 
@@ -628,6 +633,29 @@ class EmbeddingService {
     } catch (e) {
       print('[EmbeddingService] ❌ 释放资源失败: $e');
     }
+  }
+
+  /// 批量保存事件到本地json文件，embedding字段持久化
+  Future<void> saveEventsToFile(List<EventNode> events, String filePath) async {
+    final jsonList = events.map((e) => e.toJson()).toList();
+    final jsonString = jsonEncode(jsonList);
+    final file = File(filePath);
+    await file.writeAsString(jsonString);
+    print('[EmbeddingService] ✅ 已保存事件到 $filePath');
+  }
+
+  /// 从本地json文件加载事件，embedding字段自动恢复
+  Future<List<EventNode>> loadEventsFromFile(String filePath) async {
+    final file = File(filePath);
+    if (!await file.exists()) {
+      print('[EmbeddingService] ⚠️ 文件不存在: $filePath');
+      return [];
+    }
+    final jsonString = await file.readAsString();
+    final jsonList = jsonDecode(jsonString) as List;
+    final events = jsonList.map((e) => EventNode.fromJson(e)).toList();
+    print('[EmbeddingService] ✅ 已从 $filePath 加载事件: ${events.length} 条');
+    return events.cast<EventNode>();
   }
 }
 

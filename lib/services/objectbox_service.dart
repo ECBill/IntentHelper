@@ -1,4 +1,5 @@
 import 'dart:async';
+import 'dart:convert';
 import 'dart:math';
 import 'package:app/models/llm_config.dart';
 import 'package:app/models/todo_entity.dart';
@@ -568,7 +569,8 @@ class ObjectBoxService {
 
   EventNode? findEventNodeById(String id) {
     try {
-      return eventNodeBox.query(EventNode_.id.equals(id)).build().findFirst();
+      final node = eventNodeBox.query(EventNode_.id.equals(id)).build().findFirst();
+      return node;
     } catch (e) {
       print('Error finding event node by id: $e');
       return null;
@@ -577,7 +579,11 @@ class ObjectBoxService {
 
   List<EventNode> queryEventNodes() {
     try {
-      return eventNodeBox.getAll();
+      final nodes = eventNodeBox.getAll();
+      for (final node in nodes) {
+        print('[调试] queryEventNodes: id=${node.id}, name=${node.name}, embedding=${node.embedding}');
+      }
+      return nodes;
     } catch (e) {
       print('Error querying all event nodes: $e');
       return [];
@@ -586,7 +592,8 @@ class ObjectBoxService {
 
   List<EventNode> queryEventNodesByType(String type) {
     try {
-      return eventNodeBox.query(EventNode_.type.equals(type)).build().find();
+      final nodes = eventNodeBox.query(EventNode_.type.equals(type)).build().find();
+      return nodes;
     } catch (e) {
       print('Error querying event nodes by type: $e');
       return [];
@@ -595,9 +602,10 @@ class ObjectBoxService {
 
   List<EventNode> queryEventNodesByTimeRange(DateTime startTime, DateTime endTime) {
     try {
-      return eventNodeBox.query(
+      final nodes = eventNodeBox.query(
         EventNode_.startTime.between(startTime.millisecondsSinceEpoch, endTime.millisecondsSinceEpoch)
       ).build().find();
+      return nodes;
     } catch (e) {
       print('Error querying event nodes by time range: $e');
       return [];

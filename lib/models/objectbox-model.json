@@ -187,7 +187,7 @@
     },
     {
       "id": "5:6033791281029208454",
-      "lastPropertyId": "8:7700129863954245269",
+      "lastPropertyId": "13:515728300832428705",
       "name": "TodoEntity",
       "properties": [
         {
@@ -236,6 +236,31 @@
           "type": 6,
           "flags": 8,
           "indexId": "11:5204193897549032489"
+        },
+        {
+          "id": "9:5691521311641948513",
+          "name": "isIntelligentReminder",
+          "type": 1
+        },
+        {
+          "id": "10:6655118734051341380",
+          "name": "originalText",
+          "type": 9
+        },
+        {
+          "id": "11:2162644277031425377",
+          "name": "reminderType",
+          "type": 9
+        },
+        {
+          "id": "12:5623120622814227677",
+          "name": "ruleId",
+          "type": 9
+        },
+        {
+          "id": "13:515728300832428705",
+          "name": "confidence",
+          "type": 8
         }
       ],
       "relations": []
@@ -621,7 +646,7 @@
     },
     {
       "id": "14:5846656904559202287",
-      "lastPropertyId": "12:1062563719176946852",
+      "lastPropertyId": "13:7536280392832461358",
       "name": "EventNode",
       "properties": [
         {
@@ -686,6 +711,13 @@
           "id": "12:1062563719176946852",
           "name": "sourceContext",
           "type": 9
+        },
+        {
+          "id": "13:7536280392832461358",
+          "name": "embedding",
+          "type": 28,
+          "flags": 8,
+          "indexId": "14:686190427426873451"
         }
       ],
       "relations": []
@@ -731,7 +763,7 @@
     }
   ],
   "lastEntityId": "15:4105732853769386625",
-  "lastIndexId": "13:930329328396835669",
+  "lastIndexId": "14:686190427426873451",
   "lastRelationId": "0:0",
   "lastSequenceId": "0:0",
   "modelVersion": 5,

@@ -215,7 +215,7 @@ final _entities = <obx_int.ModelEntity>[
   obx_int.ModelEntity(
       id: const obx_int.IdUid(5, 6033791281029208454),
       name: 'TodoEntity',
-      lastPropertyId: const obx_int.IdUid(8, 7700129863954245269),
+      lastPropertyId: const obx_int.IdUid(13, 515728300832428705),
       flags: 0,
       properties: <obx_int.ModelProperty>[
         obx_int.ModelProperty(
@@ -265,29 +265,28 @@ final _entities = <obx_int.ModelEntity>[
             type: 6,
             flags: 8,
             indexId: const obx_int.IdUid(11, 5204193897549032489)),
-        // 🔥 新增：智能提醒相关字段
         obx_int.ModelProperty(
-            id: const obx_int.IdUid(9, 1234567890123456789),
+            id: const obx_int.IdUid(9, 5691521311641948513),
             name: 'isIntelligentReminder',
             type: 1,
             flags: 0),
         obx_int.ModelProperty(
-            id: const obx_int.IdUid(10, 1234567890123456790),
+            id: const obx_int.IdUid(10, 6655118734051341380),
             name: 'originalText',
             type: 9,
             flags: 0),
         obx_int.ModelProperty(
-            id: const obx_int.IdUid(11, 1234567890123456791),
+            id: const obx_int.IdUid(11, 2162644277031425377),
             name: 'reminderType',
             type: 9,
             flags: 0),
         obx_int.ModelProperty(
-            id: const obx_int.IdUid(12, 1234567890123456792),
+            id: const obx_int.IdUid(12, 5623120622814227677),
             name: 'ruleId',
             type: 9,
             flags: 0),
         obx_int.ModelProperty(
-            id: const obx_int.IdUid(13, 1234567890123456793),
+            id: const obx_int.IdUid(13, 515728300832428705),
             name: 'confidence',
             type: 8,
             flags: 0)
@@ -675,7 +674,7 @@ final _entities = <obx_int.ModelEntity>[
   obx_int.ModelEntity(
       id: const obx_int.IdUid(14, 5846656904559202287),
       name: 'EventNode',
-      lastPropertyId: const obx_int.IdUid(12, 1062563719176946852),
+      lastPropertyId: const obx_int.IdUid(13, 7536280392832461358),
       flags: 0,
       properties: <obx_int.ModelProperty>[
         obx_int.ModelProperty(
@@ -738,7 +737,16 @@ final _entities = <obx_int.ModelEntity>[
             id: const obx_int.IdUid(12, 1062563719176946852),
             name: 'sourceContext',
             type: 9,
-            flags: 0)
+            flags: 0),
+        obx_int.ModelProperty(
+            id: const obx_int.IdUid(13, 7536280392832461358),
+            name: 'embedding',
+            type: 28,
+            flags: 8,
+            indexId: const obx_int.IdUid(14, 686190427426873451),
+            hnswParams: obx_int.ModelHnswParams(
+              dimensions: 384,
+            ))
       ],
       relations: <obx_int.ModelRelation>[],
       backlinks: <obx_int.ModelBacklink>[]),
@@ -819,7 +827,7 @@ obx_int.ModelDefinition getObjectBoxModel() {
   final model = obx_int.ModelInfo(
       entities: _entities,
       lastEntityId: const obx_int.IdUid(15, 4105732853769386625),
-      lastIndexId: const obx_int.IdUid(13, 930329328396835669),
+      lastIndexId: const obx_int.IdUid(14, 686190427426873451),
       lastRelationId: const obx_int.IdUid(0, 0),
       lastSequenceId: const obx_int.IdUid(0, 0),
       retiredEntityUids: const [],
@@ -1072,17 +1080,15 @@ obx_int.ModelDefinition getObjectBoxModel() {
           final vectorOffset = object.vector == null
               ? null
               : fbb.writeListFloat32(object.vector!);
-          // 🔥 新增：智能提醒字段的序列化
           final originalTextOffset = object.originalText == null
               ? null
               : fbb.writeString(object.originalText!);
           final reminderTypeOffset = object.reminderType == null
               ? null
               : fbb.writeString(object.reminderType!);
-          final ruleIdOffset = object.ruleId == null
-              ? null
-              : fbb.writeString(object.ruleId!);
-          fbb.startTable(14); // 🔥 修改：更新表大小以包含新字段
+          final ruleIdOffset =
+              object.ruleId == null ? null : fbb.writeString(object.ruleId!);
+          fbb.startTable(14);
           fbb.addInt64(0, object.id);
           fbb.addOffset(1, taskOffset);
           fbb.addOffset(2, detailOffset);
@@ -1091,7 +1097,6 @@ obx_int.ModelDefinition getObjectBoxModel() {
           fbb.addInt64(5, object.deadline);
           fbb.addBool(6, object.clock);
           fbb.addInt64(7, object.createdAt);
-          // 🔥 新增：智能提醒字段的写入
           fbb.addBool(8, object.isIntelligentReminder);
           fbb.addOffset(9, originalTextOffset);
           fbb.addOffset(10, reminderTypeOffset);
@@ -1118,18 +1123,18 @@ obx_int.ModelDefinition getObjectBoxModel() {
               const fb.BoolReader().vTableGet(buffer, rootOffset, 16, false);
           final createdAtParam =
               const fb.Int64Reader().vTableGetNullable(buffer, rootOffset, 18);
-          // 🔥 新增：智能提醒字段的读取
           final isIntelligentReminderParam =
               const fb.BoolReader().vTableGet(buffer, rootOffset, 20, false);
-          final originalTextParam = const fb.StringReader(asciiOptimization: true)
-              .vTableGetNullable(buffer, rootOffset, 22);
-          final reminderTypeParam = const fb.StringReader(asciiOptimization: true)
-              .vTableGetNullable(buffer, rootOffset, 24);
+          final originalTextParam =
+              const fb.StringReader(asciiOptimization: true)
+                  .vTableGetNullable(buffer, rootOffset, 22);
+          final reminderTypeParam =
+              const fb.StringReader(asciiOptimization: true)
+                  .vTableGetNullable(buffer, rootOffset, 24);
           final ruleIdParam = const fb.StringReader(asciiOptimization: true)
               .vTableGetNullable(buffer, rootOffset, 26);
           final confidenceParam = const fb.Float64Reader()
               .vTableGetNullable(buffer, rootOffset, 28);
-
           final object = TodoEntity(
               id: idParam,
               task: taskParam,
@@ -1138,7 +1143,6 @@ obx_int.ModelDefinition getObjectBoxModel() {
               deadline: deadlineParam,
               clock: clockParam,
               createdAt: createdAtParam,
-              // 🔥 新增：智能提醒字段的构造参数
               isIntelligentReminder: isIntelligentReminderParam,
               originalText: originalTextParam,
               reminderType: reminderTypeParam,
@@ -1654,7 +1658,8 @@ obx_int.ModelDefinition getObjectBoxModel() {
           final sourceContextOffset = object.sourceContext == null
               ? null
               : fbb.writeString(object.sourceContext!);
-          fbb.startTable(13);
+          final embeddingOffset = fbb.writeListFloat32(object.embedding);
+          fbb.startTable(14);
           fbb.addInt64(0, object.obxId);
           fbb.addOffset(1, idOffset);
           fbb.addOffset(2, nameOffset);
@@ -1667,6 +1672,7 @@ obx_int.ModelDefinition getObjectBoxModel() {
           fbb.addOffset(9, descriptionOffset);
           fbb.addInt64(10, object.lastUpdated.millisecondsSinceEpoch);
           fbb.addOffset(11, sourceContextOffset);
+          fbb.addOffset(12, embeddingOffset);
           fbb.finish(fbb.endTable());
           return object.obxId;
         },
@@ -1705,6 +1711,9 @@ obx_int.ModelDefinition getObjectBoxModel() {
           final sourceContextParam =
               const fb.StringReader(asciiOptimization: true)
                   .vTableGetNullable(buffer, rootOffset, 26);
+          final embeddingParam =
+              const fb.ListReader<double>(fb.Float32Reader(), lazy: false)
+                  .vTableGet(buffer, rootOffset, 28, []);
           final object = EventNode(
               obxId: obxIdParam,
               id: idParam,
@@ -1717,7 +1726,8 @@ obx_int.ModelDefinition getObjectBoxModel() {
               result: resultParam,
               description: descriptionParam,
               lastUpdated: lastUpdatedParam,
-              sourceContext: sourceContextParam);
+              sourceContext: sourceContextParam,
+              embedding: embeddingParam);
 
           return object;
         }),
@@ -2267,6 +2277,10 @@ class EventNode_ {
   /// See [EventNode.sourceContext].
   static final sourceContext =
       obx.QueryStringProperty<EventNode>(_entities[13].properties[11]);
+
+  /// See [EventNode.embedding].
+  static final embedding =
+      obx.QueryHnswProperty<EventNode>(_entities[13].properties[12]);
 }
 
 /// [EventRelation] entity fields to define ObjectBox queries.

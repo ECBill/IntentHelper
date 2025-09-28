@@ -1031,7 +1031,7 @@ ${_generateUserStatePromptContext(userStateContext)}
   static Future<List<Map<String, dynamic>>> searchEventsByText(
       String queryText, {
         int topK = 10,
-        double similarityThreshold = 0.5,
+        double similarityThreshold = 0.2, // 降低阈值，便于召回更多结果
       }) async {
     try {
       final objectBox = ObjectBoxService();
@@ -1051,7 +1051,7 @@ ${_generateUserStatePromptContext(userStateContext)}
         threshold: similarityThreshold,
       );
 
-      print('[KnowledgeGraphService] 🔍 相似事件查询完成: ${results.length} 个');
+      print('[KnowledgeGraphService] 🔍 相似事件查询完成: \\${results.length} 个');
       return results;
     } catch (e) {
       print('[KnowledgeGraphService] ❌ searchEventsByText 错误: $e');
@@ -1092,21 +1092,42 @@ ${_generateUserStatePromptContext(userStateContext)}
 
       final allEvents = objectBox.queryEventNodes();
       int updatedCount = 0;
+      int skippedCount = 0;
+      int failedCount = 0;
 
+      print('[KnowledgeGraphService] 🚩 开始批量生成事件嵌入, 事件总数: \\${allEvents.length}, force=\\$force');
+      int i = 0;
       for (final event in allEvents) {
-        if (force || event.embedding == null || event.embedding!.isEmpty) {
+        print('[调试] eventNode: id=${event.id}, name=${event.name}, embedding: ${event.embedding}');
+        // 修复历史数据逻辑已不需要，直接跳过
+        print('[KnowledgeGraphService] ▶️ 处理事件: id=${event.id}, name=${event.name}, 当前embedding长度: ${event.embedding?.length ?? 0}');
+        if (force || event.embedding == null || event.embedding.isEmpty) {
           final embedding = await embeddingService.generateEventEmbedding(event);
-          if (embedding != null) {
+          if (embedding != null && embedding.isNotEmpty) {
+            // 先查出数据库中的 obxId
+            final dbEvent = objectBox.findEventNodeById(event.id);
+            if (dbEvent != null) {
+              event.obxId = dbEvent.obxId;
+            }
             event.embedding = embedding;
             objectBox.updateEventNode(event);
+            print('[KnowledgeGraphService] ✅ 已写入embedding, 长度: ${embedding.length}, 前5: ${embedding.take(5).toList()}');
+            print('[调试] 写入后 eventNode: id=${event.id}, embedding: ${event.embedding}');
             updatedCount++;
+          } else {
+            print('[KnowledgeGraphService] ⚠️ 未能生成有效embedding, event: id=${event.id}, name=${event.name}');
+            failedCount++;
           }
+        } else {
+          print('[KnowledgeGraphService] ⏩ 跳过已有embedding, event: id=${event.id}, name=${event.name}');
+          skippedCount++;
         }
+        i++;
       }
 
-      print('[KnowledgeGraphService] ✅ 批量嵌入完成，共更新 $updatedCount 个事件');
-    } catch (e) {
-      print('[KnowledgeGraphService] ❌ generateEmbeddingsForAllEvents 错误: $e');
+      print('[KnowledgeGraphService] ✅ 批量嵌入完成, 共更新 \\${updatedCount} 个事件, 跳过 \\${skippedCount} 个, 失败 \\${failedCount} 个');
+    } catch (e, st) {
+      print('[KnowledgeGraphService] ❌ generateEmbeddingsForAllEvents 错误: $e\\n$st');
     }
   }
 
@@ -1345,5 +1366,16 @@ ${_generateUserStatePromptContext(userStateContext)}
     }
 
     return summary.toString().isEmpty ? '未找到相关历史信息' : summary.toString();
+  }
+
+  /// 调试：打印所有事件的 name 和 getEmbeddingText()
+  static void debugPrintAllEventEmbeddingTexts() {
+    final objectBox = ObjectBoxService();
+    final allEvents = objectBox.queryEventNodes();
+    print('[KnowledgeGraphService] ===== 所有事件 embedding 文本调试 =====');
+    for (final event in allEvents) {
+      print('[KnowledgeGraphService] [Event] name: "${event.name}", embeddingText: "${event.getEmbeddingText()}"');
+    }
+    print('[KnowledgeGraphService] ===== END =====');
   }
 }

@@ -319,7 +319,7 @@ void main() {
 
         // 为每个事件生成嵌入向量
         for (final event in testEvents) {
-          event.embedding = await embeddingService.generateEventEmbedding(event);
+          event.embedding = await embeddingService.generateEventEmbedding(event) ?? <double>[];
         }
       });
 
@@ -540,7 +540,7 @@ void main() {
 
         // 生成嵌入向量
         for (final meeting in meetings) {
-          meeting.embedding = await embeddingService.generateEventEmbedding(meeting);
+          meeting.embedding = await embeddingService.generateEventEmbedding(meeting) ?? <double>[];
         }
 
         // 搜索与产品相关的会议
@@ -592,7 +592,7 @@ void main() {
         ];
 
         for (final event in events) {
-          event.embedding = await embeddingService.generateEventEmbedding(event);
+          event.embedding = await embeddingService.generateEventEmbedding(event) ?? <double>[];
         }
 
         // 中文查询
