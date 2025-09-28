@@ -1159,7 +1159,7 @@ class RecordServiceHandler extends TaskHandler {
     // 2. 正常对话分段逻辑
     if (_currentDialogueCharCount >= minCharLimit &&
         _lastSpeechTimestamp > 0 &&
-        now - _lastSpeechTimestamp > 0.5 * 60 * 1000) {
+        now - _lastSpeechTimestamp > 0.25 * 60 * 1000) {
       print('[自动总结] 满足条件，开始自动整理对话内容...');
       DialogueSummary.start(
         startTime: _currentDialogueStartTime,

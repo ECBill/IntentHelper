@@ -360,6 +360,12 @@ ${_generateUserStatePromptContext(userStateContext)}
               lastUpdated: now,
               sourceContext: contextId,
             );
+            // 生成 embedding 并赋值
+            final embeddingService = EmbeddingService();
+            final embedding = await embeddingService.generateEventEmbedding(eventNode);
+            if (embedding != null && embedding.isNotEmpty) {
+              eventNode.embedding = embedding;
+            }
             objectBox.insertEventNode(eventNode);
 
             print('[KnowledgeGraphService] 📝 创建事件: $name -> $eventId');
@@ -1377,5 +1383,15 @@ ${_generateUserStatePromptContext(userStateContext)}
       print('[KnowledgeGraphService] [Event] name: "${event.name}", embeddingText: "${event.getEmbeddingText()}"');
     }
     print('[KnowledgeGraphService] ===== END =====');
+  }
+
+  /// 获取所有事件节点（EventNode）
+  Future<List<EventNode>> getAllEvents() async {
+    final objectBox = ObjectBoxService();
+    try {
+      return objectBox.queryEventNodes();
+    } catch (e) {
+      return <EventNode>[];
+    }
   }
 }

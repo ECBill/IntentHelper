@@ -1,205 +1,229 @@
 import 'dart:convert';
 import 'dart:math';
 import 'package:app/services/knowledge_graph_service.dart';
+import 'package:app/services/embedding_service.dart';
 import 'package:app/models/human_understanding_models.dart' as hum;
+import 'package:app/models/graph_models.dart';
 
 /// 知识图谱管理器 - 基于向量匹配的查询
 class KnowledgeGraphManager {
   final KnowledgeGraphService _service = KnowledgeGraphService();
+  final EmbeddingService _embeddingService = EmbeddingService();
   KnowledgeGraphManager();
 
-  // 添加 initialize 方法
-  Future<void> initialize() async {
-    // 初始化知识图谱管理器
-    print('[KnowledgeGraphManager] 初始化完成');
-  }
-
+  List<hum.Topic> _lastTopics = [];
+  String? _lastTopicsHash;
   Map<String, dynamic>? _cachedResult;
   DateTime? _lastCacheTime;
   static const Duration _cacheValidDuration = Duration(minutes: 5);
 
-  /// 基于活跃主题进行向量匹配查询
-  Future<Map<String, dynamic>> queryByActiveTopics(List<hum.Topic> activeTopics) async {
-    // 检查缓存
-    if (_cachedResult != null && _lastCacheTime != null) {
+  /// 初始化（预留，实际可扩展）
+  Future<void> initialize() async {
+    // 可扩展初始化逻辑
+  }
+
+  /// 主题追踪内容变化时调用，自动查找知识图谱内容
+  /// 新版：严格绑定 EmbeddingService，事件-主题映射清晰，支持排序筛选
+  Future<Map<String, dynamic>> updateActiveTopics(
+    List<hum.Topic> activeTopics, {
+    int topK = 20,
+    double threshold = 0.3,
+    String sortBy = 'similarity', // or 'time'
+  }) async {
+    final topicsHash = _generateTopicsHash(activeTopics);
+    if (_lastTopicsHash == topicsHash && _cachedResult != null && _lastCacheTime != null) {
       final now = DateTime.now();
       if (now.difference(_lastCacheTime!) < _cacheValidDuration) {
-        print('[KnowledgeGraphManager] 🔄 使用缓存的知识图谱结果');
+        print('[KnowledgeGraphManager] 🔄 使用缓存的知识图谱结果 (hash=$topicsHash)');
         return _cachedResult!;
       }
     }
-
-    try {
-      print('[KnowledgeGraphManager] 🔍 开始基于活跃主题进行向量匹配查询...');
-
-      if (activeTopics.isEmpty) {
-        print('[KnowledgeGraphManager] ⚠️ 没有活跃主题，返回空结果');
-        return _buildEmptyResult();
-      }
-
-      // 构建查询请求
-      final queryRequest = _buildVectorQueryRequest(activeTopics);
-
-      // 执行向量匹配查询
-      final vectorResults = await _service.queryByVectorSimilarity( queryRequest);
-
-      // 处理和格式化结果
-      final formattedResult = _formatVectorResults(vectorResults, activeTopics);
-
-      // 缓存结果
-      _cachedResult = formattedResult;
-      _lastCacheTime = DateTime.now();
-
-      print('[KnowledgeGraphManager] ✅ 向量匹配查询完成');
-      return formattedResult;
-
-    } catch (e) {
-      print('[KnowledgeGraphManager] ❌ 向量匹配查询失败: $e');
-      return _buildErrorResult(e.toString());
+    print('[KnowledgeGraphManager] 🔍 主题追踪内容变化，开始向量检索 (hash=$topicsHash)');
+    if (activeTopics.isEmpty) {
+      print('[KnowledgeGraphManager] ⚠️ 没有活跃主题，返回空结果');
+      return _buildEmptyResult();
     }
-  }
-
-  /// 构建向量查询请求
-  Map<String, dynamic> _buildVectorQueryRequest(List<hum.Topic> activeTopics) {
-    final queryTexts = <String>[];
-    final topicMappings = <Map<String, dynamic>>[];
-
-    for (final topic in activeTopics) {
-      // 构建主题的查询文本（结合主题名称、关键词和实体）
-      final queryComponents = <String>[];
-
-      // 添加主题名称
-      queryComponents.add(topic.name);
-
-      // 添加关键词
-      if (topic.keywords.isNotEmpty) {
-        queryComponents.addAll(topic.keywords);
+    // 生成主题查询文本
+    final queryTexts = activeTopics.map((t) => _topicToQueryText(t)).toList();
+    // 生成主题向量
+    final topicVectors = <List<double>>[];
+    for (final text in queryTexts) {
+      print('[KnowledgeGraphManager] 生成主题向量: $text');
+      final vec = await _embeddingService.generateTextEmbedding(text);
+      if (vec != null) {
+        topicVectors.add(vec);
+      } else {
+        print('[KnowledgeGraphManager] 生成主题向量失败: $text');
       }
-
-      // 添加实体
-      if (topic.entities.isNotEmpty) {
-        queryComponents.addAll(topic.entities);
-      }
-
-      // 添加上下文重要信息
-      if (topic.context != null) {
-        final ctx = topic.context as Map<String, dynamic>;
-        if (ctx['importance'] != null) {
-          queryComponents.add(ctx['importance'].toString());
-        }
-        if (ctx['emotional_tone'] != null) {
-          queryComponents.add(ctx['emotional_tone'].toString());
+    }
+    // 获取知识图谱所有事件
+    final allEvents = await _service.getAllEvents();
+    // 事件向量预处理
+    for (final event in allEvents) {
+      if (event.embedding == null || event.embedding!.isEmpty) {
+        print('[KnowledgeGraphManager] 生成事件向量: [33m${event.name ?? event.id}[0m');
+        final emb = await _embeddingService.generateEventEmbedding(event);
+        if (emb != null && emb.isNotEmpty) {
+          event.embedding = emb;
+        } else {
+          print('[KnowledgeGraphManager] 生成事件向量失败: ${event.name ?? event.id}');
         }
       }
-
-      final queryText = queryComponents.join(' ');
-      queryTexts.add(queryText);
-
-      // 记录主题映射信息
-      topicMappings.add({
-        'topic_name': topic.name,
-        'topic_weight': topic.weight,
-        'topic_state': topic.state.toString(),
-        'query_text': queryText,
-        'keywords': topic.keywords,
-        'entities': topic.entities,
-        'context': topic.context ?? {},
-      });
     }
-
-    return {
-      'query_texts': queryTexts,
-      'topic_mappings': topicMappings,
-      'similarity_threshold': 0.3, // 相似度阈值
-      'max_results_per_topic': 10,
-      'include_events': true,
-      'include_entities': true,
-      'include_relations': true,
-    };
+    // 针对每个主题做向量检索，记录事件-主题映射
+    final topicResults = <Map<String, dynamic>>[];
+    final eventToTopicMap = <String, Map<String, dynamic>>{}; // eventId -> {topicIndex, similarity}
+    for (int i = 0; i < topicVectors.length; i++) {
+      final qv = topicVectors[i];
+      final results = await _embeddingService.findSimilarEventsAdvanced(
+        qv,
+        allEvents,
+        topK: topK,
+        threshold: threshold,
+        useWhitening: true,
+        useDiversity: true,
+      );
+      // 记录事件-主题映射
+      for (final e in results) {
+        final eventId = e['id']?.toString() ?? e['event_id']?.toString() ?? '';
+        if (eventId.isNotEmpty) {
+          if (!eventToTopicMap.containsKey(eventId) || (e['similarity_score'] ?? 0.0) > (eventToTopicMap[eventId]?['similarity_score'] ?? 0.0)) {
+            eventToTopicMap[eventId] = {
+              'topicIndex': i,
+              'similarity_score': e['similarity_score'] ?? 0.0,
+            };
+          }
+        }
+      }
+      topicResults.add({'events': results, 'entities': [], 'relations': []});
+    }
+    // 格式化结果，事件带上匹配主题
+    final formattedResult = _formatVectorResultsWithTopicMap({'topic_results': topicResults}, activeTopics, eventToTopicMap, sortBy: sortBy);
+    // 缓存
+    _cachedResult = formattedResult;
+    _lastCacheTime = DateTime.now();
+    _lastTopics = List.from(activeTopics);
+    _lastTopicsHash = topicsHash;
+    print('[KnowledgeGraphManager] ✅ 向量检索完成 (hash=$topicsHash)');
+    return formattedResult;
   }
 
-  /// 格式化向量查询结果
-  Map<String, dynamic> _formatVectorResults(
+  /// 生成主题内容 hash
+  String _generateTopicsHash(List<hum.Topic> topics) {
+    final content = topics.map((t) => _topicToQueryText(t)).join('|');
+    return content.hashCode.toString();
+  }
+
+  /// 主题转查询文本
+  String _topicToQueryText(hum.Topic topic) {
+    final queryComponents = <String>[];
+    queryComponents.add(topic.name);
+    if (topic.keywords.isNotEmpty) queryComponents.addAll(topic.keywords);
+    if (topic.entities.isNotEmpty) queryComponents.addAll(topic.entities);
+    if (topic.context != null) {
+      final ctx = topic.context as Map<String, dynamic>;
+      if (ctx['importance'] != null) queryComponents.add(ctx['importance'].toString());
+      if (ctx['emotional_tone'] != null) queryComponents.add(ctx['emotional_tone'].toString());
+    }
+    return queryComponents.join(' ');
+  }
+
+  /// 刷新缓存（外部可调用）
+  void refreshCache() {
+    _cachedResult = null;
+    _lastCacheTime = null;
+    _lastTopics = [];
+    _lastTopicsHash = null;
+    print('[KnowledgeGraphManager] 🔄 缓存已清除');
+  }
+
+  /// 格式化向量查询结果，事件带上匹配主题信息
+  Map<String, dynamic> _formatVectorResultsWithTopicMap(
     Map<String, dynamic> vectorResults,
-    List<hum.Topic> activeTopics
+    List<hum.Topic> activeTopics,
+    Map<String, Map<String, dynamic>> eventToTopicMap,
+    {String sortBy = 'similarity'}
   ) {
     final allEvents = <Map<String, dynamic>>[];
     final allEntities = <Map<String, dynamic>>[];
     final allRelations = <Map<String, dynamic>>[];
     final topicMatchStats = <Map<String, dynamic>>[];
-
-    // 处理每个主题的匹配结果
     final topicResults = vectorResults['topic_results'] as List? ?? [];
-
     for (int i = 0; i < topicResults.length && i < activeTopics.length; i++) {
       final topicResult = topicResults[i] as Map<String, dynamic>;
       final topic = activeTopics[i];
-
-      // 处理事件匹配结果
       final events = topicResult['events'] as List? ?? [];
-      final processedEvents = _processEventsForTopic(events, topic, i);
+      final processedEvents = events.map<Map<String, dynamic>>((event) {
+        final eventMap = event as Map<String, dynamic>;
+        final eventId = eventMap['id']?.toString() ?? eventMap['event_id']?.toString() ?? '';
+        final matchInfo = eventToTopicMap[eventId] ?? {};
+        return {
+          ...eventMap,
+          'matched_by_topic': topic.name,
+          'matched_by_topic_index': i,
+          'matched_by_topic_weight': topic.weight,
+          'topic_context': {
+            'keywords': topic.keywords,
+            'entities': topic.entities,
+            'state': topic.state.toString(),
+            'context': topic.context ?? {},
+          },
+          'match_details': {
+            'topic_name': topic.name,
+            'similarity_score': eventMap['similarity_score'] ?? 0.0,
+            'matched_text': eventMap['matched_text'] ?? '',
+            'vector_distance': eventMap['vector_distance'] ?? 0.0,
+            'best_match_topic_index': matchInfo['topicIndex'] ?? i,
+            'best_match_similarity': matchInfo['similarity_score'] ?? eventMap['similarity_score'] ?? 0.0,
+          },
+        };
+      }).toList();
       allEvents.addAll(processedEvents);
-
-      // 处理实体匹配结果
-      final entities = topicResult['entities'] as List? ?? [];
-      final processedEntities = _processEntitiesForTopic(entities, topic, i);
-      allEntities.addAll(processedEntities);
-
-      // 处理关系匹配结果
-      final relations = topicResult['relations'] as List? ?? [];
-      final processedRelations = _processRelationsForTopic(relations, topic, i);
-      allRelations.addAll(processedRelations);
-
-      // 统计该主题的匹配情况
+      // 实体、关系同理（略）
+      final entities = (topicResult['entities'] as List? ?? []).map((e) => e as Map<String, dynamic>).toList();
+      allEntities.addAll(entities);
+      final relations = (topicResult['relations'] as List? ?? []).map((e) => e as Map<String, dynamic>).toList();
+      allRelations.addAll(relations);
       topicMatchStats.add({
         'topic_name': topic.name,
         'topic_weight': topic.weight,
         'topic_index': i,
         'events_count': processedEvents.length,
-        'entities_count': processedEntities.length,
-        'relations_count': processedRelations.length,
+        'entities_count': entities.length,
+        'relations_count': relations.length,
         'avg_similarity': _calculateAverageSimilarity([
           ...processedEvents,
-          ...processedEntities,
-          ...processedRelations
+          ...entities, 
+          ...relations
         ]),
         'max_similarity': _calculateMaxSimilarity([
           ...processedEvents,
-          ...processedEntities,
-          ...processedRelations
+          ...entities,
+          ...relations
         ]),
       });
     }
-
-    // 按相似度排序
-    allEvents.sort((a, b) => (b['similarity_score'] as double).compareTo(a['similarity_score'] as double));
-    allEntities.sort((a, b) => (b['similarity_score'] as double).compareTo(a['similarity_score'] as double));
-    allRelations.sort((a, b) => (b['similarity_score'] as double).compareTo(a['similarity_score'] as double));
-
-    // 生成洞察
-    final insights = _generateVectorMatchInsights(topicMatchStats, allEvents, allEntities);
-
+    // 排序
+    if (sortBy == 'similarity') {
+      allEvents.sort((a, b) => (b['similarity_score'] as double).compareTo(a['similarity_score'] as double));
+    } else if (sortBy == 'time') {
+      allEvents.sort((a, b) => ((b['timestamp'] ?? 0) as int).compareTo((a['timestamp'] ?? 0) as int));
+    }
+    // 洞察
+    final insights = _generateVectorMatchInsights(topicMatchStats, allEvents.cast<Map<String, dynamic>>(), allEntities.cast<Map<String, dynamic>>());
     return {
       'generated_at': DateTime.now().millisecondsSinceEpoch,
       'has_data': allEvents.isNotEmpty || allEntities.isNotEmpty || allRelations.isNotEmpty,
       'query_method': 'vector_similarity',
       'active_topics_count': activeTopics.length,
-
-      // 统计信息
       'total_events': allEvents.length,
       'total_entities': allEntities.length,
       'total_relations': allRelations.length,
       'topic_match_stats': topicMatchStats,
-
-      // 详细结果
       'events': allEvents,
       'entities': allEntities,
       'relations': allRelations,
-
-      // 洞察和建议
       'insights': insights,
-
-      // 原始查询信息
       'query_info': {
         'topics_queried': activeTopics.map((t) => {
           'name': t.name,
@@ -212,85 +236,6 @@ class KnowledgeGraphManager {
     };
   }
 
-  /// 处理主题的事件匹配结果
-  List<Map<String, dynamic>> _processEventsForTopic(
-    List events,
-    hum.Topic topic,
-    int topicIndex
-  ) {
-    return events.map<Map<String, dynamic>>((event) {
-      final eventMap = event as Map<String, dynamic>;
-      return {
-        ...eventMap,
-        'matched_by_topic': topic.name,
-        'matched_by_topic_index': topicIndex,
-        'matched_by_topic_weight': topic.weight,
-        'topic_context': {
-          'keywords': topic.keywords,
-          'entities': topic.entities,
-          'state': topic.state.toString(),
-          'context': topic.context ?? {},
-        },
-        // 添加匹配详情
-        'match_details': {
-          'topic_name': topic.name,
-          'similarity_score': eventMap['similarity_score'] ?? 0.0,
-          'matched_text': eventMap['matched_text'] ?? '',
-          'vector_distance': eventMap['vector_distance'] ?? 0.0,
-        },
-      };
-    }).toList();
-  }
-
-  /// 处理主题的实体匹配结果
-  List<Map<String, dynamic>> _processEntitiesForTopic(
-    List entities,
-    hum.Topic topic,
-    int topicIndex
-  ) {
-    return entities.map<Map<String, dynamic>>((entity) {
-      final entityMap = entity as Map<String, dynamic>;
-      return {
-        ...entityMap,
-        'matched_by_topic': topic.name,
-        'matched_by_topic_index': topicIndex,
-        'matched_by_topic_weight': topic.weight,
-        'topic_context': {
-          'keywords': topic.keywords,
-          'entities': topic.entities,
-          'state': topic.state.toString(),
-          'context': topic.context ?? {},
-        },
-        'match_details': {
-          'topic_name': topic.name,
-          'similarity_score': entityMap['similarity_score'] ?? 0.0,
-          'matched_text': entityMap['matched_text'] ?? '',
-          'vector_distance': entityMap['vector_distance'] ?? 0.0,
-        },
-      };
-    }).toList();
-  }
-
-  /// 处理主题的关系匹配结果
-  List<Map<String, dynamic>> _processRelationsForTopic(
-    List relations,
-    hum.Topic topic,
-    int topicIndex
-  ) {
-    return relations.map<Map<String, dynamic>>((relation) {
-      final relationMap = relation as Map<String, dynamic>;
-      return {
-        ...relationMap,
-        'matched_by_topic': topic.name,
-        'matched_by_topic_index': topicIndex,
-        'matched_by_topic_weight': topic.weight,
-        'match_details': {
-          'topic_name': topic.name,
-          'similarity_score': relationMap['similarity_score'] ?? 0.0,
-        },
-      };
-    }).toList();
-  }
 
   /// 计算平均相似度
   double _calculateAverageSimilarity(List<Map<String, dynamic>> items) {
@@ -424,12 +369,6 @@ class KnowledgeGraphManager {
     };
   }
 
-  /// 刷新缓存
-  void refreshCache() {
-    _cachedResult = null;
-    _lastCacheTime = null;
-    print('[KnowledgeGraphManager] 🔄 缓存已清除');
-  }
 
   /// 获取缓存状态
   Map<String, dynamic> getCacheStatus() {

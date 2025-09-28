@@ -30,6 +30,12 @@ class _KGTestPageState extends State<KGTestPage> with TickerProviderStateMixin {
   bool _isProcessing = false;
   String _processResult = '';
 
+  // 向量查询相关状态提升为成员变量
+  final TextEditingController _vectorSearchController = TextEditingController();
+  final FocusNode _vectorSearchFocusNode = FocusNode();
+  List<Map<String, dynamic>> _vectorResults = [];
+  bool _isVectorSearching = false;
+
   @override
   void initState() {
     super.initState();
@@ -45,6 +51,8 @@ class _KGTestPageState extends State<KGTestPage> with TickerProviderStateMixin {
   void dispose() {
     _tabController.dispose();
     _searchController.dispose();
+    _vectorSearchController.dispose();
+    _vectorSearchFocusNode.dispose();
     super.dispose();
   }
 
@@ -1847,78 +1855,140 @@ class _KGTestPageState extends State<KGTestPage> with TickerProviderStateMixin {
   }
 
   Widget _buildVectorSearchTab() {
-    final TextEditingController _vectorSearchController = TextEditingController();
-    List<Map<String, dynamic>> _vectorResults = [];
-    bool _isSearching = false;
+    Future<void> _doVectorSearch() async {
+      final query = _vectorSearchController.text.trim();
+      if (query.isEmpty) return;
+      setState(() => _isVectorSearching = true);
+      final results = await KnowledgeGraphService.searchEventsByText(query);
+      setState(() {
+        _vectorResults = results;
+        _isVectorSearching = false;
+      });
+    }
 
-    return StatefulBuilder(
-      builder: (context, setState) => Padding(
-        padding: EdgeInsets.all(16.w),
-        child: Column(
-          crossAxisAlignment: CrossAxisAlignment.start,
-          children: [
-            Text('事件向量查询', style: TextStyle(fontSize: 18.sp, fontWeight: FontWeight.bold)),
-            SizedBox(height: 12.h),
-            TextField(
-              controller: _vectorSearchController,
-              decoration: InputDecoration(
-                labelText: '输入一段话，匹配相关事件',
-                hintText: '例如：我昨天在星巴克用MacBook写代码',
-                border: OutlineInputBorder(),
-                suffixIcon: IconButton(
-                  icon: Icon(Icons.search),
-                  onPressed: _isSearching
-                      ? null
-                      : () async {
-                    final query = _vectorSearchController.text.trim();
-                    if (query.isEmpty) return;
+    // 新增：事件类型对应卡片背景色
+    Color _getEventCardColor(String type) {
+      switch (type.toLowerCase()) {
+        case '讨论': case 'discussion':
+          return Colors.orange.shade100;
+        case '生活': case 'life':
+          return Color(0xFFF8E1E9); // 梅红色
+        case '工作': case 'work':
+          return Color(0xFFCCE2D0); // 墨绿色
+        case '娱乐': case 'entertainment':
+          return Colors.amber.shade100;
+        case '学习': case 'study':
+          return Colors.purple.shade50;
+        case '计划': case 'plan':
+          return Colors.indigo.shade50;
+        case '会议': case 'meeting':
+          return Colors.blue.shade50;
+        case '购买': case 'purchase':
+          return Colors.green.shade50;
+        default:
+          return Colors.grey.shade100;
+      }
+    }
 
-                    setState(() => _isSearching = true);
-
-                    final results = await KnowledgeGraphService.searchEventsByText(query);
-                    setState(() {
-                      _vectorResults = results;
-                      _isSearching = false;
-                    });
-                  },
+    return GestureDetector(
+      onTap: () => FocusScope.of(context).unfocus(),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Padding(
+            padding: EdgeInsets.all(16.w),
+            child: Text('事件向量查询', style: TextStyle(fontSize: 20.sp, fontWeight: FontWeight.bold)),
+          ),
+          Padding(
+            padding: EdgeInsets.symmetric(horizontal: 16.w),
+            child: Material(
+              elevation: 2,
+              borderRadius: BorderRadius.circular(16.r),
+              child: TextField(
+                controller: _vectorSearchController,
+                focusNode: _vectorSearchFocusNode,
+                decoration: InputDecoration(
+                  contentPadding: EdgeInsets.symmetric(vertical: 18.h, horizontal: 20.w),
+                  labelText: '输入一段话，匹配相关事件',
+                  hintText: '例如：我昨天在星巴克用MacBook写代码',
+                  border: OutlineInputBorder(borderRadius: BorderRadius.circular(16.r)),
+                  suffixIcon: AnimatedContainer(
+                    duration: Duration(milliseconds: 200),
+                    width: 48,
+                    height: 48,
+                    child: IconButton(
+                      icon: Icon(Icons.search, size: 28, color: _isVectorSearching ? Colors.grey : Colors.blue),
+                      onPressed: _isVectorSearching ? null : () async {
+                        await _doVectorSearch();
+                        _vectorSearchFocusNode.unfocus();
+                      },
+                      tooltip: '查询',
+                    ),
+                  ),
                 ),
+                textInputAction: TextInputAction.search,
+                onSubmitted: (_) async {
+                  await _doVectorSearch();
+                  _vectorSearchFocusNode.unfocus();
+                },
+                style: TextStyle(fontSize: 16.sp),
+                enabled: !_isVectorSearching,
               ),
             ),
-            SizedBox(height: 20.h),
-
-            if (_isSearching)
-              Center(child: CircularProgressIndicator())
-            else if (_vectorResults.isEmpty)
-              Text('没有找到匹配的事件', style: TextStyle(color: Colors.grey))
-            else
-              Expanded(
-                child: ListView.builder(
-                  itemCount: _vectorResults.length,
-                  itemBuilder: (context, index) {
-                    final result = _vectorResults[index];
-                    final similarity = (result['similarity'] as double?)?.toStringAsFixed(2) ?? 'N/A';
-                    final event = result['event'] as EventNode?;
-
-                    if (event == null) return SizedBox.shrink();
-
-                    return ListTile(
-                      title: Text(event.name),
-                      subtitle: Text('${event.type} • 相似度: $similarity'),
-                      trailing: event.startTime != null
-                          ? Text(DateFormat('MM/dd HH:mm').format(event.startTime!))
-                          : null,
-                      onTap: () {
-                        final participants = _allNodes.where((n) =>
-                            _allEventRelations.any((r) => r.eventId == event.id && r.entityId == n.id)
-                        ).toList();
-                        _showEventDetails(event, participants);
-                      },
-                    );
-                  },
-                ),
+          ),
+          SizedBox(height: 18.h),
+          Expanded(
+            child: Container(
+              width: double.infinity,
+              padding: EdgeInsets.symmetric(horizontal: 12.w, vertical: 8.h),
+              decoration: BoxDecoration(
+                color: Colors.grey[50],
+                borderRadius: BorderRadius.vertical(top: Radius.circular(18.r)),
+                boxShadow: [
+                  BoxShadow(
+                    color: Colors.grey.withOpacity(0.08),
+                    blurRadius: 8,
+                    offset: Offset(0, -2),
+                  ),
+                ],
               ),
-          ],
-        ),
+              child: _isVectorSearching
+                  ? Center(child: CircularProgressIndicator())
+                  : _vectorResults.isEmpty
+                      ? Center(
+                          child: Text('没有找到匹配的事件', style: TextStyle(color: Colors.grey, fontSize: 15.sp)),
+                        )
+                      : ListView.separated(
+                          itemCount: _vectorResults.length,
+                          separatorBuilder: (_, __) => Divider(height: 18.h, color: Colors.grey[300]),
+                          itemBuilder: (context, index) {
+                            final result = _vectorResults[index];
+                            final similarity = (result['similarity'] as double?)?.toStringAsFixed(2) ?? 'N/A';
+                            final event = result['event'] as EventNode?;
+                            if (event == null) return SizedBox.shrink();
+                            return Card(
+                              elevation: 2,
+                              color: _getEventCardColor(event.type),
+                              shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12.r)),
+                              child: ListTile(
+                                contentPadding: EdgeInsets.symmetric(vertical: 10.h, horizontal: 16.w),
+                                title: Text(event.name, style: TextStyle(fontWeight: FontWeight.bold, fontSize: 16.sp)),
+                                subtitle: Text('${event.type} • 相似度: $similarity', style: TextStyle(fontSize: 13.sp)),
+                                trailing: event.startTime != null
+                                    ? Text(DateFormat('MM/dd HH:mm').format(event.startTime!), style: TextStyle(fontSize: 12.sp, color: Colors.grey[600]))
+                                    : null,
+                                onTap: () {
+                                  final participants = _allNodes.where((n) =>
+                                      _allEventRelations.any((r) => r.eventId == event.id && r.entityId == n.id)
+                                  ).toList();
+                                  _showEventDetails(event, participants);
+                                },
+                              ));
+                          }
+                        ),
+            ),
+          ),
+        ],
       ),
     );
   }
@@ -2055,7 +2125,7 @@ class _KGTestPageState extends State<KGTestPage> with TickerProviderStateMixin {
 
       for (final entity in orphanedEntities) {
         try {
-          // 使用ObjectBox的remove方法删除节点（通��数据库ID）
+          // 使用ObjectBox的remove方法删除节点（通过数据库ID）
           if (entity.obxId != null && entity.obxId! > 0) {
             final success = ObjectBoxService.nodeBox.remove(entity.obxId!);
             if (success) {

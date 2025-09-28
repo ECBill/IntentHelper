@@ -480,6 +480,124 @@ class EmbeddingService {
     return dotProduct / (sqrt(normA) * sqrt(normB));
   }
 
+  /// 计算两个向量的欧氏距离
+  double calculateEuclideanDistance(List<double> a, List<double> b) {
+    if (a.length != b.length) throw ArgumentError('向量维度不匹配');
+    double sum = 0.0;
+    for (int i = 0; i < a.length; i++) {
+      final diff = a[i] - b[i];
+      sum += diff * diff;
+    }
+    return sqrt(sum);
+  }
+
+  /// 计算曼哈顿距离
+  double calculateManhattanDistance(List<double> a, List<double> b) {
+    if (a.length != b.length) throw ArgumentError('向量维度不匹配');
+    double sum = 0.0;
+    for (int i = 0; i < a.length; i++) {
+      sum += (a[i] - b[i]).abs();
+    }
+    return sum;
+  }
+
+  /// 计算点积
+  double calculateDotProduct(List<double> a, List<double> b) {
+    if (a.length != b.length) throw ArgumentError('向量维度不匹配');
+    double sum = 0.0;
+    for (int i = 0; i < a.length; i++) {
+      sum += a[i] * b[i];
+    }
+    return sum;
+  }
+
+  /// 向量whitening（均值方差归一化）
+  List<double> whitenVector(List<double> vector, {List<double>? mean, List<double>? std}) {
+    final vMean = mean ?? _calcMean(vector);
+    final vStd = std ?? _calcStd(vector, vMean);
+    return [for (int i = 0; i < vector.length; i++) (vStd[i] > 1e-8 ? (vector[i] - vMean[i]) / vStd[i] : 0.0)];
+  }
+  List<double> _calcMean(List<double> v) => List.generate(v.length, (i) => v[i]);
+  List<double> _calcStd(List<double> v, List<double> mean) {
+    final std = List<double>.filled(v.length, 0.0);
+    for (int i = 0; i < v.length; i++) {
+      std[i] = (v[i] - mean[i]) * (v[i] - mean[i]);
+    }
+    return std.map((e) => sqrt(e)).toList();
+  }
+
+  /// 多路融合排序（先用余弦筛选，再用欧氏距离重排）
+  Future<List<Map<String, dynamic>>> findSimilarEventsAdvanced(
+      List<double> queryVector,
+      List<EventNode> eventNodes, {
+        int topK = 10,
+        double threshold = 0.5,
+        bool useWhitening = false,
+        bool useDiversity = false,
+      }) async {
+    // 1. 可选whitening
+    final qv = useWhitening ? whitenVector(queryVector) : queryVector;
+    final candidates = <Map<String, dynamic>>[];
+    for (final eventNode in eventNodes) {
+      if (eventNode.embedding != null && eventNode.embedding!.isNotEmpty) {
+        final emb = useWhitening ? whitenVector(eventNode.embedding!) : eventNode.embedding!;
+        final cosine = calculateCosineSimilarity(qv, emb);
+        if (cosine >= threshold) {
+          candidates.add({'event': eventNode, 'similarity': cosine, 'embedding': emb});
+        }
+      }
+    }
+    // 2. 先按余弦排序，取topK*2
+    candidates.sort((a, b) => (b['similarity'] as double).compareTo(a['similarity'] as double));
+    final shortlist = candidates.take(topK * 2).toList();
+    // 3. 用欧氏距离重排
+    shortlist.sort((a, b) => calculateEuclideanDistance(qv, a['embedding'] as List<double>)
+        .compareTo(calculateEuclideanDistance(qv, b['embedding'] as List<double>)));
+    var results = shortlist.take(topK).toList();
+    // 4. 可选多样性提升（最大化前K结果的差异性）
+    if (useDiversity && results.length > 1) {
+      final diverse = <Map<String, dynamic>>[];
+      final used = <int>{};
+      for (int i = 0; i < results.length; i++) {
+        if (i == 0) {
+          diverse.add(results[0]);
+          used.add(0);
+        } else {
+          double minSim = 1.0;
+          int minIdx = -1;
+          for (int j = 0; j < results.length; j++) {
+            if (used.contains(j)) continue;
+            double sim = 0.0;
+            for (final d in diverse) {
+              sim += calculateCosineSimilarity(
+                  d['embedding'] as List<double>,
+                  results[j]['embedding'] as List<double>);
+            }
+            sim /= diverse.length;
+            if (sim < minSim) {
+              minSim = sim;
+              minIdx = j;
+            }
+          }
+          if (minIdx >= 0) {
+            diverse.add(results[minIdx]);
+            used.add(minIdx);
+          }
+        }
+      }
+      results = diverse;
+    }
+    // 5. 返回结果
+    return results.map((e) => {'event': e['event'], 'similarity': e['similarity']}).toList();
+  }
+
+  /// 预留PCA降维接口（未实现，需外部支持）
+  List<double> pcaReduce(List<double> vector, int targetDim) {
+    // TODO: 可集成外部PCA库
+    if (vector.length <= targetDim) return vector;
+    return vector.take(targetDim).toList();
+  }
+
   /// 查找与查询向量最相似的事件
   Future<List<Map<String, dynamic>>> findSimilarEvents(
       List<double> queryVector,
