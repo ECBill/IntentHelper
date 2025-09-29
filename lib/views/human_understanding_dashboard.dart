@@ -780,7 +780,6 @@ class _HumanUnderstandingDashboardState extends State<HumanUnderstandingDashboar
   }
 
   Widget _buildKnowledgeGraphTab() {
-    // 直接获取 KnowledgeGraphManager 的最新结果
     final kgResults = _kgManager.getLastResult()?['results'] as List? ?? [];
     final isDataEmpty = kgResults.isEmpty;
 
@@ -793,99 +792,138 @@ class _HumanUnderstandingDashboardState extends State<HumanUnderstandingDashboar
             width: double.infinity,
             padding: EdgeInsets.all(12.w),
             decoration: BoxDecoration(
-              gradient: LinearGradient(
-                colors: isDataEmpty
-                  ? [Colors.red.withOpacity(0.1), Colors.red.withOpacity(0.05)]
-                  : [Colors.blue.withOpacity(0.1), Colors.indigo.withOpacity(0.1)],
-              ),
-              borderRadius: BorderRadius.circular(8.r),
+              color: isDataEmpty ? Colors.red[50] : Colors.white,
+              borderRadius: BorderRadius.circular(14.r),
               border: Border.all(
-                color: isDataEmpty ? Colors.red.withOpacity(0.3) : Colors.blue.withOpacity(0.3)
+                color: isDataEmpty ? Colors.red.withOpacity(0.2) : Colors.grey.withOpacity(0.18),
+                width: 1.0,
               ),
+              boxShadow: [
+                if (!isDataEmpty)
+                  BoxShadow(
+                    color: Colors.grey.withOpacity(0.08),
+                    blurRadius: 8,
+                    offset: Offset(0, 2),
+                  ),
+              ],
             ),
             child: Row(
               children: [
                 Icon(
                   isDataEmpty ? Icons.error_outline : Icons.hub,
-                  size: 20.sp,
-                  color: isDataEmpty ? Colors.red[600] : Colors.blue[600]
+                  size: 22.sp,
+                  color: isDataEmpty ? Colors.red[400] : Colors.blueGrey[700],
                 ),
                 SizedBox(width: 12.w),
                 Expanded(
                   child: Text(
-                    isDataEmpty ? '未找到相关知识图谱节点' : '知识图谱节点（向量匹配结果）',
+                    isDataEmpty ? '未找到相关知识图谱节点' : '知识图谱节点 · 向量匹配结果',
                     style: TextStyle(
-                      fontSize: 14.sp,
+                      fontSize: 16.sp,
                       fontWeight: FontWeight.w600,
-                      color: isDataEmpty ? Colors.red[700] : Colors.blue[700],
+                      color: isDataEmpty ? Colors.red[700] : Colors.blueGrey[800],
+                      letterSpacing: 1.1,
                     ),
                   ),
                 ),
               ],
             ),
           ),
-          SizedBox(height: 16.h),
+          SizedBox(height: 14.h),
           if (isDataEmpty)
             Center(
-              child: Text('暂无知识图谱节点', style: TextStyle(fontSize: 16.sp, color: Colors.grey)),
+              child: Text('暂无知识图谱节点', style: TextStyle(fontSize: 16.sp, color: Colors.grey, fontWeight: FontWeight.w500)),
             )
           else
             Expanded(
               child: ListView.separated(
                 itemCount: kgResults.length,
-                separatorBuilder: (_, __) => SizedBox(height: 10.h),
+                separatorBuilder: (_, __) => SizedBox(height: 12.h),
                 itemBuilder: (context, idx) {
                   final node = kgResults[idx] as Map<String, dynamic>;
                   return Card(
                     elevation: 2,
+                    shape: RoundedRectangleBorder(
+                      borderRadius: BorderRadius.circular(14.r),
+                      side: BorderSide(color: Colors.grey.withOpacity(0.13), width: 1),
+                    ),
+                    color: Colors.white,
                     child: Padding(
-                      padding: EdgeInsets.all(12.w),
+                      padding: EdgeInsets.symmetric(horizontal: 16.w, vertical: 14.h),
                       child: Column(
                         crossAxisAlignment: CrossAxisAlignment.start,
                         children: [
+                          // 标题
                           Text(
                             node['title']?.toString() ?? node['name']?.toString() ?? '未命名节点',
-                            style: TextStyle(fontSize: 16.sp, fontWeight: FontWeight.bold),
+                            style: TextStyle(fontSize: 17.sp, fontWeight: FontWeight.bold, color: Colors.blueGrey[900]),
+                            maxLines: 2,
+                            overflow: TextOverflow.ellipsis,
                           ),
+                          SizedBox(height: 6.h),
+                          // 主题标签单独一行
                           if (node['matched_topic'] != null)
-                            Padding(
-                              padding: EdgeInsets.only(top: 2.h),
-                              child: Row(
-                                children: [
-                                  Icon(Icons.label, size: 14.sp, color: Colors.deepPurple),
-                                  SizedBox(width: 4.w),
-                                  Text(
+                            Row(
+                              children: [
+                                Icon(Icons.label, size: 15.sp, color: Colors.blue[400]),
+                                SizedBox(width: 4.w),
+                                Flexible(
+                                  child: Text(
                                     '主题: ${node['matched_topic']}',
-                                    style: TextStyle(fontSize: 12.sp, color: Colors.deepPurple, fontWeight: FontWeight.w500),
+                                    style: TextStyle(fontSize: 13.sp, color: Colors.blue[600], fontWeight: FontWeight.w500),
+                                    maxLines: 1,
+                                    overflow: TextOverflow.ellipsis,
                                   ),
-                                ],
-                              ),
+                                ),
+                              ],
                             ),
-                          if (node['description'] != null)
+                          if (node['description'] != null && node['description'].toString().trim().isNotEmpty)
                             Padding(
-                              padding: EdgeInsets.only(top: 4.h),
+                              padding: EdgeInsets.only(top: 8.h, bottom: 2.h),
                               child: Text(
                                 node['description'].toString(),
-                                style: TextStyle(fontSize: 13.sp, color: Colors.black87),
+                                style: TextStyle(fontSize: 13.sp, color: Colors.grey[800], fontWeight: FontWeight.w400, height: 1.32),
+                                maxLines: 3,
+                                overflow: TextOverflow.ellipsis,
                               ),
                             ),
                           if (node['similarity'] != null || node['score'] != null)
                             Padding(
-                              padding: EdgeInsets.only(top: 4.h),
-                              child: Text(
-                                '相关度: '
-                                  + ((node['similarity'] is num)
-                                    ? (node['similarity'] as num).toStringAsFixed(3)
-                                    : (node['score'] is num)
-                                      ? (node['score'] as num).toStringAsFixed(3)
-                                      : ''),
-                                style: TextStyle(fontSize: 12.sp, color: Colors.blueGrey),
+                              padding: EdgeInsets.only(top: 6.h, bottom: 2.h),
+                              child: Row(
+                                children: [
+                                  Icon(Icons.auto_awesome, color: Colors.blue[300], size: 15.sp),
+                                  SizedBox(width: 4.w),
+                                  Text('相关度', style: TextStyle(fontSize: 12.sp, color: Colors.blue[400], fontWeight: FontWeight.w500)),
+                                  SizedBox(width: 8.w),
+                                  Expanded(
+                                    child: LinearProgressIndicator(
+                                      value: ((node['similarity'] ?? node['score']) as num?)?.toDouble().clamp(0.0, 1.0) ?? 0.0,
+                                      minHeight: 7,
+                                      backgroundColor: Colors.blueGrey.withOpacity(0.08),
+                                      valueColor: AlwaysStoppedAnimation<Color>(Colors.blue[400]!),
+                                    ),
+                                  ),
+                                  SizedBox(width: 8.w),
+                                  Text(
+                                    ((node['similarity'] ?? node['score']) is num)
+                                      ? (((node['similarity'] ?? node['score']) as num).toStringAsFixed(3))
+                                      : '',
+                                    style: TextStyle(fontSize: 12.sp, color: Colors.blue[700], fontWeight: FontWeight.bold),
+                                  ),
+                                ],
                               ),
                             ),
                           if (node['id'] != null)
                             Padding(
                               padding: EdgeInsets.only(top: 2.h),
-                              child: Text('ID: ${node['id']}', style: TextStyle(fontSize: 11.sp, color: Colors.grey)),
+                              child: Row(
+                                children: [
+                                  Icon(Icons.fingerprint, size: 13.sp, color: Colors.grey[400]),
+                                  SizedBox(width: 4.w),
+                                  Text('ID: ${node['id']}', style: TextStyle(fontSize: 11.sp, color: Colors.grey[600], fontWeight: FontWeight.w400)),
+                                ],
+                              ),
                             ),
                         ],
                       ),
