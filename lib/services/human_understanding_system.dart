@@ -48,6 +48,9 @@ class HumanUnderstandingSystem {
   static const int _monitorInterval = 5;
   static const int _conversationBatchSize = 5;
 
+  // 记录最近一次主题追踪结果（字符串列表）
+  List<String> _lastActiveTopics = [];
+
   /// 系统状态更新流
   Stream<HumanUnderstandingSystemState> get systemStateUpdates => _systemStateController.stream;
 
@@ -393,8 +396,8 @@ class HumanUnderstandingSystem {
       complexityScore: 0.5,
     );
 
-    // 生成知识图谱数据统计
-    final knowledgeGraphData = _generateKnowledgeGraphData();
+    // 直接获取知识图谱数据
+    final knowledgeGraphData = _knowledgeGraphManager.getLastResult() ?? {};
     final intentTopicRelations = _generateIntentTopicRelations();
 
     return HumanUnderstandingSystemState(
@@ -410,259 +413,6 @@ class HumanUnderstandingSystem {
         'system_initialized': _initialized,
       },
     );
-  }
-
-  /// 刷新知识图谱缓存
-  void refreshKnowledgeGraphCache() {
-    _knowledgeGraphManager.refreshCache();
-    print('[HumanUnderstandingSystem] 🔄 知识图谱缓存已刷新');
-  }
-
-  /// 获取知识图谱缓存状态
-  Map<String, dynamic> getKnowledgeGraphCacheStatus() {
-    return _knowledgeGraphManager.getCacheStatus();
-  }
-
-  /// 🔥 核心修复：稳定的知识图谱数据生成
-  Map<String, dynamic> _generateKnowledgeGraphData() {
-    // 🔥 新增：开始计时
-    final stopwatch = Stopwatch()..start();
-
-    try {
-      // 检查缓存
-      if (_cachedKnowledgeGraphData != null &&
-          _lastKnowledgeGraphUpdate != null &&
-          DateTime.now().difference(_lastKnowledgeGraphUpdate!) < _cacheValidDuration) {
-         // 🔥 修复：缓存命中时也记录时长
-        stopwatch.stop();
-        print('[HumanUnderstandingSystem] 🔄 返回缓存的知识图谱数据 (耗时: ${stopwatch.elapsedMilliseconds}ms)');
-        return _cachedKnowledgeGraphData!;
-      }
-
-      final objectBox = ObjectBoxService();
-      final allNodes = objectBox.queryNodes();
-      final allEvents = objectBox.queryEventNodes();
-      final allEdges = objectBox.queryEdges();
-
-      print('[HumanUnderstandingSystem] 📊 数据库统计: ${allNodes.length}节点, ${allEvents.length}事件, ${allEdges.length}边');
-
-      // 放宽关键词过滤条件
-      final activeTopics = _topicTracker.getActiveTopics().take(20).toList();
-      final keywordSet = <String>{};
-
-      for (final topic in activeTopics) {
-        for (final keyword in topic.keywords) {
-          final normalizedKeyword = keyword.trim();
-          if (normalizedKeyword.isNotEmpty &&
-              normalizedKeyword.length >= 1 &&
-              normalizedKeyword.length <= 50) {
-            keywordSet.add(normalizedKeyword.toLowerCase());
-          }
-        }
-      }
-
-      // 如果关键词不够，从最近对话中提取
-      if (keywordSet.length < 5) {
-        final recentRecords = ObjectBoxService().getRecordsSince(
-          DateTime.now().subtract(Duration(hours: 24)).millisecondsSinceEpoch
-        );
-
-        for (final record in recentRecords.take(10)) {
-          final content = record.content?.toString() ?? '';
-          final words = content.split(RegExp(r'[，。、\s]+')).where((w) =>
-            w.trim().isNotEmpty && w.trim().length >= 1 && w.trim().length <= 20
-          );
-          for (final word in words.take(3)) {
-            keywordSet.add(word.trim().toLowerCase());
-          }
-        }
-      }
-
-      final limitedKeywords = keywordSet.take(30).toList();
-
-      // 更宽松的匹配逻辑
-      final relatedEntityNodes = <Node>[];
-      final relatedEventNodes = <EventNode>[];
-      final entityIds = <String>{};
-      final eventIds = <String>{};
-
-      print('[HumanUnderstandingSystem] 🔍 使用${limitedKeywords.length}个关键词查找');
-
-      // 实体匹配
-      for (final node in allNodes) {
-        bool isMatched = false;
-
-        for (final keyword in limitedKeywords) {
-          if (node.name.toLowerCase().contains(keyword) ||
-              keyword.contains(node.name.toLowerCase()) ||
-              node.canonicalName.toLowerCase().contains(keyword) ||
-              keyword.contains(node.canonicalName.toLowerCase()) ||
-              node.aliases.any((alias) =>
-                alias.toLowerCase().contains(keyword) ||
-                keyword.contains(alias.toLowerCase())
-              )) {
-            isMatched = true;
-            break;
-          }
-        }
-
-        if (isMatched && !entityIds.contains(node.id)) {
-          relatedEntityNodes.add(node);
-          entityIds.add(node.id);
-        }
-      }
-
-      // 如果通过关键词找不到足够实体，直接取最近的实体
-      if (relatedEntityNodes.length < 5 && allNodes.isNotEmpty) {
-        final recentNodes = allNodes.take(10).toList();
-        for (final node in recentNodes) {
-          if (!entityIds.contains(node.id)) {
-            relatedEntityNodes.add(node);
-            entityIds.add(node.id);
-            if (relatedEntityNodes.length >= 5) break;
-          }
-        }
-        print('[HumanUnderstandingSystem] 📈 补充了${relatedEntityNodes.length}个最近实体');
-      }
-
-      // 基于实体查找相关事件
-      for (final entityNode in relatedEntityNodes) {
-        final entityEventRelations = objectBox.queryEventEntityRelations(entityId: entityNode.id);
-
-        for (final relation in entityEventRelations.take(5)) {
-          final event = objectBox.findEventNodeById(relation.eventId);
-          if (event != null && !eventIds.contains(event.id)) {
-            relatedEventNodes.add(event);
-            eventIds.add(event.id);
-          }
-        }
-      }
-
-      // 如果还是没有事件，直接取最近的事件
-      if (relatedEventNodes.isEmpty && allEvents.isNotEmpty) {
-        final recentEvents = allEvents.take(5).toList();
-        relatedEventNodes.addAll(recentEvents);
-        print('[HumanUnderstandingSystem] 📈 补充了${recentEvents.length}个最近事件');
-      }
-
-      // 生成数据
-      final entities = relatedEntityNodes.map((node) => {
-        'name': node.name,
-        'type': node.type,
-        'attributes_count': node.attributes.length,
-        'aliases': List<String>.from(node.aliases),
-        'canonical_name': node.canonicalName,
-      }).toList();
-
-      final events = relatedEventNodes.map((event) => {
-        'name': event.name,
-        'type': event.type,
-        'description': event.description ?? '',
-        'location': event.location ?? '',
-        'start_time': event.startTime?.toIso8601String() ?? '',
-        'formatted_date': _formatEventDate(event.startTime ?? event.lastUpdated),
-      }).toList();
-
-      // 生成关系数据
-      final relations = <Map<String, dynamic>>[];
-      for (final entityNode in relatedEntityNodes) {
-        final entityEventRelations = objectBox.queryEventEntityRelations(entityId: entityNode.id);
-        for (final relation in entityEventRelations) {
-          final event = relatedEventNodes.firstWhere(
-            (e) => e.id == relation.eventId,
-            orElse: () => EventNode(id: '', name: '', type: '', lastUpdated: DateTime.now(), sourceContext: ''),
-          );
-          if (event.name.isNotEmpty) {
-            relations.add({
-              'source': entityNode.name,
-              'target': event.name,
-              'relation_type': relation.role,
-              'entity_type': entityNode.type,
-              'event_type': event.type,
-            });
-          }
-        }
-      }
-
-      // 生成洞察
-      final insights = <String>[];
-      insights.add('成功检索到${relatedEntityNodes.length}个相关实体和${relatedEventNodes.length}个相关事件');
-
-      if (relatedEventNodes.isNotEmpty) {
-        insights.add('最近的事件记录: ${events.first['name']}');
-      }
-
-      if (limitedKeywords.isNotEmpty) {
-        insights.add('基于${limitedKeywords.length}个活跃主题关键词进行智能匹配');
-      }
-
-      final result = {
-        'entities': entities,
-        'relations': relations,
-        'events': events,
-        'insights': insights,
-        'entity_count': allNodes.length,
-        'relation_count': allEdges.length,
-        'event_count': allEvents.length,
-        'relevant_entity_count': relatedEntityNodes.length,
-        'relevant_event_count': relatedEventNodes.length,
-        'keywords_used': List<String>.from(limitedKeywords),
-        'generated_at': DateTime.now().millisecondsSinceEpoch,
-        'is_empty': false,
-        'has_data': entities.isNotEmpty || events.isNotEmpty,
-        'cache_info': {
-          'cache_duration_minutes': _cacheValidDuration.inMinutes,
-          'cache_expires_at': DateTime.now().add(_cacheValidDuration).millisecondsSinceEpoch,
-        },
-      };
-
-      // 缓存结果
-      _cachedKnowledgeGraphData = result;
-      _lastKnowledgeGraphUpdate = DateTime.now();
-
-      // 🔥 修复：计算查询耗时并输出完整日志
-      stopwatch.stop();
-      final queryTimeMs = stopwatch.elapsedMilliseconds;
-      print('[HumanUnderstandingSystem] ⏱️ 知识图谱数据生成完成，耗时: ${queryTimeMs}ms (生成${entities.length}个实体，${events.length}个事件，${relations.length}个关系)');
-
-      // 🔥 修复：简化第二个日志输出，避免重复
-      print('[HumanUnderstandingSystem] ✅ 知识图谱数据已缓存，查询用时: ${queryTimeMs}ms');
-      return result;
-
-    } catch (e) {
-      // 🔥 修复：异常情况下也记录耗时
-      stopwatch.stop();
-      final queryTimeMs = stopwatch.elapsedMilliseconds;
-      print('[HumanUnderstandingSystem] ❌ 生成知识图谱数据失败 (耗时: ${queryTimeMs}ms): $e');
-
-      // 返回稳定的非空结构
-      final fallbackResult = {
-        'entities': <Map<String, dynamic>>[],
-        'relations': <Map<String, dynamic>>[],
-        'events': <Map<String, dynamic>>[],
-        'insights': ['数据生成遇到问题，但系统仍在正常运行...', '请稍后刷新或联系技术支持'],
-        'entity_count': 0,
-        'relation_count': 0,
-        'event_count': 0,
-        'relevant_entity_count': 0,
-        'relevant_event_count': 0,
-        'keywords_used': <String>[],
-        'generated_at': DateTime.now().millisecondsSinceEpoch,
-        'is_empty': false,
-        'has_data': false,
-        'error': e.toString(),
-        'cache_info': {
-          'cache_duration_minutes': _cacheValidDuration.inMinutes,
-          'cache_expires_at': DateTime.now().add(_cacheValidDuration).millisecondsSinceEpoch,
-        },
-      };
-
-      // 即使出错也要缓存结果
-      _cachedKnowledgeGraphData = fallbackResult;
-      _lastKnowledgeGraphUpdate = DateTime.now();
-
-      return fallbackResult;
-    }
   }
 
 
@@ -748,6 +498,11 @@ class HumanUnderstandingSystem {
         _reminderManager.processSemanticAnalysis(analysis),
         _naturalReminderService.processSemanticAnalysis(analysis),
       ]);
+
+      // 🔥 新增：主题追踪后自动同步知识图谱
+      await _knowledgeGraphManager.updateActiveTopics(
+        _topicTracker.getActiveTopics().map((t) => t.name).toList(),
+      );
 
       final intents = results[0] as List<Intent>;
       final topics = results[1] as List<ConversationTopic>;
@@ -1187,5 +942,18 @@ class HumanUnderstandingSystem {
     } catch (e) {
       print('[HumanUnderstandingSystem] ❌ 释放资源时出现错误: $e');
     }
+  }
+
+  // 保证为 public 方法
+  void refreshKnowledgeGraphCache() {
+    _knowledgeGraphManager.refreshCache();
+    if (_lastActiveTopics.isNotEmpty) {
+      _knowledgeGraphManager.updateActiveTopics(_lastActiveTopics);
+    }
+  }
+
+  /// 供UI层同步当前展示的主题（如dashboard主动调用）
+  void setActiveTopicsFromUI(List<String> topics) {
+    _lastActiveTopics = List.from(topics);
   }
 }
