@@ -22,6 +22,7 @@ import '../controllers/export_controller.dart';
 import '../controllers/style_controller.dart';
 import '../controllers/setting_controller.dart';
 import 'ble_screen.dart';
+import 'import_data_screen.dart';
 
 class SettingScreen extends StatefulWidget {
   const SettingScreen({super.key});
@@ -151,6 +152,14 @@ class _SettingScreenState extends State<SettingScreen> {
     context.pushNamed(RouteName.onnx_debug);
   }
 
+  void _onClickImportData() {
+    Navigator.of(context).push(
+      MaterialPageRoute(
+        builder: (context) => const ImportDataScreen(),
+      ),
+    );
+  }
+
   @override
   Widget build(BuildContext context) {
     final themeNotifier = Provider.of<ThemeNotifier>(context);
@@ -257,6 +266,12 @@ class _SettingScreenState extends State<SettingScreen> {
                 title: 'ONNX Debug',
                 subtitle: 'Debugging tools for ONNX models',
                 onTap: _onClickONNXDebug,
+              ),
+              SettingListTile(
+                leading: AssetsUtil.icon_set_up, // 用已有图标替代
+                title: '导入本地数据',
+                subtitle: '从导出的 JSON 恢复本地数据',
+                onTap: _onClickImportData,
               ),
             ],
           ),

@@ -42,4 +42,26 @@ class EventEntity {
   }) {
     createdAt = DateTime.now().millisecondsSinceEpoch;
   }
+
+  factory EventEntity.fromJson(Map<String, dynamic> json) {
+    final entity = EventEntity(
+      title: json['title'],
+      description: json['description'],
+      location: json['location'],
+      participants: json['participants'],
+      timestamp: json['timestamp'],
+      category: json['category'],
+      vector: (json['vector'] as List?)?.map((e) => (e as num).toDouble()).toList(),
+      createdAt: json['createdAt'],
+      summaryId: json['summaryId'],
+    );
+    if (json['id'] != null) {
+      if (json['id'] is int) {
+        entity.id = json['id'];
+      } else if (json['id'] is String) {
+        entity.id = int.tryParse(json['id']) ?? 0;
+      }
+    }
+    return entity;
+  }
 }

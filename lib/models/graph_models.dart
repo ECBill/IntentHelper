@@ -291,3 +291,32 @@ class Context {
     required this.sourceText,
   });
 }
+
+class NodeEntity {
+  int id;
+  String? label;
+  Map<String, dynamic>? properties;
+  int? createdAt;
+
+  NodeEntity({
+    this.id = 0,
+    this.label,
+    this.properties,
+    this.createdAt,
+  });
+
+  factory NodeEntity.fromJson(Map<String, dynamic> json) {
+    int idValue = 0;
+    if (json['id'] is int) {
+      idValue = json['id'];
+    } else if (json['id'] is String) {
+      idValue = int.tryParse(json['id']) ?? 0;
+    }
+    return NodeEntity(
+      id: idValue,
+      label: json['label'],
+      properties: (json['properties'] as Map?)?.map((k, v) => MapEntry(k.toString(), v)),
+      createdAt: json['createdAt'],
+    );
+  }
+}

@@ -566,65 +566,64 @@ class _HumanUnderstandingDashboardState extends State<HumanUnderstandingDashboar
 
   Widget _buildIntentCard(hum.Intent intent) {
     return Card(
-      margin: EdgeInsets.only(bottom: 8.h),
-      child: Padding(
-        padding: EdgeInsets.all(12.w),
-        child: Column(
-          crossAxisAlignment: CrossAxisAlignment.start,
-          children: [
-            Row(
-              children: [
-                Expanded(
-                  child: Text(
-                    intent.description,
-                    style: TextStyle(
-                        fontSize: 14.sp, fontWeight: FontWeight.w600),
+        margin: EdgeInsets.only(bottom: 8.h),
+        child: Padding(
+          padding: EdgeInsets.all(12.w),
+          child: Column(
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              Row(
+                children: [
+                  Expanded(
+                    child: Text(
+                      intent.description,
+                      style: TextStyle(
+                          fontSize: 14.sp, fontWeight: FontWeight.w600),
+                    ),
                   ),
-                ),
-                Container(
-                  padding: EdgeInsets.symmetric(horizontal: 8.w, vertical: 4.h),
-                  decoration: BoxDecoration(
-                    color: _getIntentStateColor(intent.state
-                        .toString()
-                        .split('.')
-                        .last),
-                    borderRadius: BorderRadius.circular(12.r),
+                  Container(
+                    padding: EdgeInsets.symmetric(horizontal: 8.w, vertical: 4.h),
+                    decoration: BoxDecoration(
+                      color: _getIntentStateColor(intent.state
+                          .toString()
+                          .split('.')
+                          .last),
+                      borderRadius: BorderRadius.circular(12.r),
+                    ),
+                    child: Text(
+                      intent.state
+                          .toString()
+                          .split('.')
+                          .last,
+                      style: TextStyle(fontSize: 10.sp, color: Colors.white),
+                    ),
                   ),
-                  child: Text(
-                    intent.state
-                        .toString()
-                        .split('.')
-                        .last,
-                    style: TextStyle(fontSize: 10.sp, color: Colors.white),
-                  ),
-                ),
-              ],
-            ),
-            SizedBox(height: 8.h),
-            Row(
-              children: [
-                Text(
-                  '类别: ${intent.category}',
-                  style: TextStyle(fontSize: 12.sp, color: Colors.grey[600]),
-                ),
-                SizedBox(width: 16.w),
-                Text(
-                  '置信度: ${(intent.confidence * 100).toInt()}%',
-                  style: TextStyle(fontSize: 12.sp, color: Colors.grey[600]),
-                ),
-              ],
-            ),
-            if (intent.relatedEntities.isNotEmpty) ...[
-              SizedBox(height: 4.h),
-              Text(
-                '相关实体: ${intent.relatedEntities.join(', ')}',
-                style: TextStyle(fontSize: 12.sp, color: Colors.grey[600]),
+                ],
               ),
+              SizedBox(height: 8.h),
+              Row(
+                children: [
+                  Text(
+                    '类别: ${intent.category}',
+                    style: TextStyle(fontSize: 12.sp, color: Colors.grey[600]),
+                  ),
+                  SizedBox(width: 16.w),
+                  Text(
+                    '置信度: ${(intent.confidence * 100).toInt()}%',
+                    style: TextStyle(fontSize: 12.sp, color: Colors.grey[600]),
+                  ),
+                ],
+              ),
+              if (intent.relatedEntities.isNotEmpty) ...[
+                SizedBox(height: 4.h),
+                Text(
+                  '相关实体: ${intent.relatedEntities.join(', ')}',
+                  style: TextStyle(fontSize: 12.sp, color: Colors.grey[600]),
+                ),
+              ],
             ],
-          ],
-        ),
-      ),
-    );
+          ),
+        ));
   }
 
   Widget _buildTopicsTab() {
@@ -661,127 +660,143 @@ class _HumanUnderstandingDashboardState extends State<HumanUnderstandingDashboar
     final emotionalTone = (ctx['emotional_tone'] ?? '').toString();
 
     return Card(
-      margin: EdgeInsets.only(bottom: 8.h),
-      child: Padding(
-        padding: EdgeInsets.all(12.w),
-        child: Column(
-          crossAxisAlignment: CrossAxisAlignment.start,
-          children: [
-            Row(
-              children: [
-                Expanded(
-                  child: Text(
-                    topic.name,
-                    style: TextStyle(
-                        fontSize: 14.sp, fontWeight: FontWeight.w600),
-                  ),
-                ),
-                Container(
-                  padding: EdgeInsets.symmetric(horizontal: 8.w, vertical: 4.h),
-                  decoration: BoxDecoration(
-                    color: Colors.blue.withOpacity(0.2),
-                    borderRadius: BorderRadius.circular(12.r),
-                  ),
-                  child: Text(
-                    '权重: ${topic.weight.toStringAsFixed(2)}',
-                    style: TextStyle(fontSize: 10.sp),
-                  ),
-                ),
-              ],
-            ),
-
-            // 上下文三要素展示
-            if (importance.isNotEmpty || timeSensitivity.isNotEmpty ||
-                emotionalTone.isNotEmpty) ...[
-              SizedBox(height: 8.h),
-              Wrap(
-                spacing: 6.w,
-                runSpacing: 4.h,
+        margin: EdgeInsets.only(bottom: 8.h),
+        child: Padding(
+          padding: EdgeInsets.all(12.w),
+          child: Column(
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              Row(
                 children: [
-                  if (importance.isNotEmpty)
-                    Chip(
-                      label: Text('重要性: $importance',
-                          style: TextStyle(fontSize: 10.sp)),
-                      backgroundColor: Colors.deepPurple.withOpacity(0.1),
-                      materialTapTargetSize: MaterialTapTargetSize.shrinkWrap,
+                  Expanded(
+                    child: Text(
+                      topic.name,
+                      style: TextStyle(
+                          fontSize: 14.sp, fontWeight: FontWeight.w600),
                     ),
-                  if (timeSensitivity.isNotEmpty)
-                    Chip(
-                      label: Text('时效性: $timeSensitivity',
-                          style: TextStyle(fontSize: 10.sp)),
-                      backgroundColor: Colors.teal.withOpacity(0.1),
-                      materialTapTargetSize: MaterialTapTargetSize.shrinkWrap,
+                  ),
+                  Container(
+                    padding: EdgeInsets.symmetric(horizontal: 8.w, vertical: 4.h),
+                    decoration: BoxDecoration(
+                      color: Colors.blue.withOpacity(0.2),
+                      borderRadius: BorderRadius.circular(12.r),
                     ),
-                  if (emotionalTone.isNotEmpty)
-                    Chip(
-                      label: Text('情绪: $emotionalTone',
-                          style: TextStyle(fontSize: 10.sp)),
-                      backgroundColor: Colors.pink.withOpacity(0.1),
-                      materialTapTargetSize: MaterialTapTargetSize.shrinkWrap,
+                    child: Text(
+                      '权重: ${topic.weight.toStringAsFixed(2)}',
+                      style: TextStyle(fontSize: 10.sp),
                     ),
+                  ),
                 ],
               ),
-            ],
 
-            // 关键词
-            if (topic.keywords.isNotEmpty) ...[
-              SizedBox(height: 8.h),
-              Text('关键词:', style: TextStyle(
-                  fontSize: 12.sp, fontWeight: FontWeight.w600)),
-              SizedBox(height: 4.h),
-              Wrap(
-                spacing: 4.w,
-                runSpacing: 4.h,
-                children: topic.keywords.map((keyword) =>
-                    Chip(
-                      label: Text(keyword, style: TextStyle(fontSize: 10.sp)),
-                      materialTapTargetSize: MaterialTapTargetSize.shrinkWrap,
-                    )).toList(),
-              ),
-            ],
+              // 上下文三要素展示
+              if (importance.isNotEmpty || timeSensitivity.isNotEmpty ||
+                  emotionalTone.isNotEmpty) ...[
+                SizedBox(height: 8.h),
+                Wrap(
+                  spacing: 6.w,
+                  runSpacing: 4.h,
+                  children: [
+                    if (importance.isNotEmpty)
+                      Chip(
+                        label: Text('重要性: $importance',
+                            style: TextStyle(fontSize: 10.sp)),
+                        backgroundColor: Colors.deepPurple.withOpacity(0.1),
+                        materialTapTargetSize: MaterialTapTargetSize.shrinkWrap,
+                      ),
+                    if (timeSensitivity.isNotEmpty)
+                      Chip(
+                        label: Text('时效性: $timeSensitivity',
+                            style: TextStyle(fontSize: 10.sp)),
+                        backgroundColor: Colors.teal.withOpacity(0.1),
+                        materialTapTargetSize: MaterialTapTargetSize.shrinkWrap,
+                      ),
+                    if (emotionalTone.isNotEmpty)
+                      Chip(
+                        label: Text('情绪: $emotionalTone',
+                            style: TextStyle(fontSize: 10.sp)),
+                        backgroundColor: Colors.pink.withOpacity(0.1),
+                        materialTapTargetSize: MaterialTapTargetSize.shrinkWrap,
+                      ),
+                  ],
+                ),
+              ],
 
-            // 实体
-            if (topic.entities.isNotEmpty) ...[
-              SizedBox(height: 8.h),
-              Text('相关实体:', style: TextStyle(
-                  fontSize: 12.sp, fontWeight: FontWeight.w600)),
-              SizedBox(height: 4.h),
-              Wrap(
-                spacing: 4.w,
-                runSpacing: 4.h,
-                children: topic.entities.map((ent) =>
-                    Chip(
-                      label: Text(ent, style: TextStyle(fontSize: 10.sp)),
-                      backgroundColor: Colors.blueGrey.withOpacity(0.1),
-                      materialTapTargetSize: MaterialTapTargetSize.shrinkWrap,
-                    )).toList(),
-              ),
-            ],
+              // 关键词
+              if (topic.keywords.isNotEmpty) ...[
+                SizedBox(height: 8.h),
+                Text('关键词:', style: TextStyle(
+                    fontSize: 12.sp, fontWeight: FontWeight.w600)),
+                SizedBox(height: 4.h),
+                Wrap(
+                  spacing: 4.w,
+                  runSpacing: 4.h,
+                  children: topic.keywords.map((keyword) =>
+                      Chip(
+                        label: Text(keyword, style: TextStyle(fontSize: 10.sp)),
+                        materialTapTargetSize: MaterialTapTargetSize.shrinkWrap,
+                      )).toList(),
+                ),
+              ],
 
-            if (relatedIntents.isNotEmpty) ...[
-              SizedBox(height: 8.h),
-              Text(
-                '相关意图:',
-                style: TextStyle(fontSize: 12.sp, fontWeight: FontWeight.w600),
-              ),
-              ...relatedIntents.map((intent) =>
-                  Padding(
-                    padding: EdgeInsets.symmetric(vertical: 2.h),
-                    child: Text(
-                      intent.toString(),
-                      style: TextStyle(
-                          fontSize: 12.sp, color: Colors.grey[700]),
-                    ),
-                  )),
+              // 实体
+              if (topic.entities.isNotEmpty) ...[
+                SizedBox(height: 8.h),
+                Text('相关实体:', style: TextStyle(
+                    fontSize: 12.sp, fontWeight: FontWeight.w600)),
+                SizedBox(height: 4.h),
+                Wrap(
+                  spacing: 4.w,
+                  runSpacing: 4.h,
+                  children: topic.entities.map((ent) =>
+                      Chip(
+                        label: Text(ent, style: TextStyle(fontSize: 10.sp)),
+                        backgroundColor: Colors.blueGrey.withOpacity(0.1),
+                        materialTapTargetSize: MaterialTapTargetSize.shrinkWrap,
+                      )).toList(),
+                ),
+              ],
+
+              if (relatedIntents.isNotEmpty) ...[
+                SizedBox(height: 8.h),
+                Text(
+                  '相关意图:',
+                  style: TextStyle(fontSize: 12.sp, fontWeight: FontWeight.w600),
+                ),
+                ...relatedIntents.map((intent) =>
+                    Padding(
+                      padding: EdgeInsets.symmetric(vertical: 2.h),
+                      child: Text(
+                        intent.toString(),
+                        style: TextStyle(
+                            fontSize: 12.sp, color: Colors.grey[700]),
+                      ),
+                    )),
+              ],
             ],
-          ],
-        ),
-      ));
+          ),
+        ));
   }
 
   Widget _buildKnowledgeGraphTab() {
     final kgResults = _kgManager.getLastResult()?['results'] as List? ?? [];
     final isDataEmpty = kgResults.isEmpty;
+
+    // 字段顺序与 eventMap 保持一致
+    final List<MapEntry<String, String>> fieldOrder = [
+      MapEntry('id', 'ID'),
+      MapEntry('title', '标题'),
+      MapEntry('name', '名称'),
+      MapEntry('type', '类型'),
+      MapEntry('description', '描述'),
+      MapEntry('similarity', '相关度'),
+      MapEntry('matched_topic', '查询来源主题'),
+      MapEntry('startTime', '开始时间'),
+      MapEntry('endTime', '结束时间'),
+      MapEntry('location', '地点'),
+      MapEntry('purpose', '目的'),
+      MapEntry('result', '结果'),
+    ];
 
     return Padding(
       padding: EdgeInsets.all(16.w),
@@ -841,93 +856,115 @@ class _HumanUnderstandingDashboardState extends State<HumanUnderstandingDashboar
                 separatorBuilder: (_, __) => SizedBox(height: 12.h),
                 itemBuilder: (context, idx) {
                   final node = kgResults[idx] as Map<String, dynamic>;
-                  return Card(
-                    elevation: 2,
-                    shape: RoundedRectangleBorder(
-                      borderRadius: BorderRadius.circular(14.r),
-                      side: BorderSide(color: Colors.grey.withOpacity(0.13), width: 1),
-                    ),
-                    color: Colors.white,
-                    child: Padding(
-                      padding: EdgeInsets.symmetric(horizontal: 16.w, vertical: 14.h),
-                      child: Column(
-                        crossAxisAlignment: CrossAxisAlignment.start,
-                        children: [
-                          // 标题
-                          Text(
-                            node['title']?.toString() ?? node['name']?.toString() ?? '未命名节点',
-                            style: TextStyle(fontSize: 17.sp, fontWeight: FontWeight.bold, color: Colors.blueGrey[900]),
-                            maxLines: 2,
-                            overflow: TextOverflow.ellipsis,
-                          ),
-                          SizedBox(height: 6.h),
-                          // 主题标签单独一行
-                          if (node['matched_topic'] != null)
-                            Row(
+                  return InkWell(
+                    borderRadius: BorderRadius.circular(14.r),
+                    onTap: () {
+                      showDialog(
+                        context: context,
+                        builder: (context) => AlertDialog(
+                          title: Text(node['title']?.toString() ?? node['name']?.toString() ?? '未命名节点', style: TextStyle(fontWeight: FontWeight.bold)),
+                          content: SingleChildScrollView(
+                            child: Column(
+                              crossAxisAlignment: CrossAxisAlignment.start,
                               children: [
-                                Icon(Icons.label, size: 15.sp, color: Colors.blue[400]),
-                                SizedBox(width: 4.w),
-                                Flexible(
-                                  child: Text(
-                                    '主题: ${node['matched_topic']}',
-                                    style: TextStyle(fontSize: 13.sp, color: Colors.blue[600], fontWeight: FontWeight.w500),
-                                    maxLines: 1,
-                                    overflow: TextOverflow.ellipsis,
-                                  ),
-                                ),
+                                for (final entry in fieldOrder)
+                                  if (node[entry.key] != null && node[entry.key].toString().isNotEmpty)
+                                    Padding(
+                                      padding: EdgeInsets.only(bottom: 8),
+                                      child: Row(
+                                        crossAxisAlignment: CrossAxisAlignment.start,
+                                        children: [
+                                          Text('${entry.value}: ', style: TextStyle(fontWeight: FontWeight.w600, color: Colors.grey[700])),
+                                          Expanded(child: Text(
+                                            entry.key == 'similarity' && node[entry.key] is num
+                                                ? (node[entry.key] as num).toStringAsFixed(3)
+                                                : node[entry.key].toString(),
+                                            style: TextStyle(color: Colors.grey[900]),
+                                          )),
+                                        ],
+                                      ),
+                                    ),
                               ],
                             ),
-                          if (node['description'] != null && node['description'].toString().trim().isNotEmpty)
-                            Padding(
-                              padding: EdgeInsets.only(top: 8.h, bottom: 2.h),
-                              child: Text(
-                                node['description'].toString(),
-                                style: TextStyle(fontSize: 13.sp, color: Colors.grey[800], fontWeight: FontWeight.w400, height: 1.32),
-                                maxLines: 3,
-                                overflow: TextOverflow.ellipsis,
-                              ),
+                          ),
+                          actions: [
+                            TextButton(
+                              onPressed: () => Navigator.pop(context),
+                              child: Text('关闭'),
                             ),
-                          if (node['similarity'] != null || node['score'] != null)
-                            Padding(
-                              padding: EdgeInsets.only(top: 6.h, bottom: 2.h),
-                              child: Row(
+                          ],
+                        ),
+                      );
+                    },
+                    child: Card(
+                      elevation: 2,
+                      shape: RoundedRectangleBorder(
+                        borderRadius: BorderRadius.circular(14.r),
+                        side: BorderSide(color: Colors.grey.withOpacity(0.13), width: 1),
+                      ),
+                      color: Colors.white,
+                      child: Padding(
+                        padding: EdgeInsets.symmetric(horizontal: 16.w, vertical: 14.h),
+                        child: Column(
+                          crossAxisAlignment: CrossAxisAlignment.start,
+                          children: [
+                            // 标题
+                            Text(
+                              node['title']?.toString() ?? node['name']?.toString() ?? '未命名节点',
+                              style: TextStyle(fontSize: 17.sp, fontWeight: FontWeight.bold, color: Colors.blueGrey[900]),
+                              maxLines: 2,
+                              overflow: TextOverflow.ellipsis,
+                            ),
+                            SizedBox(height: 6.h),
+                            // 主题标签单独一行
+                            if (node['matched_topic'] != null)
+                              Row(
                                 children: [
-                                  Icon(Icons.auto_awesome, color: Colors.blue[300], size: 15.sp),
+                                  Icon(Icons.label, size: 15.sp, color: Colors.blue[400]),
                                   SizedBox(width: 4.w),
-                                  Text('相关度', style: TextStyle(fontSize: 12.sp, color: Colors.blue[400], fontWeight: FontWeight.w500)),
-                                  SizedBox(width: 8.w),
-                                  Expanded(
-                                    child: LinearProgressIndicator(
-                                      value: ((node['similarity'] ?? node['score']) as num?)?.toDouble().clamp(0.0, 1.0) ?? 0.0,
-                                      minHeight: 7,
-                                      backgroundColor: Colors.blueGrey.withOpacity(0.08),
-                                      valueColor: AlwaysStoppedAnimation<Color>(Colors.blue[400]!),
+                                  Flexible(
+                                    child: Text(
+                                      '主题: ${node['matched_topic']}',
+                                      style: TextStyle(fontSize: 13.sp, color: Colors.blue[600], fontWeight: FontWeight.w500),
+                                      maxLines: 1,
+                                      overflow: TextOverflow.ellipsis,
                                     ),
                                   ),
-                                  SizedBox(width: 8.w),
-                                  Text(
-                                    ((node['similarity'] ?? node['score']) is num)
-                                      ? (((node['similarity'] ?? node['score']) as num).toStringAsFixed(3))
-                                      : '',
-                                    style: TextStyle(fontSize: 12.sp, color: Colors.blue[700], fontWeight: FontWeight.bold),
-                                  ),
                                 ],
                               ),
-                            ),
-                          if (node['id'] != null)
-                            Padding(
-                              padding: EdgeInsets.only(top: 2.h),
-                              child: Row(
-                                children: [
-                                  Icon(Icons.fingerprint, size: 13.sp, color: Colors.grey[400]),
-                                  SizedBox(width: 4.w),
-                                  Text('ID: ${node['id']}', style: TextStyle(fontSize: 11.sp, color: Colors.grey[600], fontWeight: FontWeight.w400)),
-                                ],
+                            if (node['description'] != null && node['description'].toString().trim().isNotEmpty)
+                              Padding(
+                                padding: EdgeInsets.only(top: 8.h, bottom: 2.h),
+                                child: Text(
+                                  node['description'].toString(),
+                                  style: TextStyle(fontSize: 13.sp, color: Colors.grey[800], fontWeight: FontWeight.w400, height: 1.32),
+                                  maxLines: 3,
+                                  overflow: TextOverflow.ellipsis,
+                                ),
                               ),
-                            ),
-                        ],
+                            if (node['similarity'] != null || node['score'] != null)
+                              Padding(
+                                padding: EdgeInsets.only(top: 6.h, bottom: 2.h),
+                                child: Row(
+                                  children: [
+                                    Icon(Icons.auto_awesome, color: Colors.blue[300], size: 15.sp),
+                                    SizedBox(width: 4.w),
+                                    Text('相关度', style: TextStyle(fontSize: 12.sp, color: Colors.blue[400], fontWeight: FontWeight.w500)),
+                                    SizedBox(width: 8.w),
+                                    Text(
+                                      ((node['similarity'] ?? node['score']) is num)
+                                          ? (((node['similarity'] ?? node['score']) as num).toStringAsFixed(3))
+                                          : '',
+                                      style: TextStyle(fontSize: 12.sp, color: Colors.blue[700], fontWeight: FontWeight.bold),
+                                    ),
+                                  ],
+                                ),
+                              ),
+                          ],
+                        ),
                       ),
-                    ));
+                    ),
+                  );
                 },
               ),
             ),
@@ -935,6 +972,7 @@ class _HumanUnderstandingDashboardState extends State<HumanUnderstandingDashboar
       ),
     );
   }
+
 
   Widget _buildCausalTab() {
     if (_currentState == null) return Container();
@@ -1025,118 +1063,118 @@ class _HumanUnderstandingDashboardState extends State<HumanUnderstandingDashboar
 
   Widget _buildCognitiveLoadCard(hum.CognitiveLoad cognitiveLoad) {
     return Card(
-      child: Padding(
-        padding: EdgeInsets.all(16.w),
-        child: Column(
-          crossAxisAlignment: CrossAxisAlignment.start,
-          children: [
-            Text(
-              '当前认知负载',
-              style: TextStyle(fontSize: 18.sp, fontWeight: FontWeight.bold),
-            ),
-            SizedBox(height: 12.h),
-            Row(
-              children: [
-                Expanded(
-                  child: Column(
-                    crossAxisAlignment: CrossAxisAlignment.start,
-                    children: [
-                      Text(
-                        '级别: ${_getCognitiveLoadText(cognitiveLoad.level)}',
-                        style: TextStyle(
-                          fontSize: 16.sp,
-                          color: _getCognitiveLoadColor(cognitiveLoad.level),
-                          fontWeight: FontWeight.w600,
-                        ),
-                      ),
-                      SizedBox(height: 8.h),
-                      LinearProgressIndicator(
-                        value: _getCognitiveLoadValue(cognitiveLoad.level),
-                        backgroundColor: Colors.grey[300],
-                        valueColor: AlwaysStoppedAnimation<Color>(
-                          _getCognitiveLoadColor(cognitiveLoad.level),
-                        ),
-                      ),
-                    ],
-                  ),
-                ),
-              ],
-            ),
-            if (cognitiveLoad.factors.isNotEmpty) ...[
-              SizedBox(height: 12.h),
+        child: Padding(
+          padding: EdgeInsets.all(16.w),
+          child: Column(
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
               Text(
-                '影响因素:',
-                style: TextStyle(fontSize: 14.sp, fontWeight: FontWeight.w600),
+                '当前认知负载',
+                style: TextStyle(fontSize: 18.sp, fontWeight: FontWeight.bold),
               ),
-              ...cognitiveLoad.factors.entries.map((entry) =>
-                  Padding(
-                    padding: EdgeInsets.symmetric(vertical: 2.h),
-                    child: Row(
+              SizedBox(height: 12.h),
+              Row(
+                children: [
+                  Expanded(
+                    child: Column(
+                      crossAxisAlignment: CrossAxisAlignment.start,
                       children: [
-                        Icon(
-                            Icons.arrow_right, size: 16.sp, color: Colors.grey),
-                        SizedBox(width: 4.w),
-                        Expanded(
-                          child: Text(
-                            '${entry.key}: ${(entry.value * 100).toInt()}%',
-                            style: TextStyle(fontSize: 12.sp),
+                        Text(
+                          '级别: ${_getCognitiveLoadText(cognitiveLoad.level)}',
+                          style: TextStyle(
+                            fontSize: 16.sp,
+                            color: _getCognitiveLoadColor(cognitiveLoad.level),
+                            fontWeight: FontWeight.w600,
+                          ),
+                        ),
+                        SizedBox(height: 8.h),
+                        LinearProgressIndicator(
+                          value: _getCognitiveLoadValue(cognitiveLoad.level),
+                          backgroundColor: Colors.grey[300],
+                          valueColor: AlwaysStoppedAnimation<Color>(
+                            _getCognitiveLoadColor(cognitiveLoad.level),
                           ),
                         ),
                       ],
                     ),
-                  )).toList(),
+                  ),
+                ],
+              ),
+              if (cognitiveLoad.factors.isNotEmpty) ...[
+                SizedBox(height: 12.h),
+                Text(
+                  '影响因素:',
+                  style: TextStyle(fontSize: 14.sp, fontWeight: FontWeight.w600),
+                ),
+                ...cognitiveLoad.factors.entries.map((entry) =>
+                    Padding(
+                      padding: EdgeInsets.symmetric(vertical: 2.h),
+                      child: Row(
+                        children: [
+                          Icon(
+                              Icons.arrow_right, size: 16.sp, color: Colors.grey),
+                          SizedBox(width: 4.w),
+                          Expanded(
+                            child: Text(
+                              '${entry.key}: ${(entry.value * 100).toInt()}%',
+                              style: TextStyle(fontSize: 12.sp),
+                            ),
+                          ),
+                        ],
+                      ),
+                    )).toList(),
+              ],
             ],
-          ],
-        ),
-      ));
+          ),
+        ));
   }
 
   Widget _buildCognitiveLoadHistoryCard(List<hum.CognitiveLoad> history) {
     return Card(
-      child: Padding(
-        padding: EdgeInsets.all(16.w),
-        child: Column(
-          crossAxisAlignment: CrossAxisAlignment.start,
-          children: [
-            Text(
-              '认知负载历史',
-              style: TextStyle(fontSize: 16.sp, fontWeight: FontWeight.bold),
-            ),
-            SizedBox(height: 12.h),
-            Container(
-              height: 200.h,
-              child: ListView.builder(
-                itemCount: history.length,
-                itemBuilder: (context, index) {
-                  final load = history[index];
-                  return ListTile(
-                    dense: true,
-                    title: Text(
-                      _getCognitiveLoadText(load.level),
-                      style: TextStyle(
-                        fontSize: 12.sp,
-                        color: _getCognitiveLoadColor(load.level),
-                      ),
-                    ),
-                    subtitle: Text(
-                      load.timestamp.toString().substring(11, 19),
-                      style: TextStyle(fontSize: 10.sp),
-                    ),
-                    trailing: Container(
-                      width: 8.w,
-                      height: 8.w,
-                      decoration: BoxDecoration(
-                        color: _getCognitiveLoadColor(load.level),
-                        shape: BoxShape.circle,
-                      ),
-                    ),
-                  );
-                },
+        child: Padding(
+          padding: EdgeInsets.all(16.w),
+          child: Column(
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              Text(
+                '认知负载历史',
+                style: TextStyle(fontSize: 16.sp, fontWeight: FontWeight.bold),
               ),
-            ),
-          ],
-        ),
-      ));
+              SizedBox(height: 12.h),
+              Container(
+                height: 200.h,
+                child: ListView.builder(
+                  itemCount: history.length,
+                  itemBuilder: (context, index) {
+                    final load = history[index];
+                    return ListTile(
+                      dense: true,
+                      title: Text(
+                        _getCognitiveLoadText(load.level),
+                        style: TextStyle(
+                          fontSize: 12.sp,
+                          color: _getCognitiveLoadColor(load.level),
+                        ),
+                      ),
+                      subtitle: Text(
+                        load.timestamp.toString().substring(11, 19),
+                        style: TextStyle(fontSize: 10.sp),
+                      ),
+                      trailing: Container(
+                        width: 8.w,
+                        height: 8.w,
+                        decoration: BoxDecoration(
+                          color: _getCognitiveLoadColor(load.level),
+                          shape: BoxShape.circle,
+                        ),
+                      ),
+                    );
+                  },
+                ),
+              ),
+            ],
+          ),
+        ));
   }
 
   void _handleMenuAction(String action) async {

@@ -58,6 +58,24 @@ class TodoEntity {
   // 🔥 添加：status getter和setter
   Status get status => Status.values[statusIndex];
   set status(Status status) => statusIndex = status.index;
+
+  factory TodoEntity.fromJson(Map<String, dynamic> json) {
+    return TodoEntity(
+      id: json['id'] ?? 0,
+      task: json['task'],
+      detail: json['detail'],
+      vector: (json['vector'] as List?)?.map((e) => (e as num).toDouble()).toList(),
+      status: json['statusIndex'] != null ? Status.values[json['statusIndex']] : Status.pending,
+      deadline: json['deadline'],
+      clock: json['clock'] ?? false,
+      createdAt: json['createdAt'],
+      isIntelligentReminder: json['isIntelligentReminder'] ?? false,
+      originalText: json['originalText'],
+      reminderType: json['reminderType'],
+      ruleId: json['ruleId'],
+      confidence: (json['confidence'] as num?)?.toDouble(),
+    );
+  }
 }
 
 enum Status { pending, completed, expired, all, pending_reminder, reminded, intelligent_suggestion }

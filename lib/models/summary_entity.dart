@@ -39,4 +39,19 @@ class SummaryEntity {
         title = title ?? (startTime > 0
           ? '${DateTime.fromMillisecondsSinceEpoch(startTime).toDateFormatString()} record'
           : 'Untitled Record');
+
+  factory SummaryEntity.fromJson(Map<String, dynamic> json) {
+    return SummaryEntity(
+      id: json['id'] ?? 0,
+      isMeeting: json['isMeeting'] ?? false,
+      subject: json['subject'],
+      content: json['content'],
+      vector: (json['vector'] as List?)?.map((e) => (e as num).toDouble()).toList(),
+      startTime: json['startTime'] ?? 0,
+      endTime: json['endTime'] ?? 0,
+      createdAt: json['createdAt'],
+      audioPath: json['audioPath'],
+      title: json['title'],
+    );
+  }
 }

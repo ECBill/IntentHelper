@@ -31,4 +31,17 @@ class EventRelationEntity {
   }) {
     createdAt = DateTime.now().millisecondsSinceEpoch;
   }
+
+  factory EventRelationEntity.fromJson(Map<String, dynamic> json) {
+    final entity = EventRelationEntity(
+      sourceEventId: json['sourceId'],
+      targetEventId: json['targetId'],
+      relationType: json['type'],
+      description: json['description'],
+      confidence: (json['confidence'] as num?)?.toDouble(),
+      createdAt: json['createdAt'],
+    );
+    if (json['id'] != null) entity.id = json['id'];
+    return entity;
+  }
 }
