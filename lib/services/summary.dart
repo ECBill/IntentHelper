@@ -7,6 +7,8 @@ import 'package:app/services/objectbox_service.dart';
 import 'package:intl/intl.dart';
 import 'package:app/services/knowledge_graph_service.dart';
 
+import 'human_understanding_system.dart';
+
 class DialogueSummary {
   // 添加回调函数类型定义
   static Function(List<SummaryEntity>)? onSummaryGenerated;
@@ -135,11 +137,36 @@ class DialogueSummary {
 
     final chatHistory = chatHistoryBuffer.toString();
 
+    // 获取当前对话主题分析（topics）
+    List<String> topics = [];
+    try {
+      topics = HumanUnderstandingSystem().topicTracker.getActiveTopics().map((t) => t.name).toList();
+    } catch (e) {
+      print('[DialogueSummary] ⚠️ 获取对话主题失败: $e');
+    }
+
+    // 获取知识图谱相关信息
+    String knowledgeGraphInfo = '';
+    try {
+      final kgData = HumanUnderstandingSystem().knowledgeGraphManager.getLastResult();
+      if (kgData != null && kgData.isNotEmpty) {
+        knowledgeGraphInfo = kgData.toString(); // 可根据实际格式美化
+      }
+    } catch (e) {
+      print('[DialogueSummary] ⚠️ 获取知识图谱信息失败: $e');
+    }
+
     try {
       print('[DialogueSummary] 🧠 开始创建 LLM...');
       LLM summaryLlm = await LLM.create('gpt-4o-mini', systemPrompt: systemPromptOfSummary);
       print('[DialogueSummary] ✅ LLM 创建成功');
-      String summary = await summaryLlm.createRequest(content: getUserPromptOfSummaryGeneration(chatHistory));
+      String summary = await summaryLlm.createRequest(
+        content: getUserPromptOfSummaryGeneration(
+          chatHistory,
+          topics: topics,
+          knowledgeGraphInfo: knowledgeGraphInfo,
+        ),
+      );
       print("[DialogueSummary] Initial summary: $summary");
 
       summaryLlm.setSystemPrompt(systemPrompt: systemPromptOfSummaryReflection);

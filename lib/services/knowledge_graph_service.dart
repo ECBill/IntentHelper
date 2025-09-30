@@ -5,6 +5,8 @@ import 'package:app/services/llm.dart';
 import 'package:app/services/objectbox_service.dart';
 import 'package:app/services/embedding_service.dart';
 
+import 'human_understanding_system.dart';
+
 class KnowledgeGraphService {
   static final KnowledgeGraphService _instance = KnowledgeGraphService._internal();
   factory KnowledgeGraphService() => _instance;
@@ -99,13 +101,41 @@ class KnowledgeGraphService {
     String conversationText,
     {DateTime? conversationTime, Map<String, dynamic>? userStateContext}
   ) async {
+    // 自动补全 userStateContext，拼接当前主题和知识图谱信息
+    Map<String, dynamic> patchedUserStateContext = userStateContext != null ? Map<String, dynamic>.from(userStateContext) : {};
+    try {
+      // 获取当前主题
+      final topics = HumanUnderstandingSystem().topicTracker.getActiveTopics().map((t) => t.name).toList();
+      if (topics.isNotEmpty) {
+        patchedUserStateContext['active_topics'] = topics.map((t) => {'name': t}).toList();
+      }
+    } catch (e) {
+      // 忽略异常
+    }
+    try {
+      // 获取知识图谱信息
+      final kgData = HumanUnderstandingSystem().knowledgeGraphManager.getLastResult();
+      if (kgData != null && kgData.isNotEmpty) {
+        patchedUserStateContext['knowledge_graph_info'] = kgData.toString();
+      }
+    } catch (e) {
+      // 忽略异常
+    }
+
     final now = conversationTime ?? DateTime.now();
     final timeContext = "${now.year}年${now.month.toString().padLeft(2, '0')}月${now.day.toString().padLeft(2, '0')}日";
 
-    final eventExtractionPrompt = """
+    // 拼接prompt，所有内容都在一个多行字符串内
+    String eventExtractionPrompt = """
 你是一个知识图谱构建助手。请从对话中细致地提取事件和实体信息，采用事件中心的图谱设计。
 
-${_generateUserStatePromptContext(userStateContext)}
+${_generateUserStatePromptContext(patchedUserStateContext)}
+
+【对话主题分析】（可用于理解用户关注点）：
+${patchedUserStateContext['active_topics'] != null && (patchedUserStateContext['active_topics'] as List).isNotEmpty ? (patchedUserStateContext['active_topics'] as List).map((t) => t['name'] ?? t.toString()).join(', ') : ''}
+【相关历史知识（基于主题向量查询）】：
+${patchedUserStateContext['knowledge_graph_info'] != null && patchedUserStateContext['knowledge_graph_info'].toString().isNotEmpty ? patchedUserStateContext['knowledge_graph_info'].toString() : ''}
+（以上信息可用于生成更相关的事件和实体，如无用可忽略）
 
 【重要原则】：
 1. 实体抽取要尽可能具体和细致，避免过度泛化
@@ -182,7 +212,7 @@ ${_generateUserStatePromptContext(userStateContext)}
 """;
 
     try {
-      print('[KnowledgeGraphService] 🔍 开始细致抽取事件和实体，对话长度: ${conversationText.length}');
+      print('[KnowledgeGraphService] 🔍 开始细致抽取事件和实体，对话长度: \\${conversationText.length}');
       final llm = await LLM.create('gpt-4o-mini', systemPrompt: eventExtractionPrompt);
       final response = await llm.createRequest(content: conversationText);
 

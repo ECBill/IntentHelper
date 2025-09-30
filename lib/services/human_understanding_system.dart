@@ -956,4 +956,8 @@ class HumanUnderstandingSystem {
   void setActiveTopicsFromUI(List<String> topics) {
     _lastActiveTopics = List.from(topics);
   }
+
+  // 提供只读访问器，便于外部安全获取主题追踪器和知识图谱管理器
+  ConversationTopicTracker get topicTracker => _topicTracker;
+  KnowledgeGraphManager get knowledgeGraphManager => _knowledgeGraphManager;
 }

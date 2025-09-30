@@ -5,6 +5,7 @@ import 'dart:async';
 import 'dart:convert';
 import 'dart:math' as math;
 import 'package:app/models/human_understanding_models.dart';
+import 'package:app/services/human_understanding_system.dart';
 import 'package:app/services/llm.dart';
 import 'package:app/services/topic_history_service.dart';
 
@@ -89,8 +90,26 @@ class ConversationTopicTracker {
 
   /// 检测对话中的主题
   Future<List<ConversationTopic>> _detectTopics(SemanticAnalysisInput analysis) async {
+    // 获取当前活跃主题和知识图谱信息
+    List<String> activeTopics = [];
+    String knowledgeGraphInfo = '';
+    try {
+      activeTopics = HumanUnderstandingSystem().topicTracker.getActiveTopics().map((t) => t.name).toList();
+    } catch (e) {}
+    try {
+      final kgData = HumanUnderstandingSystem().knowledgeGraphManager.getLastResult();
+      if (kgData != null && kgData.isNotEmpty) {
+        knowledgeGraphInfo = kgData.toString();
+      }
+    } catch (e) {}
+
     final topicDetectionPrompt = '''
 你是一个对话主题识别专家。请从用户的对话中识别主要的讨论主题。
+
+【当前活跃主题】:
+${activeTopics.isNotEmpty ? activeTopics.join(', ') : '无'}
+【相关知识图谱信息】:
+${knowledgeGraphInfo.isNotEmpty ? knowledgeGraphInfo : '无'}
 
 【主题识别原则】：
 1. 识别具体的、有意义的主题，避免过于泛化

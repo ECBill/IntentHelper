@@ -5,6 +5,7 @@ import 'dart:async';
 import 'dart:convert';
 import 'package:app/models/human_understanding_models.dart';
 import 'package:app/services/llm.dart';
+import 'package:app/services/human_understanding_system.dart';
 
 class IntentLifecycleManager {
   static final IntentLifecycleManager _instance = IntentLifecycleManager._internal();
@@ -88,8 +89,26 @@ class IntentLifecycleManager {
 
   /// 使用LLM提取意图
   Future<List<Intent>> _extractIntentsWithLLM(SemanticAnalysisInput analysis) async {
+    // 获取当前活跃主题和知识图谱信息
+    List<String> activeTopics = [];
+    String knowledgeGraphInfo = '';
+    try {
+      activeTopics = HumanUnderstandingSystem().topicTracker.getActiveTopics().map((t) => t.name).toList();
+    } catch (e) {}
+    try {
+      final kgData = HumanUnderstandingSystem().knowledgeGraphManager.getLastResult();
+      if (kgData != null && kgData.isNotEmpty) {
+        knowledgeGraphInfo = kgData.toString();
+      }
+    } catch (e) {}
+
     final intentExtractionPrompt = '''
 你是一个专业的意图识别专家。请从用户的对话中识别具体的、明确的、可执行的意图。
+
+【当前活跃主题】：
+${activeTopics.isNotEmpty ? activeTopics.join(', ') : '无'}
+【相关知识图谱信息】：
+${knowledgeGraphInfo.isNotEmpty ? knowledgeGraphInfo : '无'}
 
 【重要原则】：
 1. 只识别用户明确表达的、具有实际行动价值的意图
@@ -103,7 +122,7 @@ class IntentLifecycleManager {
    - 明确的决策需求（"选择..."、"决定..."、"考虑..."）
 
 【严格过滤条件】：
-- 置信度必须≥0.7才输出
+- 置信度必须>=0.7才输出
 - 避免识别模糊的、通用的意图
 - 如果用户只是在描述现状、表达感受、或进行日常对话，不要强行识别意图
 

@@ -8,6 +8,7 @@ import 'package:app/controllers/chat_controller.dart';
 import 'package:app/services/natural_language_reminder_service.dart'; // 🔥 新增：导入TodoEntity和ObjectBoxService
 import 'package:app/models/todo_entity.dart';
 import 'package:app/services/objectbox_service.dart';
+import 'package:app/services/human_understanding_system.dart';
 
 class IntelligentReminderManager {
   static final IntelligentReminderManager _instance = IntelligentReminderManager._internal();
@@ -166,6 +167,19 @@ class IntelligentReminderManager {
   /// 使用LLM分析上下文是否适合提醒
   Future<bool> _analyzeContextForReminder(ReminderRule rule, SemanticAnalysisInput analysis) async {
     try {
+      // 获取当前活跃主题和知识图谱信息
+      List<String> activeTopics = [];
+      String knowledgeGraphInfo = '';
+      try {
+        activeTopics = HumanUnderstandingSystem().topicTracker.getActiveTopics().map((t) => t.name).toList();
+      } catch (e) {}
+      try {
+        final kgData = HumanUnderstandingSystem().knowledgeGraphManager.getLastResult();
+        if (kgData != null && kgData.isNotEmpty) {
+          knowledgeGraphInfo = kgData.toString();
+        }
+      } catch (e) {}
+
       final contextPrompt = '''
 你是一个智能提醒助手。请分析当前对话上下文，判断是否适合发送特定类型的提醒。
 
@@ -174,6 +188,11 @@ class IntelligentReminderManager {
 - 目标关键词: ${rule.targetKeyword}
 - 目标意图: ${rule.targetIntent}
 - 描述: ${rule.description}
+
+【当前活跃主题】：
+${activeTopics.isNotEmpty ? activeTopics.join(', ') : '无'}
+【相关知识图谱信息】：
+${knowledgeGraphInfo.isNotEmpty ? knowledgeGraphInfo : '无'}
 
 【当前对话内容】：
 "${analysis.content}"

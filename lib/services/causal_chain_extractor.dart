@@ -5,6 +5,7 @@ import 'dart:async';
 import 'dart:convert';
 import 'package:app/models/human_understanding_models.dart';
 import 'package:app/services/llm.dart';
+import 'package:app/services/human_understanding_system.dart';
 
 class CausalChainExtractor {
   static final CausalChainExtractor _instance = CausalChainExtractor._internal();
@@ -75,8 +76,26 @@ class CausalChainExtractor {
 
   /// 提取显式因果关系
   Future<List<CausalRelation>> _extractExplicitCausalRelations(SemanticAnalysisInput analysis) async {
+    // 获取当前活跃主题和知识图谱信息
+    List<String> activeTopics = [];
+    String knowledgeGraphInfo = '';
+    try {
+      activeTopics = HumanUnderstandingSystem().topicTracker.getActiveTopics().map((t) => t.name).toList();
+    } catch (e) {}
+    try {
+      final kgData = HumanUnderstandingSystem().knowledgeGraphManager.getLastResult();
+      if (kgData != null && kgData.isNotEmpty) {
+        knowledgeGraphInfo = kgData.toString();
+      }
+    } catch (e) {}
+
     final explicitCausalPrompt = '''
-你是一个因果关系识别专家。请从用户的对话中识别明确的因果关系表述。
+你是一个因果关系识别专家。请从用户的对话中识别明确的因果关系表达。
+
+【当前活跃主题】：
+${activeTopics.isNotEmpty ? activeTopics.join(', ') : '无'}
+【相关知识图谱信息】：
+${knowledgeGraphInfo.isNotEmpty ? knowledgeGraphInfo : '无'}
 
 【识别重点】：
 1. 寻找因果关系指示词：因为、所以、由于、导致、造成、引起、结果、因此、故而等
@@ -96,20 +115,16 @@ class CausalChainExtractor {
   {
     "cause": "原因描述",
     "effect": "结果描述", 
-    "type": "因果关系类型",
+    "type": "因果关系类别",
     "confidence": 0.8,
     "evidence_phrases": ["支持这个因果关系的短语"],
-    "involved_entities": ["涉及的实体"],
-    "context": {
-      "temporal_order": "时间顺序信息",
-      "emotional_context": "情感背景"
-    }
+    "context": "相关上下文信息"
   }
 ]
 
-如��没有明确的因果关系，返回空数组 []。
+重要：只输出明确的、可验证的因果关系。如果没有，返回空数组 []。
 
-用户对话：
+当前对话内容：
 "${analysis.content}"
 
 检测到的实体：${analysis.entities}

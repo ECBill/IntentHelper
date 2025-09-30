@@ -177,8 +177,20 @@ const String systemPromptOfHelp = """
 	  2.	answer(Provide the answer): {answer}.
 """;
 
-String getUserPromptOfSummaryGeneration(String chatHistory) {
-  return "Dialogue between the user and their assistant Buddie:\n$chatHistory";
+String getUserPromptOfSummaryGeneration(String chatHistory, {List<String>? topics, String? knowledgeGraphInfo}) {
+  final buffer = StringBuffer();
+  if (topics != null && topics.isNotEmpty) {
+    buffer.writeln('当前对话主题分析（可用于理解用户关注点）：${topics.join(", ")}');
+  }
+  if (knowledgeGraphInfo != null && knowledgeGraphInfo.isNotEmpty) {
+    buffer.writeln('相关历史知识（基于主题向量查询）：$knowledgeGraphInfo');
+  }
+  if ((topics != null && topics.isNotEmpty) || (knowledgeGraphInfo != null && knowledgeGraphInfo.isNotEmpty)) {
+    buffer.writeln('（以上信息可用于生成更相关的总结，如无用可忽略）');
+  }
+  buffer.writeln('对话内容如下：');
+  buffer.writeln(chatHistory);
+  return buffer.toString();
 }
 
 // 🔥 新增：包含用户状态的总结生成prompt
