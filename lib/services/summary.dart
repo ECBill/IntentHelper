@@ -131,7 +131,7 @@ class DialogueSummary {
       chatHistoryBuffer.write("($formattedTime) ${record.role}: ${record.content}\n");
     }
 
-    if (contentLength < 100) {
+    if (contentLength < 70) {
       return null;
     }
 
