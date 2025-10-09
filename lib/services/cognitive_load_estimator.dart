@@ -29,6 +29,9 @@ class CognitiveLoadEstimator {
   /// 认知负载更新流
   Stream<CognitiveLoadAssessment> get loadUpdates => _loadUpdatesController.stream;
 
+  /// 提供认知负载评估历史的只读访问器
+  List<CognitiveLoadAssessment> get assessmentHistory => List.unmodifiable(_assessmentHistory);
+
   /// 初始化估算器
   Future<void> initialize() async {
     if (_initialized) return;
@@ -93,7 +96,7 @@ class CognitiveLoadEstimator {
       // 6. 存储历史记录
       _assessmentHistory.add(assessment);
       if (_assessmentHistory.length > 100) {
-        _assessmentHistory.removeAt(0); // 保持最近100次评估
+        _assessmentHistory.removeAt(0); // 保持最近100次评���
       }
       
       _loadUpdatesController.add(assessment);

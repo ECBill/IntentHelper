@@ -858,7 +858,7 @@ class HumanUnderstandingSystem {
 
   /// 手动触发对话检查（dashboard调用）
   Future<void> triggerDialogueCheck() async {
-    print('[HumanUnderstandingSystem] 🔄 手动触发对话检查（来自Dashboard）...');
+    print('[HumanUnderstandingSystem] 🔄 手动触发对话���查（来自Dashboard）...');
     await _monitorNewConversations();
   }
 
@@ -960,4 +960,35 @@ class HumanUnderstandingSystem {
   // 提供只读访问器，便于外部安全获取主题追踪器和知识图谱管理器
   ConversationTopicTracker get topicTracker => _topicTracker;
   KnowledgeGraphManager get knowledgeGraphManager => _knowledgeGraphManager;
+
+  /// 获取当前最新认知负载评估（public方法，供外部调用）
+  CognitiveLoadAssessment getCurrentCognitiveLoadAssessment() {
+    try {
+      return _loadEstimator.assessmentHistory.isNotEmpty
+          ? _loadEstimator.assessmentHistory.last
+          : CognitiveLoadAssessment(
+              level: CognitiveLoadLevel.moderate,
+              score: 0.5,
+              factors: {},
+              activeIntentCount: 0,
+              activeTopicCount: 0,
+              emotionalIntensity: 0.0,
+              topicSwitchRate: 0.0,
+              complexityScore: 0.0,
+              recommendation: '',
+            );
+    } catch (e) {
+      return CognitiveLoadAssessment(
+        level: CognitiveLoadLevel.moderate,
+        score: 0.5,
+        factors: {},
+        activeIntentCount: 0,
+        activeTopicCount: 0,
+        emotionalIntensity: 0.0,
+        topicSwitchRate: 0.0,
+        complexityScore: 0.0,
+        recommendation: '',
+      );
+    }
+  }
 }

@@ -32,7 +32,7 @@ class IntelligentReminderManager {
   // 配置参数
   static const int _checkInterval = 30; // 30秒检查一次
   static const int _analysisInterval = 300; // 5分钟分析一次
-  static const int _maxRemindersPerHour = 3; // 每小时最多3个提醒
+  static const int _maxRemindersPerHour = 5; // 每小时最多3个提醒
 
   // 🔥 新增：智能提醒调度参数
   static const int _minIntervalBetweenReminders = 900; // 15分钟内最多发送1个提醒
@@ -643,33 +643,50 @@ ${knowledgeGraphInfo.isNotEmpty ? knowledgeGraphInfo : '无'}
     return scheduledTime;
   }
 
-  /// 🔥 新增：生成个性化提醒内容
+  /// 🔥 新增：生成个性化提醒内容（根据认知负载级别和用户状态优化）
   Future<String> _generateReminderContent(ReminderRule rule, SemanticAnalysisInput analysis) async {
     try {
-      final contentPrompt = '''
-根据用户的对话内容和提醒规则，生成一个个性化的提醒内容。
+      // 获取当前认知负载评估
+      final loadAssessment = HumanUnderstandingSystem().getCurrentCognitiveLoadAssessment();
+      final loadLevel = loadAssessment.level;
+      // 获取当前活跃主题
+      final activeTopics = HumanUnderstandingSystem().topicTracker.getActiveTopics().map((t) => t.name).toList();
+      // 获取知识图谱信息
+      final knowledgeGraphInfo = HumanUnderstandingSystem().knowledgeGraphManager.getLastResult()?.toString() ?? '';
 
-【提醒规则】：
-- 类型: ${rule.type.toString()}
-- 目标关键词: ${rule.targetKeyword}
-- 目标意图: ${rule.targetIntent}
-- 默认消息: ${rule.defaultMessage}
+      // overload 不触发提醒
+      if (loadLevel == CognitiveLoadLevel.overload) {
+        return '';
+      }
 
-【用户对话内容】：
-"${analysis.content}"
-
+      String prompt = '';
+      if (loadLevel == CognitiveLoadLevel.high || loadLevel == CognitiveLoadLevel.moderate) {
+        // 结合当前话题和内容生成建议
+        prompt = '''
+你是一位智能语音助手。请根据用户当前的认知负载（${loadLevel.toString()}），结合当前讨论的话题和对话内容，生成一个有针对性的吸引他跟你聊天的话题内容建议。
+【当前话题】：${activeTopics.isNotEmpty ? activeTopics.join(', ') : '无'}
+【对话内容】：${analysis.content}
 【用户情绪】：${analysis.emotion}
-
-请生成一个简洁、友好、有用的提醒内容，不超过100字。
+请生成一个简洁、友好、有用的建议提醒（不要泛泛而谈），不超过100字。
 ''';
-
-      final llm = await LLM.create('gpt-4o-mini', systemPrompt: contentPrompt);
+      } else if (loadLevel == CognitiveLoadLevel.low) {
+        // 结合历史知识图谱信息生成建议
+        prompt = '''
+你是一位智能语音助手。用户当前认知负载较低（${loadLevel.toString()}），请结合最近讨论内容相关的用户历史信息，生成一个有针对性的吸引他跟你聊天的话题内容建议。
+【相关历史知识】：${knowledgeGraphInfo.isNotEmpty ? knowledgeGraphInfo : '无'}
+【对话内容】：${analysis.content}
+请生成一个简洁、友好、有用的建议提醒，最好能帮助用户拓展思路或回顾相关经验，不超过100字。
+''';
+      }
+      if (prompt.isEmpty) return rule.defaultMessage;
+      final llm = await LLM.create('gpt-4o-mini', systemPrompt: prompt);
       final response = await llm.createRequest(content: analysis.content);
-
-      return response.trim().isNotEmpty ? response.trim() : rule.defaultMessage;
+      // 如果LLM返回空或无意义内容，则不发送提醒
+      if (response.trim().isEmpty || response.trim() == rule.defaultMessage) return '';
+      return response.trim();
     } catch (e) {
       print('[IntelligentReminderManager] ❌ 生成提醒内容失败: $e');
-      return rule.defaultMessage;
+      return '';
     }
   }
 

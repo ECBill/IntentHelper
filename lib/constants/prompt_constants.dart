@@ -64,26 +64,26 @@ const Map<String, Object> responseSchemaOfChat = {
   "schema": {
     "type": "object",
     "properties": {
-        "content": {
-            "type": "string",
-            "description": "The assistant's reply content to the user, containing the main response."
-        },
-        "queryStartTime": {
-            "type": ["string", "null"],
-            "description": "The start timestamp for historical data retrieval, if needed."
-        },
-        "queryEndTime": {
-            "type": ["string", "null"],
-            "description": "The end timestamp for historical data retrieval, if needed."
-        },
-        "isEnd": {
-            "type": "boolean",
-            "description": "A flag indicating if the conversation has ended."
-        }
+      "content": {
+        "type": "string",
+        "description": "The assistant's reply content to the user, containing the main response."
+      },
+      "queryStartTime": {
+        "type": ["string", "null"],
+        "description": "The start timestamp for historical data retrieval, if needed."
+      },
+      "queryEndTime": {
+        "type": ["string", "null"],
+        "description": "The end timestamp for historical data retrieval, if needed."
+      },
+      "isEnd": {
+        "type": "boolean",
+        "description": "A flag indicating if the conversation has ended."
+      }
     },
     "additionalProperties": false,
     "required": [
-        "content"
+      "content"
     ]
   }
 };
@@ -100,14 +100,15 @@ const String systemPromptOfSummary = """
 
 请根据以下要求进行总结：
 1. 为每段对话起一个吸引人的标题，能让用户一眼就想起当时的内容
-2. 重点关注对话中的启发、新知识、建议和行动计划
+2. 重点关注对话中的启发、新知识、细节讨论和行动计划，确保囊括具体讨论内容和关键细节
 3. 分析用户可能感兴趣的后续行动或思考方向
 4. 使用温暖、亲切的语调，让总结读起来有趣且有用
 5. 如果提供了用户状态信息，要在总结中体现对用户当前关注点的理解
+6. 在总结中，约70%的篇幅用于对核心内容的详细概述，约30%的篇幅用于简洁扼要的建议
+7. 对于ASR识别精度较低或明显错误的信息，请你尝试根据汉语的发音联系上下文进行猜测，如果实在猜不出来或是不确定，请直接忽视，不在总结中体现
 
 输出格式（纯JSON，不要markdown标记）：
-{
-  "output": [
+{"output": [
     {
       "subject": "💡 探索了图神经网络的奥秘", 
       "start_time": "2024-10-15 13:00", 
@@ -155,18 +156,18 @@ const String systemPromptOfNewSummary = """
 - 提供具体可行的后续行动建议
 - 保持温暖亲切的语调
 - 确保时间范围准确
+- 在摘要部分约70%的篇幅用于具体详细的内容概述，约30%的篇幅用于简洁的建议
+- 忽略ASR识别中的无意义或错误信息
 
 输出格式（纯JSON，不要markdown标记）：
-{
-  "output": [
-    {
-      "subject": "标题", 
-      "start_time": "yyyy-MM-dd HH:mm", 
-      "end_time": "yyyy-MM-dd HH:mm", 
-      "abstract": "总结内容"
-    }
-  ]
-}""";
+{"output": [
+  {
+    "subject": "标题", 
+    "start_time": "yyyy-MM-dd HH:mm", 
+    "end_time": "yyyy-MM-dd HH:mm", 
+    "abstract": "总结内容"
+  }
+]}""";
 
 const String systemPromptOfHelp = """
   Please respond based on the context and history of the current chat session. Your answers should directly address the questions or requirements provided.
