@@ -450,11 +450,204 @@ class EmbeddingService {
     return _generateSemanticVector(text);
   }
 
-  /// 生成缓存键
-  String _generateCacheKey(String text) {
-    final bytes = utf8.encode(text);
-    final digest = md5.convert(bytes);
-    return digest.toString();
+  // 为不同算法留一个版本号，便于将来迁移或判断是否需要重算
+  static const int fallbackEmbeddingVersion = 2;
+
+  // ---------------------- 新增：稳定可重复的哈希工具与分词 ----------------------
+  // 将字符串稳定地哈希到一个非负 32bit 整数（使用 md5，避免 Dart hashCode 的不稳定性）
+  int _stableHash32(String s, {int seed = 0}) {
+    final bytes = utf8.encode('$seed#$s');
+    final digest = md5.convert(bytes).bytes; // 16 bytes
+    // 取前4个字节组成32位无符号整数
+    int value = 0;
+    for (int i = 0; i < 4; i++) {
+      value = (value << 8) | (digest[i] & 0xFF);
+    }
+    // 保证非负
+    return value & 0x7FFFFFFF;
+  }
+
+  // 将哈希映射到 [-1, 1] 的符号（第5个字节的最低位）
+  int _stableSign(String s) {
+    final bytes = md5.convert(utf8.encode('sign#$s')).bytes;
+    final bit = bytes[0] & 0x01;
+    return bit == 0 ? 1 : -1;
+  }
+
+  // 简单的中英文混合分词：
+  // - 中文：采用字 bi-gram / tri-gram（覆盖更多语义组合）
+  // - 英文：基于单词分割 + 低频过滤
+  List<String> _extractTokensMixed(String text) {
+    final normalized = text.trim().toLowerCase();
+    if (normalized.isEmpty) return const [];
+
+    final tokens = <String>[];
+
+    // 中文字符范围匹配
+    final chinese = RegExp(r'[\u4e00-\u9fa5]');
+    final hasChinese = chinese.hasMatch(normalized);
+
+    if (hasChinese) {
+      // 连续中文片段按字符切分
+      final onlyCn = normalized.replaceAll(RegExp(r'[^\u4e00-\u9fa5]'), ' ');
+      for (final segment in onlyCn.split(RegExp(r'\s+'))) {
+        if (segment.isEmpty) continue;
+        // uni-gram（单字）适当加入，权重较低
+        for (int i = 0; i < segment.length; i++) {
+          tokens.add(segment.substring(i, i + 1));
+        }
+        // bi-gram
+        for (int i = 0; i < segment.length - 1; i++) {
+          tokens.add(segment.substring(i, i + 2));
+        }
+        // tri-gram
+        for (int i = 0; i < segment.length - 2; i++) {
+          tokens.add(segment.substring(i, i + 3));
+        }
+      }
+    }
+
+    // 英文/数字按单词切分
+    final wordMatches = RegExp(r'[a-z0-9]+').allMatches(normalized);
+    for (final m in wordMatches) {
+      final w = m.group(0)!;
+      if (w.length >= 2) tokens.add(w);
+    }
+
+    // 去重但保留一定重复度（保留原始，后续以词频计权）
+    return tokens;
+  }
+
+  // ---------------------- 新版：稳定的哈希嵌入（Feature Hashing + Signed Sum） ----------------------
+  Future<List<double>> _generateSemanticVector(String text) async {
+    final tokens = _extractTokensMixed(text);
+    if (tokens.isEmpty) {
+      // 极端情况给一个单位向量的第0维
+      final v = List<double>.filled(vectorDimensions, 0.0);
+      v[0] = 1.0;
+      return v;
+    }
+
+    // 基于词频的权重（简化 TF），中文 uni-gram 权重稍低，bi/tri-gram 偏高
+    final tf = <String, double>{};
+    for (final t in tokens) {
+      final len = t.runes.length; // 中文长度按字符
+      final isCn = RegExp(r'^[\u4e00-\u9fa5]+').hasMatch(t);
+      double base = 1.0;
+      if (isCn) {
+        if (len == 1) base = 0.5; // 单字权重偏低
+        else if (len == 2) base = 1.0;
+        else base = 1.2; // 3字以上略高
+      }
+      tf[t] = (tf[t] ?? 0) + base;
+    }
+
+    // Feature Hashing 到固定维度，带符号累加
+    final vector = List<double>.filled(vectorDimensions, 0.0);
+    tf.forEach((token, weight) {
+      final idx = _stableHash32(token) % vectorDimensions;
+      final sgn = _stableSign(token);
+      // 轻微长度和词频的 log 缩放
+      final w = weight * (1.0 + 0.1 * (token.length.clamp(1, 10))) * 1.0;
+      vector[idx] += sgn * w;
+    });
+
+    // 归一化
+    return _normalizeVector(vector);
+  }
+
+  // ---------------------- 新增：词法匹配与混合排序 ----------------------
+  // 简单词法分数（Jaccard + 关键字段加分）
+  double _lexicalScore({
+    required String query,
+    required EventNode event,
+  }) {
+    final qTokens = _extractTokensMixed(query).toSet();
+    final docText = event.getEmbeddingText();
+    final dTokens = _extractTokensMixed(docText).toSet();
+    if (qTokens.isEmpty || dTokens.isEmpty) return 0.0;
+
+    final inter = qTokens.intersection(dTokens).length.toDouble();
+    final uni = qTokens.union(dTokens).length.toDouble();
+    double jaccard = uni > 0 ? inter / uni : 0.0;
+
+    // 事件名称命中加分（强相关性）
+    double nameBoost = 0.0;
+    for (final t in qTokens) {
+      if (t.length <= 1) continue;
+      if (event.name.toLowerCase().contains(t)) nameBoost += 0.05;
+    }
+
+    return (jaccard * 0.8 + nameBoost).clamp(0.0, 1.0);
+  }
+
+  // 领域关键词加权（例如：酒店/旅游相关）
+  double _domainBoost(String query, EventNode event) {
+    final q = query.toLowerCase();
+    final name = event.name.toLowerCase();
+    final type = event.type.toLowerCase();
+
+    final hotelKeys = ['酒店', '预订', '旅店', '民宿', '入住', '房型'];
+    final travelKeys = ['旅行', '旅游', '出行', '行程', '景点', '路线', '机票', '车票'];
+
+    double boost = 0.0;
+    bool qHotel = hotelKeys.any((k) => q.contains(k));
+    bool qTravel = travelKeys.any((k) => q.contains(k));
+
+    if (qHotel || qTravel) {
+      // 名称/类型中命中关键词给较大加分
+      if (hotelKeys.any((k) => name.contains(k) || type.contains(k))) boost += 0.15;
+      if (travelKeys.any((k) => name.contains(k) || type.contains(k))) boost += 0.12;
+
+      // 目的/结果轻量加分
+      final intentText = '${event.purpose ?? ''} ${event.result ?? ''}'.toLowerCase();
+      if (hotelKeys.any((k) => intentText.contains(k))) boost += 0.05;
+      if (travelKeys.any((k) => intentText.contains(k))) boost += 0.05;
+    }
+
+    // 与领域明显不相关的类别适当惩罚（避免“学习马术/游戏体验”跑到前面）
+    final unrelated = ['游戏', '学习', '马术', '编程', '训练', '健身'];
+    if (qHotel || qTravel) {
+      if (unrelated.any((k) => name.contains(k) || type.contains(k))) {
+        boost -= 0.08;
+      }
+    }
+
+    return boost.clamp(-0.2, 0.25);
+  }
+
+  /// 混合排序：语义余弦 + 词法匹配 + 领域加权
+  Future<List<Map<String, dynamic>>> searchSimilarEventsHybridByText(
+    String queryText,
+    List<EventNode> eventNodes, {
+    int topK = 10,
+    double cosineThreshold = 0.2,
+    double wCos = 0.6,
+    double wLex = 0.3,
+    double wBoost = 0.1,
+  }) async {
+    final queryVector = await generateTextEmbedding(queryText);
+    if (queryVector == null) return [];
+
+    final candidates = <Map<String, dynamic>>[];
+    for (final e in eventNodes) {
+      if (e.embedding == null || e.embedding!.isEmpty) continue;
+      final cos = calculateCosineSimilarity(queryVector, e.embedding!);
+      if (cos < cosineThreshold) continue; // 先做一次语义召回
+      final lex = _lexicalScore(query: queryText, event: e);
+      final boost = _domainBoost(queryText, e);
+      final score = (wCos * cos + wLex * lex + wBoost * (boost + 0.0)).clamp(-1.0, 1.0);
+      candidates.add({'event': e, 'similarity': cos, 'lexical': lex, 'boost': boost, 'score': score});
+    }
+
+    // 主排序按综合分数，其次按语义相似度
+    candidates.sort((a, b) {
+      final s = (b['score'] as double).compareTo(a['score'] as double);
+      if (s != 0) return s;
+      return (b['similarity'] as double).compareTo(a['similarity'] as double);
+    });
+
+    return candidates.take(topK).toList();
   }
 
   /// 计算两个向量的余弦相似度
@@ -647,40 +840,6 @@ class EmbeddingService {
     return await findSimilarEvents(queryVector, eventNodes, topK: topK, threshold: threshold);
   }
 
-  /// 生成语义向量（备用方案）
-  Future<List<double>> _generateSemanticVector(String text) async {
-    // 文本预处理
-    final normalizedText = text.toLowerCase().trim();
-    final words = normalizedText.split(RegExp(r'\s+'));
-
-    // 创建基础向量
-    final vector = List<double>.filled(vectorDimensions, 0.0);
-    final random = Random(normalizedText.hashCode);
-
-    // 基于词汇特征生成向量
-    for (int i = 0; i < words.length && i < vectorDimensions ~/ 4; i++) {
-      final word = words[i];
-      final wordHash = word.hashCode;
-      final wordRandom = Random(wordHash);
-
-      final startIndex = (i * 4) % vectorDimensions;
-      for (int j = 0; j < 4 && startIndex + j < vectorDimensions; j++) {
-        vector[startIndex + j] = wordRandom.nextDouble() * 2 - 1;
-      }
-    }
-
-    // 基于文本长度和字符特征调整向量
-    final lengthFactor = min(text.length / 100.0, 1.0);
-    for (int i = 0; i < vectorDimensions; i++) {
-      vector[i] += (random.nextDouble() * 0.2 - 0.1) * lengthFactor;
-
-      if (text.contains(RegExp(r'[\u4e00-\u9fa5]'))) {
-        vector[i] += (random.nextDouble() * 0.1 - 0.05);
-      }
-    }
-
-    return _normalizeVector(vector);
-  }
 
   /// 清空缓存
   void clearCache() {
@@ -774,6 +933,13 @@ class EmbeddingService {
     final events = jsonList.map((e) => EventNode.fromJson(e)).toList();
     print('[EmbeddingService] ✅ 已从 $filePath 加载事件: ${events.length} 条');
     return events.cast<EventNode>();
+  }
+
+  // 生成缓存键（包含回退版本号，避免算法升级后命中旧缓存）
+  String _generateCacheKey(String text) {
+    final bytes = utf8.encode('$fallbackEmbeddingVersion|$text');
+    final digest = md5.convert(bytes);
+    return digest.toString();
   }
 }
 

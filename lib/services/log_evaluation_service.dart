@@ -136,7 +136,8 @@ class LogEvaluationService {
                      DateTime.now().millisecondsSinceEpoch;
 
       final query = ObjectBoxService.todoBox
-          .query(TodoEntity_.createdAt.between(startTime, endTime))
+          .query(TodoEntity_.createdAt.between(startTime, endTime)
+              .and(TodoEntity_.reminderType.equals('natural_language')))
           .order(TodoEntity_.createdAt)
           .build();
       final todos = query.find();

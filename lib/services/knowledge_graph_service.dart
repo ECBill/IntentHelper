@@ -1073,21 +1073,19 @@ ${patchedUserStateContext['knowledge_graph_info'] != null && patchedUserStateCon
       final objectBox = ObjectBoxService();
       final embeddingService = EmbeddingService();
 
-      final queryVector = await embeddingService.generateTextEmbedding(queryText);
-      if (queryVector == null) {
-        print('[KnowledgeGraphService] ❌ 文本嵌入失败');
-        return [];
-      }
-
+      // 使用混合检索（语义 + 词法 + 领域加权）以获得更稳定的排序
       final allEvents = objectBox.queryEventNodes();
-      final results = await embeddingService.findSimilarEvents(
-        queryVector,
+      final results = await embeddingService.searchSimilarEventsHybridByText(
+        queryText,
         allEvents,
         topK: topK,
-        threshold: similarityThreshold,
+        cosineThreshold: similarityThreshold,
+        wCos: 0.65, // 语义为主
+        wLex: 0.25, // 词法辅助
+        wBoost: 0.10, // 领域加权
       );
 
-      print('[KnowledgeGraphService] 🔍 相似事件查询完成: \\${results.length} 个');
+      print('[KnowledgeGraphService] 🔍 相似事件查询完成(混合): \\${results.length} 个');
       return results;
     } catch (e) {
       print('[KnowledgeGraphService] ❌ searchEventsByText 错误: $e');

@@ -89,7 +89,7 @@ const Map<String, Object> responseSchemaOfChat = {
 };
 
 const String systemPromptOfSummary = """
-你是一位优秀的对话总结专家，擅长从用户与AI助手Buddie的对话中提炼出有价值的信息和洞察。
+你是一位优秀的对话总结专家，擅长从用户在日常生活中与同伴的对话中提炼出有价值的信息和洞察。
 你的任务是将对话整理成易于回顾的总结，帮助用户快速回忆起聊天内容并发现其中的价值。
 
 ## 用户状态感知指导（如有提供）：

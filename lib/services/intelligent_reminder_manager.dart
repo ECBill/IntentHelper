@@ -663,7 +663,7 @@ ${knowledgeGraphInfo.isNotEmpty ? knowledgeGraphInfo : '无'}
       if (loadLevel == CognitiveLoadLevel.high || loadLevel == CognitiveLoadLevel.moderate) {
         // 结合当前话题和内容生成建议
         prompt = '''
-你是一位智能语音助手。请根据用户当前的认知负载（${loadLevel.toString()}），结合当前讨论的话题和对话内容，生成一个有针对性的吸引他跟你聊天的话题内容建议。
+你是一位智能语音助手。结合当前讨论的话题和对话内容，生成一个有针对性的吸引他跟你聊天的话题内容建议。
 【当前话题】：${activeTopics.isNotEmpty ? activeTopics.join(', ') : '无'}
 【对话内容】：${analysis.content}
 【用户情绪】：${analysis.emotion}
@@ -672,7 +672,7 @@ ${knowledgeGraphInfo.isNotEmpty ? knowledgeGraphInfo : '无'}
       } else if (loadLevel == CognitiveLoadLevel.low) {
         // 结合历史知识图谱信息生成建议
         prompt = '''
-你是一位智能语音助手。用户当前认知负载较低（${loadLevel.toString()}），请结合最近讨论内容相关的用户历史信息，生成一个有针对性的吸引他跟你聊天的话题内容建议。
+你是一位智能语音助手。请结合最近讨论内容相关的用户历史信息，生成一个有针对性的吸引他跟你聊天的话题内容建议。
 【相关历史知识】：${knowledgeGraphInfo.isNotEmpty ? knowledgeGraphInfo : '无'}
 【对话内容】：${analysis.content}
 请生成一个简洁、友好、有用的建议提醒，最好能帮助用户拓展思路或回顾相关经验，不超过100字。
