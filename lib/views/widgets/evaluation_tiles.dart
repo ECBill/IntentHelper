@@ -93,16 +93,6 @@ class _FoAEntryTileState extends State<FoAEntryTile> {
           ),
           SizedBox(height: 8.h),
           Text(
-            '相关内容: ${widget.entry.relatedContent}',
-            style: TextStyle(
-              fontSize: 14.sp,
-              color: widget.isLightMode ? Colors.black87 : Colors.white70,
-            ),
-            maxLines: 3,
-            overflow: TextOverflow.ellipsis,
-          ),
-          SizedBox(height: 16.h),
-          Text(
             'FoA识别是否正确:',
             style: TextStyle(
               fontSize: 14.sp,
@@ -740,51 +730,16 @@ class _KGEntryTileState extends State<KGEntryTile> {
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
-          Row(
-            children: [
-              Expanded(
-                child: Text(
-                  '知识图谱: ${widget.entry.nodeType}',
-                  style: TextStyle(
-                    fontSize: 16.sp,
-                    fontWeight: FontWeight.bold,
-                    color: widget.isLightMode ? Colors.black : Colors.white,
-                  ),
-                ),
-              ),
-              Container(
-                padding: EdgeInsets.symmetric(horizontal: 8.w, vertical: 4.h),
-                decoration: BoxDecoration(
-                  color: Colors.indigo.withValues(alpha: 0.1),
-                  borderRadius: BorderRadius.circular(12.r),
-                ),
-                child: Text(
-                  '类型: ${widget.entry.nodeType}',
-                  style: TextStyle(
-                    fontSize: 12.sp,
-                    color: Colors.indigo,
-                  ),
-                ),
-              ),
-            ],
-          ),
-          SizedBox(height: 8.h),
+          // 时间作为标题
           Text(
             DateFormat('yyyy-MM-dd HH:mm:ss').format(widget.entry.timestamp),
-            style: TextStyle(
-              fontSize: 12.sp,
-              color: Colors.grey,
-            ),
+            style: TextStyle(fontSize: 16.sp, fontWeight: FontWeight.bold),
           ),
           SizedBox(height: 8.h),
+          // 完整显示内容摘要
           Text(
-            '内容: ${widget.entry.content}',
-            style: TextStyle(
-              fontSize: 14.sp,
-              color: widget.isLightMode ? Colors.black87 : Colors.white70,
-            ),
-            maxLines: 3,
-            overflow: TextOverflow.ellipsis,
+            widget.entry.content,
+            style: TextStyle(fontSize: 14.sp, height: 1.4),
           ),
           SizedBox(height: 16.h),
           Text(

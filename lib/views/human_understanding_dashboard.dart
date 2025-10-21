@@ -6,6 +6,7 @@ import 'package:flutter_screenutil/flutter_screenutil.dart';
 import 'package:app/models/human_understanding_models.dart' as hum;
 import 'package:app/services/human_understanding_system.dart';
 import 'package:app/services/knowledge_graph_manager.dart';
+import 'package:app/services/kg_history_service.dart'; // 新增
 import 'package:go_router/go_router.dart';
 import 'dart:async';
 import 'dart:convert';
@@ -92,6 +93,14 @@ class _HumanUnderstandingDashboardState extends State<HumanUnderstandingDashboar
         _intelligentSuggestions = suggestions;
         _isLoading = false;
       });
+
+      // 保存当前KG标签页展示内容为历史记录
+      final kgList = _kgManager.getLastResult()?['results'] as List<dynamic>? ?? [];
+      if (kgList.isNotEmpty) {
+        final summary = kgList.map((e) => e['title']?.toString() ?? '').join('\n');
+        await KGHistoryService().initialize();
+        await KGHistoryService().recordWindow(summary);
+      }
     } catch (e) {
       print('加载系统数据失败: $e');
       setState(() {

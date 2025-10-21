@@ -6,10 +6,10 @@ import 'package:app/models/log_evaluation_models.dart';
 import 'package:app/services/objectbox_service.dart';
 import 'package:app/services/topic_history_service.dart';
 import 'package:app/models/record_entity.dart';
-import 'package:app/models/todo_entity.dart';
-import 'package:app/models/summary_entity.dart';
-import 'package:app/models/graph_models.dart';
 import 'package:app/models/objectbox.g.dart';
+
+import 'knowledge_graph_manager.dart';
+import 'package:app/services/kg_history_service.dart'; // 新增
 
 /// 日志评估服务
 class LogEvaluationService {
@@ -27,44 +27,29 @@ class LogEvaluationService {
   /// 获取FoA主题识别数据（修改版）
   Future<List<FoAEntry>> getFoAEntries({DateTimeRange? dateRange}) async {
     final entries = <FoAEntry>[];
-
     try {
-      // 从主题历史服务获取数据
-      final topicHistory = _topicHistoryService.getTopicHistory(dateRange: dateRange);
-
-      for (final historyEntry in topicHistory) {
-        if (historyEntry.detectedTopics.isNotEmpty) {
-          final entryId = 'foa_${historyEntry.id}';
-          final evaluation = _evaluations[entryId];
-
-          // 计算平均置信度
-          final avgConfidence = historyEntry.detectedTopics
-              .map((t) => t.relevanceScore)
-              .reduce((a, b) => a + b) / historyEntry.detectedTopics.length;
-
-          entries.add(FoAEntry(
-            id: entryId,
-            topics: historyEntry.detectedTopics.map((t) => t.name).toList(),
-            confidence: avgConfidence,
-            timestamp: historyEntry.timestamp,
-            relatedContent: historyEntry.content,
-            evaluation: evaluation,
-          ));
-        }
-      }
-
-      // 如果历史服务中没有数据，回退到原来的模拟数据方法
-      if (entries.isEmpty) {
-        final fallbackEntries = await _getFallbackFoAEntries(dateRange: dateRange);
-        entries.addAll(fallbackEntries);
+      // 从主题历史服务获取按窗口分组的数据
+      final windows = _topicHistoryService.getTopicHistoryWindows(dateRange: dateRange);
+      for (final window in windows) {
+        if (window.topics.isEmpty) continue;
+        final entryId = 'foa_window_${window.windowStart.millisecondsSinceEpoch}';
+        final evaluation = _evaluations[entryId];
+        // 计算窗口内平均置信度
+        final avgConfidence = window.topics
+            .map((t) => t.relevanceScore)
+            .reduce((a, b) => a + b) / window.topics.length;
+        entries.add(FoAEntry(
+          id: entryId,
+          topics: window.topics.map((t) => t.name).toList(),
+          confidence: avgConfidence,
+          timestamp: window.windowStart,
+          relatedContent: '',  // 不保存具体内容
+          evaluation: evaluation,
+        ));
       }
     } catch (e) {
       print('获取FoA数据失败: $e');
-      // 出错时使用回退方法
-      final fallbackEntries = await _getFallbackFoAEntries(dateRange: dateRange);
-      entries.addAll(fallbackEntries);
     }
-
     return entries;
   }
 
@@ -252,26 +237,24 @@ class LogEvaluationService {
 
   /// 获取知识图谱数据
   Future<List<KGEntry>> getKGEntries({DateTimeRange? dateRange}) async {
+    // 从持久化的KG历史读取统一文字版本
     final entries = <KGEntry>[];
-
-    try {
-      // 暂时返回模拟数据，实际需要从知识图谱服务获取
-      // TODO: 从KnowledgeGraphService获取真实数据
-      if (dateRange != null) {
-        entries.add(KGEntry(
-          id: 'kg_1',
-          nodeType: 'Person',
-          content: '用户信息节点',
-          properties: {'name': '用户', 'type': 'person'},
-          timestamp: DateTime.now(),
-          relatedContent: '从对话中提取的用户信息',
-          evaluation: _evaluations['kg_1'],
-        ));
-      }
-    } catch (e) {
-      print('获取KG数据失败: $e');
+    final kgHistory = KGHistoryService();
+    await kgHistory.initialize();
+    final history = kgHistory.getHistory(dateRange: dateRange);
+    for (final entry in history) {
+      final entryId = 'kg_${entry.windowStart.millisecondsSinceEpoch}';
+      final evaluation = _evaluations[entryId];
+      entries.add(KGEntry(
+        id: entryId,
+        nodeType: entry.windowStart.toIso8601String(),
+        content: entry.summary,
+        properties: {},
+        timestamp: entry.windowStart,
+        relatedContent: '',
+        evaluation: evaluation,
+      ));
     }
-
     return entries;
   }
 
@@ -306,7 +289,7 @@ class LogEvaluationService {
           loadLevel = '高';
         } else if (contentLength > 50) {
           loadValue = 0.6;
-          loadLevel = '中等';
+          loadLevel = '中���';
         } else {
           loadValue = 0.3;
           loadLevel = '低';

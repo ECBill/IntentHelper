@@ -859,7 +859,7 @@ class RecordServiceHandler extends TaskHandler {
       try {
         // 成功匹配，进入下一步
         currentStep++;
-        print('[_initVoiceprint] ✅ 步骤 ${currentStep-1} 完成�����进入步骤 $currentStep');
+        print('[_initVoiceprint] ✅ ���骤 ${currentStep-1} 完成�����进入步骤 $currentStep');
 
         // 清空旧的用户声纹
         final existingNames = _manager!.allSpeakerNames.toList();
@@ -1255,7 +1255,7 @@ Future<sherpa_onnx.VoiceActivityDetector> initVad() async =>
           model: await copyAssetFile('assets/silero_vad.onnx'),
           minSilenceDuration: 0.35, // 优化：更宽容的静音判定
           minSpeechDuration: 0.7,   // 优化：更长的语音段判定
-          maxSpeechDuration: 8.0,   // 优化：允许更长的连续语音
+          maxSpeechDuration: 15.0,  // 优化：允许更长的连续语音，避免长句被截断
         ),
         numThreads: 1,
         debug: true,

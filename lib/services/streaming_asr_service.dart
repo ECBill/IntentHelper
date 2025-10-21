@@ -26,7 +26,7 @@ class StreamingAsrService {
   static const int _optimalChunkSize = 800; // 🔧 FIX: 降低到50ms，加快初始响应
   static const int _minChunkSize = 400;  // 🔧 FIX: 25ms 最小处理单位，更快启动
   static const double _sampleRate = 16000.0;
-  static const int _maxBufferSize = 16000; // 1秒最大缓冲
+  static const int _maxBufferSize = 16000 * 10; // 修改为10秒最大缓冲，避免丢失连续语音
 
   // 🔧 FIX: 添加即时处理模式
   bool _enableInstantProcessing = true; // 启用即时处理，不等缓冲区填满
@@ -85,7 +85,7 @@ class StreamingAsrService {
       _processedSamples = 0;
       _totalAudioReceived = 0;
       _startTime = DateTime.now();
-      
+
       _isInitialized = true;
       print('[StreamingAsrService] 🎉 Optimized streaming ASR initialized successfully');
 
@@ -141,15 +141,15 @@ class StreamingAsrService {
       featureDim: 80,
     );
 
-    // 优化端点检测参数以平衡速度和准确性
+    // 禁用内部端点检测, 依赖外部VAD切分
     final config = sherpa_onnx.OnlineRecognizerConfig(
       model: modelConfig,
       feat: featConfig,
-      enableEndpoint: true,
+      enableEndpoint: true, // 启用内部端点检测以正确分段
       // 调整端点检测参数以获得更好的速度-准确性平衡
-      rule1MinTrailingSilence: 1.2,  // 稍微增加以确保完整性
-      rule2MinTrailingSilence: 0.6,  // 降低以提升响应速度
-      rule3MinUtteranceLength: 8.0,  // 降低最小话语长度
+      rule1MinTrailingSilence: 1.2,
+      rule2MinTrailingSilence: 0.6,
+      rule3MinUtteranceLength: 8.0, // 适中话语长度，避免过长无停顿时才断句
       hotwordsFile: '',
       hotwordsScore: 2.0,
       maxActivePaths: 6,   // 减少到6个路径，平衡准确性和速度
@@ -275,14 +275,14 @@ class StreamingAsrService {
       // 🔧 FIX: 改进的即时处理模式切换逻辑
       int targetChunkSize = _optimalChunkSize;
       bool shouldSwitchToNormal = false;
-      
+
       if (_enableInstantProcessing) {
         // 多条件判断是否应该��换到正常模式：
         // 1. 已接收足够的音频数据 (1秒)
         // 2. 或者运行时间超过3秒
         // 3. 或者已经有识别结果输出
         final elapsedMs = DateTime.now().difference(_startTime).inMilliseconds;
-        
+
         if (_totalAudioReceived >= 16000 || // 1秒的音频数据
             elapsedMs >= 3000 || // 3秒运行时间
             _lastPartialResult.isNotEmpty) { // 已有识别结果
@@ -314,15 +314,19 @@ class StreamingAsrService {
         // 快速检查结果
         final currentResult = _recognizer!.getResult(_stream!);
         if (currentResult.text.isNotEmpty && currentResult.text != _lastPartialResult) {
-          // 对部分结果只做轻量纠错
-          String correctedResult = _correctRecognitionResult(currentResult.text, isFinal: false);
-          result = correctedResult;
-          _lastPartialResult = currentResult.text;
-          _lastCorrectedResult = correctedResult;
-
-          _resultController.add(correctedResult);
-          
-          // 🔧 FIX: 一旦有识别结果，立即切换到正常模式
+          // 计算新增部分
+          String rawText = currentResult.text;
+          String newText = rawText.substring(_lastPartialResult.length);
+          _lastPartialResult = rawText;
+          if (newText.isNotEmpty) {
+            // 对新增部分做轻量纠错
+            String correctedDelta = _correctRecognitionResult(newText, isFinal: false);
+            result = correctedDelta;
+            // 更新纠错后的累计文本
+            _lastCorrectedResult = (_lastCorrectedResult ?? '') + correctedDelta;
+            _resultController.add(correctedDelta);
+          }
+          // 一旦有识别结果，立即切换处理模式
           if (_enableInstantProcessing) {
             shouldSwitchToNormal = true;
           }
