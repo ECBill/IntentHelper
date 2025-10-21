@@ -158,7 +158,7 @@ class DialogueSummary {
 
     try {
       print('[DialogueSummary] 🧠 开始创建 LLM...');
-      LLM summaryLlm = await LLM.create('gpt-4o-mini', systemPrompt: systemPromptOfSummary);
+      LLM summaryLlm = await LLM.create('gpt-4.1-mini', systemPrompt: systemPromptOfSummary);
       print('[DialogueSummary] ✅ LLM 创建成功');
       String summary = await summaryLlm.createRequest(
         content: getUserPromptOfSummaryGeneration(

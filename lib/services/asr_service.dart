@@ -100,7 +100,7 @@ class RecordServiceHandler extends TaskHandler {
   int? _currentDialogueStartTime;
 
   static const int minCharLimit = 70;
-  static const int maxCharLimit = 1000;
+  static const int maxCharLimit = 300;
   static const String _selectedModel = 'gpt-4o';
 
   // 说话人识别历史
@@ -640,7 +640,8 @@ class RecordServiceHandler extends TaskHandler {
       _vad!.pop();
 
       // print('[_processAudioData] 🔧 Adding silence padding...');
-      Float32List paddedSamples = await _addSilencePadding(samples);
+      Float32List normalizedSamples = _normalizeAudio(samples);
+      Float32List paddedSamples = await _addSilencePadding(normalizedSamples);
       // print('[_processAudioData] ✅ Padded samples: ${paddedSamples.length}');
 
       var segment = '';
@@ -1252,9 +1253,9 @@ Future<sherpa_onnx.VoiceActivityDetector> initVad() async =>
       config: sherpa_onnx.VadModelConfig(
         sileroVad: sherpa_onnx.SileroVadModelConfig(
           model: await copyAssetFile('assets/silero_vad.onnx'),
-          minSilenceDuration: 0.25,
-          minSpeechDuration: 0.5,
-          maxSpeechDuration: 5.0,
+          minSilenceDuration: 0.35, // 优化：更宽容的静音判定
+          minSpeechDuration: 0.7,   // 优化：更长的语音段判定
+          maxSpeechDuration: 8.0,   // 优化：允许更长的连续语音
         ),
         numThreads: 1,
         debug: true,
@@ -1311,102 +1312,20 @@ Future<Matrix> loadRealMatrixFromJson(String assetPath, int rows, int cols) asyn
 
 Future<Float32List> _addSilencePadding(Float32List samples) async {
   // 为音频添加静音padding
-  int totalLength = silence.length * 2 + samples.length;
-
+  // 优化：静音长度提升约 60%
+  int silencePaddingLength = (silence.length * 1.6).toInt();
+  int totalLength = silencePaddingLength * 2 + samples.length;
   Float32List paddedSamples = Float32List(totalLength);
-
-  paddedSamples.setAll(silence.length, samples);
+  // 前后各加静音
+  paddedSamples.setAll(silencePaddingLength, samples);
 
   return paddedSamples;
 }
 
-// 在文件末尾添加余弦相似度函数
-
-double _cosineSimilarity(Float32List a, Float32List b) {
-  if (a.length != b.length) return -1.0;
-  double dot = 0.0;
-  double normA = 0.0;
-  double normB = 0.0;
-  for (int i = 0; i < a.length; i++) {
-    dot += a[i] * b[i];
-    normA += a[i] * a[i];
-    normB += b[i] * b[i];
-  }
-  if (normA == 0 || normB == 0) return -1.0;
-  return dot / (math.sqrt(normA) * math.sqrt(normB)); // ← 使用math.sqrt
+// 在音频送入 ASR 前增加归一化处理
+Float32List _normalizeAudio(Float32List samples) {
+  double maxVal = samples.reduce((a, b) => a.abs() > b.abs() ? a : b).abs();
+  if (maxVal == 0) return samples;
+  return Float32List.fromList(samples.map((e) => e / maxVal).toList());
 }
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
 
