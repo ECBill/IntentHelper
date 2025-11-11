@@ -404,10 +404,9 @@ class EmbeddingService {
     return pooled;
   }
 
-  /// 生成备用向量
+  /// 生成备用向量（使用确定性的零向量，避免随机噪声导致的错误相似度）
   List<double> _generateFallbackVector() {
-    final random = Random();
-    return List.generate(vectorDimensions, (i) => random.nextGaussian());
+    return List<double>.filled(vectorDimensions, 0.0);
   }
 
   /// 调整嵌入向量维度
@@ -705,18 +704,35 @@ class EmbeddingService {
   }
 
   /// 向量whitening（均值方差归一化）
+  /// 注意：这是简化版本，对单个向量进行标准化
+  /// 理想情况下应该使用语料库级别的均值和标准差
   List<double> whitenVector(List<double> vector, {List<double>? mean, List<double>? std}) {
     final vMean = mean ?? _calcMean(vector);
     final vStd = std ?? _calcStd(vector, vMean);
     return [for (int i = 0; i < vector.length; i++) (vStd[i] > 1e-8 ? (vector[i] - vMean[i]) / vStd[i] : 0.0)];
   }
-  List<double> _calcMean(List<double> v) => List.generate(v.length, (i) => v[i]);
+
+  /// 计算向量的均值（返回每个维度的均值，这里简化为标量均值应用到所有维度）
+  List<double> _calcMean(List<double> v) {
+    if (v.isEmpty) return [];
+    final sum = v.reduce((a, b) => a + b);
+    final meanScalar = sum / v.length;
+    return List<double>.filled(v.length, meanScalar);
+  }
+
+  /// 计算向量的标准差（返回每个维度的标准差，这里简化为标量标准差应用到所有维度）
   List<double> _calcStd(List<double> v, List<double> mean) {
-    final std = List<double>.filled(v.length, 0.0);
+    if (v.isEmpty) return [];
+    final meanScalar = mean.isNotEmpty ? mean[0] : 0.0;
+    double sumSq = 0.0;
     for (int i = 0; i < v.length; i++) {
-      std[i] = (v[i] - mean[i]) * (v[i] - mean[i]);
+      final d = v[i] - meanScalar;
+      sumSq += d * d;
     }
-    return std.map((e) => sqrt(e)).toList();
+    final variance = sumSq / v.length;
+    final stdScalar = sqrt(variance);
+    final safeStd = stdScalar > 1e-8 ? stdScalar : 1e-8;
+    return List<double>.filled(v.length, safeStd);
   }
 
   /// 多路融合排序（先用余弦筛选，再用欧氏距离重排）
@@ -897,6 +913,112 @@ class EmbeddingService {
     }
   }
 
+  /// 分析嵌入向量质量 - 诊断工具
+  /// 检测零向量、重复向量、相似度分布等，用于诊断嵌入质量问题
+  Future<Map<String, dynamic>> analyzeEmbeddings(List<EventNode> events) async {
+    final stats = <String, int>{};
+    int zeroCount = 0;
+    int nullCount = 0;
+    final similarities = <double>[];
+
+    for (final e in events) {
+      if (e.embedding == null) {
+        nullCount++;
+        continue;
+      }
+      final emb = e.embedding!;
+      
+      // 检查零向量
+      if (emb.every((v) => v == 0.0)) {
+        zeroCount++;
+      }
+      
+      // 生成向量指纹用于检测重复
+      final bytes = utf8.encode(emb.map((d) => d.toStringAsFixed(6)).join(','));
+      final key = md5.convert(bytes).toString();
+      stats[key] = (stats[key] ?? 0) + 1;
+    }
+
+    // 计算相似度分布（采样前100个非空向量对）
+    final nonNullEvents = events.where((e) => e.embedding != null && e.embedding!.isNotEmpty).toList();
+    if (nonNullEvents.length > 1) {
+      final sampleSize = nonNullEvents.length < 100 ? nonNullEvents.length : 100;
+      for (int i = 0; i < sampleSize - 1; i++) {
+        for (int j = i + 1; j < sampleSize && j < i + 10; j++) {
+          final sim = calculateCosineSimilarity(
+            nonNullEvents[i].embedding!,
+            nonNullEvents[j].embedding!,
+          );
+          similarities.add(sim);
+        }
+      }
+    }
+
+    // 统计相似度分布
+    double avgSim = 0.0;
+    double maxSim = 0.0;
+    double minSim = 1.0;
+    if (similarities.isNotEmpty) {
+      avgSim = similarities.reduce((a, b) => a + b) / similarities.length;
+      maxSim = similarities.reduce((a, b) => a > b ? a : b);
+      minSim = similarities.reduce((a, b) => a < b ? a : b);
+    }
+
+    // 获取重复最多的前10个向量
+    final entries = stats.entries.toList()
+      ..sort((a, b) => b.value.compareTo(a.value));
+    final top = entries.take(10).map((e) => {'hash': e.key, 'count': e.value}).toList();
+
+    final total = events.length;
+    return {
+      'total_events': total,
+      'null_embeddings': nullCount,
+      'zero_embeddings': zeroCount,
+      'unique_embeddings': stats.length,
+      'top_duplicates': top,
+      'similarity_stats': {
+        'sample_size': similarities.length,
+        'avg_similarity': avgSim,
+        'max_similarity': maxSim,
+        'min_similarity': minSim,
+      },
+      'potential_issues': _identifyIssues(total, nullCount, zeroCount, stats.length, avgSim),
+    };
+  }
+
+  /// 识别潜在问题
+  List<String> _identifyIssues(int total, int nullCount, int zeroCount, int uniqueCount, double avgSim) {
+    final issues = <String>[];
+    
+    if (total > 0) {
+      final nullRate = nullCount / total;
+      final zeroRate = zeroCount / total;
+      final uniqueRate = uniqueCount / (total - nullCount).clamp(1, total);
+      
+      if (nullRate > 0.1) {
+        issues.add('高比例空嵌入 (${(nullRate * 100).toStringAsFixed(1)}%) - 可能是模型加载或生成失败');
+      }
+      if (zeroRate > 0.05) {
+        issues.add('高比例零向量 (${(zeroRate * 100).toStringAsFixed(1)}%) - 可能是归一化或fallback问题');
+      }
+      if (uniqueRate < 0.8 && total > 10) {
+        issues.add('低唯一性 (${(uniqueRate * 100).toStringAsFixed(1)}%) - 可能是哈希冲突或分词问题');
+      }
+      if (avgSim > 0.8) {
+        issues.add('平均相似度过高 (${avgSim.toStringAsFixed(3)}) - 可能是向量坍缩或过度归一化');
+      }
+      if (avgSim < 0.1 && avgSim > 0) {
+        issues.add('平均相似度过低 (${avgSim.toStringAsFixed(3)}) - 可能是随机噪声过多');
+      }
+    }
+    
+    if (issues.isEmpty) {
+      issues.add('未检测到明显问题');
+    }
+    
+    return issues;
+  }
+
   /// 释放模型资源
   void dispose() {
     try {
@@ -908,7 +1030,7 @@ class EmbeddingService {
       clearCache();
       print('[EmbeddingService] 🧹 已释放模型资源');
     } catch (e) {
-      print('[EmbeddingService] ❌ 释放资源失败: $e');
+      print('[EmbeddingService] ❌释放资源失败: $e');
     }
   }
 
