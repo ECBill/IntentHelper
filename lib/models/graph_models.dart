@@ -113,6 +113,10 @@ class EventNode {
   DateTime? lastSeenTime;        // 最后被检索/访问的时间
   String activationHistoryJson;  // 激活历史记录（JSON格式：[{timestamp, similarity}, ...]）
   double cachedPriorityScore;    // 缓存的优先级分数
+  
+  // 聚类相关字段
+  String? clusterId;             // 所属聚类ID (如果为null则未被聚类)
+  String? mergedTo;              // 是否被合并到某个聚类摘要节点 (存储摘要节点ID)
 
   EventNode({
     this.obxId = 0,
@@ -131,6 +135,8 @@ class EventNode {
     this.lastSeenTime,
     String? activationHistoryJson,
     this.cachedPriorityScore = 0.0,
+    this.clusterId,
+    this.mergedTo,
   })  : lastUpdated = lastUpdated ?? DateTime.now(),
         embedding = embedding ?? <double>[],
         activationHistoryJson = activationHistoryJson ?? '[]';
@@ -209,6 +215,8 @@ class EventNode {
     'lastSeenTime': lastSeenTime?.toIso8601String(),
     'activationHistoryJson': activationHistoryJson,
     'cachedPriorityScore': cachedPriorityScore,
+    'clusterId': clusterId,
+    'mergedTo': mergedTo,
   };
 
   factory EventNode.fromJson(Map<String, dynamic> json) => EventNode(
@@ -228,6 +236,8 @@ class EventNode {
     lastSeenTime: json['lastSeenTime'] != null ? DateTime.parse(json['lastSeenTime']) : null,
     activationHistoryJson: json['activationHistoryJson'] ?? '[]',
     cachedPriorityScore: (json['cachedPriorityScore'] as num?)?.toDouble() ?? 0.0,
+    clusterId: json['clusterId'],
+    mergedTo: json['mergedTo'],
   );
 }
 
@@ -341,6 +351,110 @@ class Context {
     required this.timestamp,
     required this.sourceText,
   });
+}
+
+// 聚类摘要节点模型 - 用于存储聚类后的抽象摘要
+@Entity()
+class ClusterNode {
+  @Id()
+  int obxId = 0;
+  @Unique()
+  String id;           // 聚类唯一标识
+  String name;         // 聚类摘要标题（由LLM生成）
+  String type;         // 聚类类型（始终为 "cluster"）
+  String description;  // 聚类描述
+  DateTime createdAt;  // 聚类创建时间
+  DateTime lastUpdated; // 最后更新时间
+  int memberCount;     // 成员数量
+  String memberIdsJson; // 成员事件ID列表（JSON格式）
+  
+  @HnswIndex(dimensions: 384)
+  @Property(type: PropertyType.floatVector)
+  List<double> embedding; // 聚类中心向量（成员embedding的均值）
+  
+  double avgSimilarity; // 成员间平均相似度
+  DateTime? earliestEventTime; // 最早事件时间
+  DateTime? latestEventTime;   // 最晚事件时间
+  
+  ClusterNode({
+    this.obxId = 0,
+    required this.id,
+    required this.name,
+    this.type = 'cluster',
+    required this.description,
+    DateTime? createdAt,
+    DateTime? lastUpdated,
+    this.memberCount = 0,
+    String? memberIdsJson,
+    List<double>? embedding,
+    this.avgSimilarity = 0.0,
+    this.earliestEventTime,
+    this.latestEventTime,
+  })  : createdAt = createdAt ?? DateTime.now(),
+        lastUpdated = lastUpdated ?? DateTime.now(),
+        memberIdsJson = memberIdsJson ?? '[]',
+        embedding = embedding ?? <double>[];
+  
+  // 获取成员ID列表
+  List<String> get memberIds {
+    try {
+      final list = jsonDecode(memberIdsJson);
+      return List<String>.from(list ?? []);
+    } catch (_) {
+      return [];
+    }
+  }
+  
+  // 设置成员ID列表
+  set memberIds(List<String> ids) {
+    memberIdsJson = jsonEncode(ids);
+    memberCount = ids.length;
+  }
+}
+
+// 聚类元数据 - 记录聚类操作历史
+@Entity()
+class ClusteringMeta {
+  @Id()
+  int obxId = 0;
+  DateTime clusteringTime;     // 聚类执行时间
+  int totalEvents;             // 参与聚类的事件总数
+  int clustersCreated;         // 创建的聚类数量
+  int eventsClustered;         // 被聚类的事件数量
+  int eventsUnclustered;       // 未被聚类的事件数量
+  String algorithmUsed;        // 使用的聚类算法
+  String parametersJson;       // 聚类参数（JSON格式）
+  double avgClusterSize;       // 平均聚类大小
+  double avgIntraClusterSimilarity; // 平均类内相似度
+  
+  ClusteringMeta({
+    this.obxId = 0,
+    DateTime? clusteringTime,
+    this.totalEvents = 0,
+    this.clustersCreated = 0,
+    this.eventsClustered = 0,
+    this.eventsUnclustered = 0,
+    this.algorithmUsed = 'mini-batch-kmeans',
+    String? parametersJson,
+    this.avgClusterSize = 0.0,
+    this.avgIntraClusterSimilarity = 0.0,
+  })  : clusteringTime = clusteringTime ?? DateTime.now(),
+        parametersJson = parametersJson ?? '{}';
+  
+  // 获取参数
+  Map<String, dynamic> get parameters {
+    try {
+      final map = jsonDecode(parametersJson);
+      return Map<String, dynamic>.from(map ?? {});
+    } catch (_) {
+      return {};
+    }
+  }
+  
+  // 设置参数
+  set parameters(Map<String, dynamic> params) {
+    parametersJson = jsonEncode(params);
+  }
 }
 
 class NodeEntity {
