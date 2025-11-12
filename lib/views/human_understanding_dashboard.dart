@@ -798,7 +798,10 @@ class _HumanUnderstandingDashboardState extends State<HumanUnderstandingDashboar
       MapEntry('name', '名称'),
       MapEntry('type', '类型'),
       MapEntry('description', '描述'),
+      MapEntry('cosine_similarity', '余弦相似度'),
       MapEntry('similarity', '相关度'),
+      MapEntry('final_score', '最终排序分数'),
+      MapEntry('priority_score', '优先级分数'),
       MapEntry('matched_topic', '查询来源主题'),
       MapEntry('startTime', '开始时间'),
       MapEntry('endTime', '结束时间'),
@@ -885,14 +888,59 @@ class _HumanUnderstandingDashboardState extends State<HumanUnderstandingDashboar
                                         children: [
                                           Text('${entry.value}: ', style: TextStyle(fontWeight: FontWeight.w600, color: Colors.grey[700])),
                                           Expanded(child: Text(
-                                            entry.key == 'similarity' && node[entry.key] is num
-                                                ? (node[entry.key] as num).toStringAsFixed(3)
+                                            (entry.key == 'similarity' || entry.key == 'cosine_similarity' || 
+                                             entry.key == 'final_score' || entry.key == 'priority_score') && node[entry.key] is num
+                                                ? (node[entry.key] as num).toStringAsFixed(4)
                                                 : node[entry.key].toString(),
                                             style: TextStyle(color: Colors.grey[900]),
                                           )),
                                         ],
                                       ),
                                     ),
+                                // 显示四大组件得分
+                                if (node['components'] != null)
+                                  Padding(
+                                    padding: EdgeInsets.only(top: 12, bottom: 8),
+                                    child: Column(
+                                      crossAxisAlignment: CrossAxisAlignment.start,
+                                      children: [
+                                        Text('优先级组件得分:', style: TextStyle(fontWeight: FontWeight.w600, color: Colors.grey[700])),
+                                        SizedBox(height: 8),
+                                        Row(
+                                          crossAxisAlignment: CrossAxisAlignment.start,
+                                          children: [
+                                            Text('  • 时间衰减(f_time): ', style: TextStyle(fontSize: 13, color: Colors.grey[600])),
+                                            Expanded(child: Text(
+                                              (node['components']['f_time'] as num?)?.toStringAsFixed(4) ?? 'N/A',
+                                              style: TextStyle(color: Colors.orange[700], fontWeight: FontWeight.w500),
+                                            )),
+                                          ],
+                                        ),
+                                        SizedBox(height: 4),
+                                        Row(
+                                          crossAxisAlignment: CrossAxisAlignment.start,
+                                          children: [
+                                            Text('  • 再激活(f_react): ', style: TextStyle(fontSize: 13, color: Colors.grey[600])),
+                                            Expanded(child: Text(
+                                              (node['components']['f_react'] as num?)?.toStringAsFixed(4) ?? 'N/A',
+                                              style: TextStyle(color: Colors.green[700], fontWeight: FontWeight.w500),
+                                            )),
+                                          ],
+                                        ),
+                                        SizedBox(height: 4),
+                                        Row(
+                                          crossAxisAlignment: CrossAxisAlignment.start,
+                                          children: [
+                                            Text('  • 语义相似(f_sem): ', style: TextStyle(fontSize: 13, color: Colors.grey[600])),
+                                            Expanded(child: Text(
+                                              (node['components']['f_sem'] as num?)?.toStringAsFixed(4) ?? 'N/A',
+                                              style: TextStyle(color: Colors.blue[700], fontWeight: FontWeight.w500),
+                                            )),
+                                          ],
+                                        ),
+                                      ],
+                                    ),
+                                  ),
                               ],
                             ),
                           ),
@@ -951,7 +999,8 @@ class _HumanUnderstandingDashboardState extends State<HumanUnderstandingDashboar
                                   overflow: TextOverflow.ellipsis,
                                 ),
                               ),
-                            if (node['similarity'] != null || node['score'] != null)
+                            // 相关度（余弦相似度）
+                            if (node['cosine_similarity'] != null || node['similarity'] != null || node['score'] != null)
                               Padding(
                                 padding: EdgeInsets.only(top: 6.h, bottom: 2.h),
                                 child: Row(
@@ -961,11 +1010,53 @@ class _HumanUnderstandingDashboardState extends State<HumanUnderstandingDashboar
                                     Text('相关度', style: TextStyle(fontSize: 12.sp, color: Colors.blue[400], fontWeight: FontWeight.w500)),
                                     SizedBox(width: 8.w),
                                     Text(
-                                      ((node['similarity'] ?? node['score']) is num)
-                                          ? (((node['similarity'] ?? node['score']) as num).toStringAsFixed(3))
+                                      ((node['cosine_similarity'] ?? node['similarity'] ?? node['score']) is num)
+                                          ? (((node['cosine_similarity'] ?? node['similarity'] ?? node['score']) as num).toStringAsFixed(3))
                                           : '',
                                       style: TextStyle(fontSize: 12.sp, color: Colors.blue[700], fontWeight: FontWeight.bold),
                                     ),
+                                  ],
+                                ),
+                              ),
+                            // 优先级评分信息
+                            if (node['priority_score'] != null && node['final_score'] != null)
+                              Padding(
+                                padding: EdgeInsets.only(top: 4.h, bottom: 2.h),
+                                child: Column(
+                                  crossAxisAlignment: CrossAxisAlignment.start,
+                                  children: [
+                                    // 最终排序分数
+                                    Row(
+                                      children: [
+                                        Icon(Icons.stars, color: Colors.purple[300], size: 15.sp),
+                                        SizedBox(width: 4.w),
+                                        Text('排序分数', style: TextStyle(fontSize: 12.sp, color: Colors.purple[400], fontWeight: FontWeight.w500)),
+                                        SizedBox(width: 8.w),
+                                        Text(
+                                          (node['final_score'] as num).toStringAsFixed(3),
+                                          style: TextStyle(fontSize: 12.sp, color: Colors.purple[700], fontWeight: FontWeight.bold),
+                                        ),
+                                        SizedBox(width: 8.w),
+                                        Text(
+                                          '(P=${(node['priority_score'] as num).toStringAsFixed(3)})',
+                                          style: TextStyle(fontSize: 11.sp, color: Colors.grey[600]),
+                                        ),
+                                      ],
+                                    ),
+                                    // 四大组件得分
+                                    if (node['components'] != null)
+                                      Padding(
+                                        padding: EdgeInsets.only(top: 4.h, left: 19.w),
+                                        child: Wrap(
+                                          spacing: 8.w,
+                                          runSpacing: 4.h,
+                                          children: [
+                                            _buildComponentChip('时间', node['components']['f_time'], Colors.orange),
+                                            _buildComponentChip('激活', node['components']['f_react'], Colors.green),
+                                            _buildComponentChip('语义', node['components']['f_sem'], Colors.blue),
+                                          ],
+                                        ),
+                                      ),
                                   ],
                                 ),
                               ),
@@ -1451,6 +1542,30 @@ class _HumanUnderstandingDashboardState extends State<HumanUnderstandingDashboar
           );
         }).toList(),
       ],
+    );
+  }
+
+  // 构建优先级组件得分标签
+  Widget _buildComponentChip(String label, dynamic score, Color color) {
+    if (score == null) return SizedBox.shrink();
+    
+    final scoreValue = (score is num) ? score.toDouble() : 0.0;
+    
+    return Container(
+      padding: EdgeInsets.symmetric(horizontal: 6.w, vertical: 2.h),
+      decoration: BoxDecoration(
+        color: color.withOpacity(0.1),
+        borderRadius: BorderRadius.circular(4.r),
+        border: Border.all(color: color.withOpacity(0.3), width: 0.5),
+      ),
+      child: Text(
+        '$label:${scoreValue.toStringAsFixed(2)}',
+        style: TextStyle(
+          fontSize: 10.sp,
+          color: color.shade700,
+          fontWeight: FontWeight.w500,
+        ),
+      ),
     );
   }
 }

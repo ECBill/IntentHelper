@@ -4,6 +4,7 @@ import 'package:app/models/record_entity.dart';
 import 'package:app/services/llm.dart';
 import 'package:app/services/objectbox_service.dart';
 import 'package:app/services/embedding_service.dart';
+import 'package:app/services/event_priority_scoring_service.dart';
 
 import 'human_understanding_system.dart';
 
@@ -1063,32 +1064,126 @@ ${patchedUserStateContext['knowledge_graph_info'] != null && patchedUserStateCon
     }
   }
 
-  /// 🔍 根据输入文本，返回与之语义相似的历史事件
+  /// 🔍 根据输入文本，返回与之语义相似的历史事件（增强版：使用动态优先级评分）
   static Future<List<Map<String, dynamic>>> searchEventsByText(
       String queryText, {
         int topK = 10,
         double similarityThreshold = 0.2, // 降低阈值，便于召回更多结果
+        bool usePriorityScoring = true,  // 是否使用动态优先级评分
       }) async {
     try {
       final objectBox = ObjectBoxService();
       final embeddingService = EmbeddingService();
 
-      // 使用混合检索（语义 + 词法 + 领域加权）以获得更稳定的排序
-      final allEvents = objectBox.queryEventNodes();
-      final results = await embeddingService.searchSimilarEventsHybridByText(
-        queryText,
-        allEvents,
-        topK: topK,
-        cosineThreshold: similarityThreshold,
-        wCos: 0.65, // 语义为主
-        wLex: 0.25, // 词法辅助
-        wBoost: 0.10, // 领域加权
-      );
+      if (!usePriorityScoring) {
+        // 使用旧的混合检索（语义 + 词法 + 领域加权）
+        final allEvents = objectBox.queryEventNodes();
+        final results = await embeddingService.searchSimilarEventsHybridByText(
+          queryText,
+          allEvents,
+          topK: topK,
+          cosineThreshold: similarityThreshold,
+          wCos: 0.65,
+          wLex: 0.25,
+          wBoost: 0.10,
+        );
 
-      print('[KnowledgeGraphService] 🔍 相似事件查询完成(混合): \\${results.length} 个');
-      return results;
+        print('[KnowledgeGraphService] 🔍 相似事件查询完成(传统混合): ${results.length} 个');
+        return results;
+      }
+
+      // 使用新的动态优先级评分系统
+      return await searchEventsByTextWithPriority(
+        queryText,
+        topK: topK,
+        similarityThreshold: similarityThreshold,
+      );
     } catch (e) {
       print('[KnowledgeGraphService] ❌ searchEventsByText 错误: $e');
+      return [];
+    }
+  }
+
+  /// 🔍 使用动态优先级评分的事件检索
+  static Future<List<Map<String, dynamic>>> searchEventsByTextWithPriority(
+      String queryText, {
+        int topK = 10,
+        double similarityThreshold = 0.2,
+      }) async {
+    try {
+      final objectBox = ObjectBoxService();
+      final embeddingService = EmbeddingService();
+      final priorityService = EventPriorityScoringService();
+
+      // 1. 检测查询中的相对时间表达式，动态调整参数
+      priorityService.detectAndBoostTemporalExpression(queryText);
+
+      // 2. 生成查询向量
+      final queryVector = await embeddingService.generateTextEmbedding(queryText);
+      if (queryVector == null) {
+        print('[KnowledgeGraphService] ⚠️ 无法生成查询向量');
+        return [];
+      }
+
+      // 3. 获取所有事件节点
+      final allEvents = objectBox.queryEventNodes();
+      
+      // 4. 初步筛选：使用余弦相似度进行召回
+      final candidates = <EventNode>[];
+      for (final event in allEvents) {
+        if (event.embedding.isEmpty) continue;
+        
+        final cosineSim = embeddingService.calculateCosineSimilarity(
+          queryVector,
+          event.embedding,
+        );
+        
+        if (cosineSim >= similarityThreshold) {
+          candidates.add(event);
+        }
+      }
+
+      print('[KnowledgeGraphService] 📊 召回候选事件: ${candidates.length} 个');
+
+      if (candidates.isEmpty) {
+        return [];
+      }
+
+      // 5. 使用优先级评分系统重新排序
+      final results = await priorityService.rankEventsByPriority(
+        candidates: candidates,
+        queryVector: queryVector,
+        topK: topK,
+        enableDiffusion: true,
+      );
+
+      // 6. 记录被召回节点的激活事件（前3个高分节点）
+      for (int i = 0; i < results.length && i < 3; i++) {
+        final result = results[i];
+        final event = result['event'] as EventNode;
+        final similarity = result['cosine_similarity'] as double;
+        
+        await priorityService.recordActivation(
+          node: event,
+          similarity: similarity,
+        );
+      }
+
+      print('[KnowledgeGraphService] ✅ 优先级评分检索完成: ${results.length} 个结果');
+      
+      // 7. 可选：打印诊断信息
+      if (candidates.length > 5) {
+        final analysis = await priorityService.analyzePriorityDistribution(
+          nodes: candidates,
+          queryVector: queryVector,
+        );
+        print('[KnowledgeGraphService] 📊 优先级分布: $analysis');
+      }
+
+      return results;
+    } catch (e, stackTrace) {
+      print('[KnowledgeGraphService] ❌ searchEventsByTextWithPriority 错误: $e');
+      print('[KnowledgeGraphService] 堆栈: $stackTrace');
       return [];
     }
   }

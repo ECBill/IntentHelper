@@ -61,7 +61,7 @@ class KnowledgeGraphManager {
             'name': eventNode.name,
             'type': eventNode.type,
             'description': eventNode.description,
-            'similarity': result['similarity'],
+            'similarity': result['similarity'] ?? result['cosine_similarity'],
             'matched_topic': topic,
             'startTime': eventNode.startTime?.toIso8601String(),
             'endTime': eventNode.endTime?.toIso8601String(),
@@ -69,6 +69,11 @@ class KnowledgeGraphManager {
             'purpose': eventNode.purpose,
             'result': eventNode.result,
             'sourceContext': eventNode.sourceContext,
+            // 优先级评分相关字段
+            'priority_score': result['priority_score'],
+            'final_score': result['final_score'],
+            'cosine_similarity': result['cosine_similarity'],
+            'components': result['components'],
           };
           allResults.add(eventMap);
           seenEventIds.add(id);
@@ -88,8 +93,9 @@ class KnowledgeGraphManager {
     }
 
     allResults.sort((a, b) {
-      final sa = a['similarity'] ?? a['score'] ?? 0.0;
-      final sb = b['similarity'] ?? b['score'] ?? 0.0;
+      // 优先使用final_score（包含优先级评分），否则使用similarity或score
+      final sa = a['final_score'] ?? a['similarity'] ?? a['score'] ?? 0.0;
+      final sb = b['final_score'] ?? b['similarity'] ?? b['score'] ?? 0.0;
       return sb.compareTo(sa);
     });
 

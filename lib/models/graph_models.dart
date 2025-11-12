@@ -109,6 +109,11 @@ class EventNode {
   @Property(type: PropertyType.floatVector)
   List<double> embedding;
 
+  // 动态优先级分数相关字段
+  DateTime? lastSeenTime;        // 最后被检索/访问的时间
+  String activationHistoryJson;  // 激活历史记录（JSON格式：[{timestamp, similarity}, ...]）
+  double cachedPriorityScore;    // 缓存的优先级分数
+
   EventNode({
     this.obxId = 0,
     required this.id,
@@ -123,8 +128,12 @@ class EventNode {
     DateTime? lastUpdated,
     this.sourceContext,
     List<double>? embedding,
+    this.lastSeenTime,
+    String? activationHistoryJson,
+    this.cachedPriorityScore = 0.0,
   })  : lastUpdated = lastUpdated ?? DateTime.now(),
-        embedding = embedding ?? <double>[];
+        embedding = embedding ?? <double>[],
+        activationHistoryJson = activationHistoryJson ?? '[]';
 
   // 生成用于嵌入的文本内容
   String getEmbeddingText() {
@@ -154,6 +163,35 @@ class EventNode {
     return buffer.toString().trim();
   }
 
+  // 获取激活历史列表
+  List<Map<String, dynamic>> get activationHistory {
+    try {
+      final list = jsonDecode(activationHistoryJson);
+      return List<Map<String, dynamic>>.from(list ?? []);
+    } catch (_) {
+      return [];
+    }
+  }
+
+  // 设置激活历史列表
+  set activationHistory(List<Map<String, dynamic>> history) {
+    activationHistoryJson = jsonEncode(history);
+  }
+
+  // 添加激活记录
+  void addActivation({required DateTime timestamp, double? similarity}) {
+    final history = activationHistory;
+    history.add({
+      'timestamp': timestamp.millisecondsSinceEpoch,
+      'similarity': similarity ?? 1.0,
+    });
+    // 保留最近100条记录，避免无限增长
+    if (history.length > 100) {
+      history.removeRange(0, history.length - 100);
+    }
+    activationHistory = history;
+  }
+
   Map<String, dynamic> toJson() => {
     'obxId': obxId,
     'id': id,
@@ -168,6 +206,9 @@ class EventNode {
     'lastUpdated': lastUpdated.toIso8601String(),
     'sourceContext': sourceContext,
     'embedding': embedding,
+    'lastSeenTime': lastSeenTime?.toIso8601String(),
+    'activationHistoryJson': activationHistoryJson,
+    'cachedPriorityScore': cachedPriorityScore,
   };
 
   factory EventNode.fromJson(Map<String, dynamic> json) => EventNode(
@@ -184,6 +225,9 @@ class EventNode {
     lastUpdated: json['lastUpdated'] != null ? DateTime.parse(json['lastUpdated']) : DateTime.now(),
     sourceContext: json['sourceContext'],
     embedding: (json['embedding'] as List?)?.map((e) => (e as num).toDouble()).toList(),
+    lastSeenTime: json['lastSeenTime'] != null ? DateTime.parse(json['lastSeenTime']) : null,
+    activationHistoryJson: json['activationHistoryJson'] ?? '[]',
+    cachedPriorityScore: (json['cachedPriorityScore'] as num?)?.toDouble() ?? 0.0,
   );
 }
 
@@ -215,9 +259,16 @@ class EventRelation {
   int obxId = 0;
   String sourceEventId; // 源事件ID
   String targetEventId; // 目标事件ID
-  String relationType;  // 关系类型（时间顺序、因果关系、包含关系等）
+  String relationType;  // 关系类型（时间顺序、因果关系、包含关系、revisit、progress_of等）
   String? description;  // 关系描述
   DateTime lastUpdated;
+
+  // 关系类型常量
+  static const String RELATION_TEMPORAL = 'temporal_sequence';  // 时间顺序
+  static const String RELATION_CAUSAL = 'causal';               // 因果关系
+  static const String RELATION_CONTAINS = 'contains';           // 包含关系
+  static const String RELATION_REVISIT = 'revisit';             // 重访/回顾关系
+  static const String RELATION_PROGRESS_OF = 'progress_of';     // 进展关系
 
   EventRelation({
     this.obxId = 0,
