@@ -891,6 +891,19 @@ class _KGTestPageState extends State<KGTestPage> with TickerProviderStateMixin {
             ),
           ),
 
+          SizedBox(height: 12.h),
+
+          // 新增：清空聚类按钮
+          ElevatedButton.icon(
+            onPressed: _isProcessing ? null : _clearAllClusters,
+            icon: Icon(Icons.delete_sweep),
+            label: Text('清空所有聚类'),
+            style: ElevatedButton.styleFrom(
+              backgroundColor: Colors.red,
+              foregroundColor: Colors.white,
+            ),
+          ),
+
           SizedBox(height: 20.h),
 
           // 处理结果显示
@@ -3145,6 +3158,127 @@ class _KGTestPageState extends State<KGTestPage> with TickerProviderStateMixin {
           ),
         );
       }
+    }
+  }
+
+  /// 清空所有聚类
+  Future<void> _clearAllClusters() async {
+    // 确认对话框
+    final confirmed = await showDialog<bool>(
+      context: context,
+      builder: (context) => AlertDialog(
+        title: Text('⚠️ 确认清空所有聚类'),
+        content: Text(
+          '这将删除所有聚类节点和聚类元数据，并清除所有事件的聚类关联。\n\n'
+          '⚠️ 此操作不可撤销！\n\n'
+          '确定要继续吗？',
+        ),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.pop(context, false),
+            child: Text('取消'),
+          ),
+          ElevatedButton(
+            onPressed: () => Navigator.pop(context, true),
+            child: Text('确定清空'),
+            style: ElevatedButton.styleFrom(
+              backgroundColor: Colors.red,
+            ),
+          ),
+        ],
+      ),
+    );
+
+    if (confirmed != true) return;
+
+    setState(() {
+      _isClusterting = true;
+      _clusteringProgress = '';
+      _clusteringResult = null;
+    });
+
+    try {
+      final clusteringService = SemanticClusteringService();
+      
+      final result = await clusteringService.clearAllClusters(
+        onProgress: (progress) {
+          setState(() {
+            _clusteringProgress += '$progress\n';
+          });
+        },
+      );
+
+      setState(() {
+        _clusteringResult = result;
+      });
+
+      // 刷新数据
+      await _loadKGData();
+
+      // 显示结果对话框
+      if (mounted) {
+        showDialog(
+          context: context,
+          builder: (context) => AlertDialog(
+            title: Text(result['success'] ? '✅ 聚类清空完成' : '❌ 清空失败'),
+            content: SingleChildScrollView(
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                mainAxisSize: MainAxisSize.min,
+                children: [
+                  if (result['success']) ...[
+                    Text('删除聚类节点: ${result['clusters_removed']} 个'),
+                    Text('清除事件关联: ${result['events_cleared']} 个'),
+                    Text('删除元数据: ${result['meta_removed']} 条'),
+                    SizedBox(height: 8.h),
+                    Container(
+                      padding: EdgeInsets.all(8.w),
+                      decoration: BoxDecoration(
+                        color: Colors.green[50],
+                        borderRadius: BorderRadius.circular(4.r),
+                        border: Border.all(color: Colors.green[200]!),
+                      ),
+                      child: Text(
+                        '✅ 所有聚类数据已清空，现在可以重新进行聚类测试了。',
+                        style: TextStyle(fontSize: 12.sp, color: Colors.green[700]),
+                      ),
+                    ),
+                  ] else ...[
+                    Text('错误: ${result['error'] ?? "未知错误"}'),
+                  ],
+                ],
+              ),
+            ),
+            actions: [
+              TextButton(
+                onPressed: () => Navigator.pop(context),
+                child: Text('关闭'),
+              ),
+            ],
+          ),
+        );
+      }
+    } catch (e) {
+      print('清空聚类失败: $e');
+      if (mounted) {
+        showDialog(
+          context: context,
+          builder: (context) => AlertDialog(
+            title: Text('❌ 清空失败'),
+            content: Text('错误: $e'),
+            actions: [
+              TextButton(
+                onPressed: () => Navigator.pop(context),
+                child: Text('关闭'),
+              ),
+            ],
+          ),
+        );
+      }
+    } finally {
+      setState(() {
+        _isClusterting = false;
+      });
     }
   }
 }

@@ -1164,4 +1164,68 @@ $exampleTitles
       };
     }
   }
+
+  /// 清空所有聚类数据
+  /// 
+  /// 这将删除所有聚类节点和聚类元数据，并清除事件节点的聚类关联
+  /// 用于测试前清理旧的聚类结果
+  Future<Map<String, dynamic>> clearAllClusters({
+    Function(String)? onProgress,
+  }) async {
+    try {
+      onProgress?.call('开始清空所有聚类...');
+      
+      // 1. 获取所有聚类节点
+      final allClusters = ObjectBoxService.clusterNodeBox.getAll();
+      final clusterCount = allClusters.length;
+      
+      onProgress?.call('找到 $clusterCount 个聚类节点');
+      
+      // 2. 获取所有事件节点，清除聚类关联
+      final allEvents = ObjectBoxService.eventNodeBox.getAll();
+      int clearedEvents = 0;
+      
+      for (final event in allEvents) {
+        if (event.clusterId != null || event.mergedTo != null) {
+          event.clusterId = null;
+          event.mergedTo = null;
+          ObjectBoxService.eventNodeBox.put(event);
+          clearedEvents++;
+        }
+      }
+      
+      onProgress?.call('清除了 $clearedEvents 个事件的聚类关联');
+      
+      // 3. 删除所有聚类节点
+      if (allClusters.isNotEmpty) {
+        ObjectBoxService.clusterNodeBox.removeAll();
+        onProgress?.call('删除了 $clusterCount 个聚类节点');
+      }
+      
+      // 4. 删除所有聚类元数据
+      final allMeta = ObjectBoxService.clusteringMetaBox.getAll();
+      if (allMeta.isNotEmpty) {
+        ObjectBoxService.clusteringMetaBox.removeAll();
+        onProgress?.call('删除了 ${allMeta.length} 条聚类元数据');
+      }
+      
+      onProgress?.call('✅ 所有聚类已清空');
+      
+      return {
+        'success': true,
+        'message': '聚类清空完成',
+        'clusters_removed': clusterCount,
+        'events_cleared': clearedEvents,
+        'meta_removed': allMeta.length,
+      };
+      
+    } catch (e, stackTrace) {
+      print('[SemanticClusteringService] ❌ 清空聚类错误: $e');
+      print(stackTrace);
+      return {
+        'success': false,
+        'error': e.toString(),
+      };
+    }
+  }
 }
