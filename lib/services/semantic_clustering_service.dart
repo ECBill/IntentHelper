@@ -1,5 +1,3 @@
-import 'dart:convert';
-import 'dart:math';
 import 'package:app/models/graph_models.dart';
 import 'package:app/services/objectbox_service.dart';
 import 'package:app/services/embedding_service.dart';
@@ -17,7 +15,6 @@ class SemanticClusteringService {
   factory SemanticClusteringService() => _instance;
   SemanticClusteringService._internal();
   
-  final ObjectBoxService _objectBox = ObjectBoxService();
   final EmbeddingService _embeddingService = EmbeddingService();
   
   // 聚类参数
@@ -76,8 +73,10 @@ class SemanticClusteringService {
       
       // 4. 保存聚类结果
       onProgress?.call('保存聚类结果...');
-      await _saveClusteringResults(clusterNodes);
-      
+      if (clusterNodes.isNotEmpty) {
+        ObjectBoxService.clusterNodeBox.putMany(clusterNodes);
+      }
+
       // 5. 记录聚类元数据
       final meta = ClusteringMeta(
         clusteringTime: DateTime.now(),
@@ -96,10 +95,8 @@ class SemanticClusteringService {
         'temporal_window_days': TEMPORAL_WINDOW_DAYS,
         'min_cluster_size': MIN_CLUSTER_SIZE,
       };
-      
-      // 注意：这里需要在objectbox_service中添加对应的保存方法
-      // await _objectBox.insertClusteringMeta(meta);
-      
+      ObjectBoxService.clusteringMetaBox.put(meta);
+
       final duration = DateTime.now().difference(startTime);
       onProgress?.call('聚类完成！耗时 ${duration.inSeconds} 秒');
       
@@ -126,8 +123,8 @@ class SemanticClusteringService {
   
   /// 获取增量聚类候选事件
   Future<List<EventNode>> _getIncrementalCandidates(bool forceRecluster) async {
-    final allEvents = _objectBox.queryEventNodes();
-    
+    final allEvents = ObjectBoxService.eventNodeBox.getAll();
+
     if (forceRecluster) {
       // 强制重新聚类所有事件
       return allEvents.where((e) => 
@@ -382,36 +379,30 @@ class SemanticClusteringService {
   Future<void> _updateMemberEvents(List<EventNode> members, String clusterId) async {
     for (final event in members) {
       event.clusterId = clusterId;
-      _objectBox.updateEventNode(event);
+      ObjectBoxService.eventNodeBox.put(event);
     }
   }
-  
-  /// 保存聚类结果（需要在ObjectBoxService中添加相关方法）
-  Future<void> _saveClusteringResults(List<ClusterNode> clusterNodes) async {
-    // 注意：这里需要在objectbox_service中添加对应的方法
-    // for (final cluster in clusterNodes) {
-    //   _objectBox.insertClusterNode(cluster);
-    // }
-    print('[SemanticClusteringService] 保存了 ${clusterNodes.length} 个聚类节点');
-  }
-  
+
   /// 获取所有聚类节点
   Future<List<ClusterNode>> getAllClusters() async {
-    // 注意：需要在objectbox_service中添加查询方法
-    // return _objectBox.queryClusterNodes();
-    return <ClusterNode>[]; // 临时返回空列表
+    try {
+      return ObjectBoxService.clusterNodeBox.getAll();
+    } catch (e) {
+      print('[SemanticClusteringService] 获取聚类失败: $e');
+      return <ClusterNode>[];
+    }
   }
   
   /// 获取特定聚类的成员事件
   Future<List<EventNode>> getClusterMembers(String clusterId) async {
-    final allEvents = _objectBox.queryEventNodes();
+    final allEvents = ObjectBoxService.eventNodeBox.getAll();
     return allEvents.where((e) => e.clusterId == clusterId).toList();
   }
   
   /// 获取未聚类的事件
   Future<List<EventNode>> getUnclusteredEvents() async {
-    final allEvents = _objectBox.queryEventNodes();
-    return allEvents.where((e) => 
+    final allEvents = ObjectBoxService.eventNodeBox.getAll();
+    return allEvents.where((e) =>
       e.embedding.isNotEmpty && e.clusterId == null
     ).toList();
   }

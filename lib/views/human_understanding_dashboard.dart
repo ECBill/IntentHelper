@@ -1550,7 +1550,12 @@ class _HumanUnderstandingDashboardState extends State<HumanUnderstandingDashboar
     if (score == null) return SizedBox.shrink();
     
     final scoreValue = (score is num) ? score.toDouble() : 0.0;
-    
+    // 选取一个较深的色阶（如果是 MaterialColor），否则用原色
+    final Color textColor = (color is MaterialColor && color[700] != null)
+        ? color[700]!
+        : (color is MaterialAccentColor && color[700] != null)
+            ? color[700]!
+            : color;
     return Container(
       padding: EdgeInsets.symmetric(horizontal: 6.w, vertical: 2.h),
       decoration: BoxDecoration(
@@ -1562,7 +1567,7 @@ class _HumanUnderstandingDashboardState extends State<HumanUnderstandingDashboar
         '$label:${scoreValue.toStringAsFixed(2)}',
         style: TextStyle(
           fontSize: 10.sp,
-          color: color.shade700,
+          color: textColor,
           fontWeight: FontWeight.w500,
         ),
       ),

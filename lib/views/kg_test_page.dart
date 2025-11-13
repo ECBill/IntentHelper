@@ -208,10 +208,10 @@ class _KGTestPageState extends State<KGTestPage> with TickerProviderStateMixin {
     );
   }
 
-  Widget _buildStatItem(String label, int count, IconData icon) {
+  Widget _buildStatItem(String label, int count, IconData icon, [Color? color]) {
     return Column(
       children: [
-        Icon(icon, size: 24, color: Colors.blue),
+        Icon(icon, size: 24, color: color ?? Colors.blue),
         SizedBox(height: 4.h),
         Text(count.toString(), style: TextStyle(fontSize: 18.sp, fontWeight: FontWeight.bold)),
         Text(label, style: TextStyle(fontSize: 12.sp, color: Colors.grey[600])),
