@@ -376,6 +376,10 @@ class ClusterNode {
   DateTime? earliestEventTime; // 最早事件时间
   DateTime? latestEventTime;   // 最晚事件时间
   
+  // 两阶段聚类支持字段
+  int level;           // 聚类层级：1=主题层，2=细分层
+  String? parentClusterId; // 父聚类ID（仅level=2时有效）
+  
   ClusterNode({
     this.obxId = 0,
     required this.id,
@@ -390,6 +394,8 @@ class ClusterNode {
     this.avgSimilarity = 0.0,
     this.earliestEventTime,
     this.latestEventTime,
+    this.level = 2,          // 默认为细分层
+    this.parentClusterId,
   })  : createdAt = createdAt ?? DateTime.now(),
         lastUpdated = lastUpdated ?? DateTime.now(),
         memberIdsJson = memberIdsJson ?? '[]',
