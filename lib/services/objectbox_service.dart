@@ -774,9 +774,83 @@ class ObjectBoxService {
       eventEntityRelationBox.removeAll();
       eventRelationBox.removeAll();
       entityAlignmentBox.removeAll();
+      // Note: ClusterNode and ClusteringMeta boxes will be added after schema regeneration
       print('All knowledge graph data cleared');
     } catch (e) {
       print('Error clearing all knowledge graph data: $e');
     }
   }
+  
+  // ========== 聚类相关方法 (需要在schema生成后使用) ==========
+  
+  // 注意：以下方法需要在运行 flutter pub run build_runner build 后才能使用
+  // 生成schema后需要取消注释以下代码并添加对应的Box声明
+  
+  /*
+  static late final Box<ClusterNode> clusterNodeBox;
+  static late final Box<ClusteringMeta> clusteringMetaBox;
+  
+  // 在initialize方法中添加：
+  // clusterNodeBox = Box<ClusterNode>(store);
+  // clusteringMetaBox = Box<ClusteringMeta>(store);
+  
+  // 插入聚类节点
+  void insertClusterNode(ClusterNode cluster) {
+    clusterNodeBox.put(cluster);
+  }
+  
+  // 更新聚类节点
+  void updateClusterNode(ClusterNode cluster) {
+    clusterNodeBox.put(cluster);
+  }
+  
+  // 查询所有聚类节点
+  List<ClusterNode> queryClusterNodes() {
+    return clusterNodeBox.getAll();
+  }
+  
+  // 根据ID查找聚类节点
+  ClusterNode? findClusterNodeById(String id) {
+    final query = clusterNodeBox.query(ClusterNode_.id.equals(id)).build();
+    final result = query.findFirst();
+    query.close();
+    return result;
+  }
+  
+  // 删除聚类节点
+  bool removeClusterNode(int obxId) {
+    return clusterNodeBox.remove(obxId);
+  }
+  
+  // 清空所有聚类节点
+  Future<void> clearAllClusters() async {
+    try {
+      clusterNodeBox.removeAll();
+      print('All cluster nodes cleared');
+    } catch (e) {
+      print('Error clearing cluster nodes: $e');
+    }
+  }
+  
+  // 插入聚类元数据
+  void insertClusteringMeta(ClusteringMeta meta) {
+    clusteringMetaBox.put(meta);
+  }
+  
+  // 查询所有聚类元数据（按时间倒序）
+  List<ClusteringMeta> queryClusteringMetas({int limit = 10}) {
+    final query = clusteringMetaBox.query()
+      .order(ClusteringMeta_.clusteringTime, flags: Order.descending)
+      .build();
+    final results = query.find();
+    query.close();
+    return results.take(limit).toList();
+  }
+  
+  // 获取最近一次聚类的时间
+  DateTime? getLastClusteringTime() {
+    final metas = queryClusteringMetas(limit: 1);
+    return metas.isEmpty ? null : metas.first.clusteringTime;
+  }
+  */
 }
