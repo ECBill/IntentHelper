@@ -96,6 +96,53 @@ class _KGTestPageState extends State<KGTestPage> with TickerProviderStateMixin {
     }
   }
 
+  Future<void> _regenerateEmbeddingForAllEvents() async {
+    // 显示确认对话框
+    final confirmed = await showDialog<bool>(
+      context: context,
+      builder: (context) => AlertDialog(
+        title: Text('⚠️ 确认覆盖向量'),
+        content: Text(
+          '该操作会重新计算并覆盖所有事件的现有向量。\n\n'
+          '这适用于嵌入生成逻辑更新后，需要更新所有现存节点的场景。\n\n'
+          '⚠️ 此操作不可撤销，确认继续吗？',
+        ),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.pop(context, false),
+            child: Text('取消'),
+          ),
+          ElevatedButton(
+            onPressed: () => Navigator.pop(context, true),
+            child: Text('确认覆盖'),
+            style: ElevatedButton.styleFrom(
+              backgroundColor: Colors.orange,
+            ),
+          ),
+        ],
+      ),
+    );
+
+    if (confirmed != true) return;
+
+    setState(() {
+      _isProcessing = true;
+      _processResult = '🔄 正在重新生成所有事件的嵌入向量（覆盖模式）...\n';
+    });
+
+    try {
+      await KnowledgeGraphService.regenerateEmbeddingsForAllEvents();
+      _processResult += '✅ 向量重新生成完成，所有现有向量已覆盖更新\n';
+      await _loadKGData();
+    } catch (e) {
+      _processResult += '❌ 重新生成过程中出错：$e\n';
+    } finally {
+      setState(() {
+        _isProcessing = false;
+      });
+    }
+  }
+
 
   @override
   Widget build(BuildContext context) {
@@ -848,6 +895,19 @@ class _KGTestPageState extends State<KGTestPage> with TickerProviderStateMixin {
             label: Text('为所有事件生成向量'),
             style: ElevatedButton.styleFrom(
               backgroundColor: Colors.deepPurple,
+              foregroundColor: Colors.white,
+            ),
+          ),
+
+          SizedBox(height: 12.h),
+
+          // 新增：重新生成所有事件向量（覆盖）按钮
+          ElevatedButton.icon(
+            onPressed: _isProcessing ? null : _regenerateEmbeddingForAllEvents,
+            icon: Icon(Icons.refresh),
+            label: Text('重新生成所有事件向量（覆盖）'),
+            style: ElevatedButton.styleFrom(
+              backgroundColor: Colors.orange,
               foregroundColor: Colors.white,
             ),
           ),
