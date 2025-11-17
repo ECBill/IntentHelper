@@ -1180,7 +1180,20 @@ ${patchedUserStateContext['knowledge_graph_info'] != null && patchedUserStateCon
         print('[KnowledgeGraphService] 📊 优先级分布: $analysis');
       }
 
-      return results;
+      // 8. 🔥 修复：确保结果包含 'similarity' 键，UI需要这个字段
+      // 将 'cosine_similarity' 映射为 'similarity' 以保持向后兼容
+      final mappedResults = results.map((r) {
+        return {
+          'event': r['event'],
+          'similarity': r['cosine_similarity'], // UI expects 'similarity'
+          'cosine_similarity': r['cosine_similarity'],
+          'priority_score': r['priority_score'],
+          'final_score': r['final_score'],
+          'components': r['components'],
+        };
+      }).toList();
+
+      return mappedResults;
     } catch (e, stackTrace) {
       print('[KnowledgeGraphService] ❌ searchEventsByTextWithPriority 错误: $e');
       print('[KnowledgeGraphService] 堆栈: $stackTrace');

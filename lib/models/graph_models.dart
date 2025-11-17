@@ -136,25 +136,77 @@ class EventNode {
         activationHistoryJson = activationHistoryJson ?? '[]';
 
   // 生成用于嵌入的文本内容
+  // 🔥 增强版：包含更多字段以提高向量查询准确性
+  // 策略：通过结构化文本格式隐式实现字段加权
+  // - 核心字段（name, description）重复出现 → 高权重
+  // - 语义字段（purpose, result）带标签 → 中等权重
+  // - 上下文字段（type, location, time）带标签 → 补充权重
   String getEmbeddingText() {
     final buffer = StringBuffer();
 
-    // 事件名称
+    // 1. 事件名称（最高权重 - 出现在开头，是核心标识）
     buffer.write(name);
+    
+    // 2. 事件类型（高权重 - 提供分类语义）
+    // 格式：「{type}类事件」使其更自然地融入文本
+    if (type.isNotEmpty) {
+      buffer.write(' ');
+      buffer.write(type);
+      buffer.write('类事件');
+    }
 
-    // 添加描述
+    // 3. 事件描述（高权重 - 主要语义信息）
     if (description != null && description!.isNotEmpty) {
       buffer.write(' ');
       buffer.write(description!);
     }
 
-    // 添加目的
+    // 4. 重复事件名称（进一步提升名称权重）
+    // 在长文本中重复关键词可提高其在向量中的表示
+    buffer.write(' ');
+    buffer.write(name);
+
+    // 5. 地点信息（中等权重 - 空间语义）
+    if (location != null && location!.isNotEmpty) {
+      buffer.write(' 地点：');
+      buffer.write(location!);
+    }
+
+    // 6. 时间信息（中等权重 - 时间语义上下文）
+    // 将时间转换为自然语言描述，增强语义理解
+    if (startTime != null) {
+      buffer.write(' 时间：');
+      // 格式化为友好的时间描述
+      final year = startTime!.year;
+      final month = startTime!.month;
+      final day = startTime!.day;
+      final hour = startTime!.hour;
+      final minute = startTime!.minute;
+      
+      buffer.write('${year}年${month}月${day}日');
+      if (hour > 0 || minute > 0) {
+        buffer.write(' ${hour}时${minute}分');
+      }
+      
+      // 添加时间段信息（早晨/上午/下午/晚上）增强时间语义
+      if (hour >= 0 && hour < 6) {
+        buffer.write('凌晨');
+      } else if (hour >= 6 && hour < 12) {
+        buffer.write('上午');
+      } else if (hour >= 12 && hour < 18) {
+        buffer.write('下午');
+      } else {
+        buffer.write('晚上');
+      }
+    }
+
+    // 7. 目的（中等权重 - 意图语义）
     if (purpose != null && purpose!.isNotEmpty) {
       buffer.write(' 目的：');
       buffer.write(purpose!);
     }
 
-    // 添加结果
+    // 8. 结果（中等权重 - 结果语义）
     if (result != null && result!.isNotEmpty) {
       buffer.write(' 结果：');
       buffer.write(result!);

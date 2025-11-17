@@ -1866,6 +1866,63 @@ class _KGTestPageState extends State<KGTestPage> with TickerProviderStateMixin {
       });
     }
 
+    // 🔥 新增：根据相似度获取颜色（绿色=高，橙色=中，红色=低）
+    Color _getSimilarityColor(double similarity) {
+      if (similarity >= 0.7) {
+        return Colors.green;
+      } else if (similarity >= 0.4) {
+        return Colors.orange;
+      } else {
+        return Colors.red;
+      }
+    }
+
+    // 🔥 新增：格式化相似度显示（百分比+颜色标签）
+    Widget _buildSimilarityBadge(double similarity) {
+      final percentage = (similarity * 100).toStringAsFixed(0);
+      final color = _getSimilarityColor(similarity);
+      String label;
+      if (similarity >= 0.7) {
+        label = '高';
+      } else if (similarity >= 0.4) {
+        label = '中';
+      } else {
+        label = '低';
+      }
+
+      return Container(
+        padding: EdgeInsets.symmetric(horizontal: 10.w, vertical: 6.h),
+        decoration: BoxDecoration(
+          color: color.withOpacity(0.15),
+          borderRadius: BorderRadius.circular(12.r),
+          border: Border.all(color: color, width: 1.5),
+        ),
+        child: Row(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            Icon(Icons.stars, size: 14, color: color),
+            SizedBox(width: 4.w),
+            Text(
+              '$percentage%',
+              style: TextStyle(
+                fontSize: 13.sp,
+                fontWeight: FontWeight.bold,
+                color: color,
+              ),
+            ),
+            SizedBox(width: 2.w),
+            Text(
+              label,
+              style: TextStyle(
+                fontSize: 11.sp,
+                color: color.withOpacity(0.8),
+              ),
+            ),
+          ],
+        ),
+      );
+    }
+
     // 新增：事件类型对应卡片背景色
     Color _getEventCardColor(String type) {
       switch (type.toLowerCase()) {
@@ -1895,10 +1952,32 @@ class _KGTestPageState extends State<KGTestPage> with TickerProviderStateMixin {
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
+          // 标题区域
           Padding(
             padding: EdgeInsets.all(16.w),
-            child: Text('事件向量查询', style: TextStyle(fontSize: 20.sp, fontWeight: FontWeight.bold)),
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                Row(
+                  children: [
+                    Icon(Icons.search, size: 24, color: Colors.blue),
+                    SizedBox(width: 8.w),
+                    Text(
+                      '事件向量查询',
+                      style: TextStyle(fontSize: 20.sp, fontWeight: FontWeight.bold),
+                    ),
+                  ],
+                ),
+                SizedBox(height: 4.h),
+                Text(
+                  '基于语义向量的智能事件检索',
+                  style: TextStyle(fontSize: 13.sp, color: Colors.grey[600]),
+                ),
+              ],
+            ),
           ),
+          
+          // 搜索框
           Padding(
             padding: EdgeInsets.symmetric(horizontal: 16.w),
             child: Material(
@@ -1936,7 +2015,20 @@ class _KGTestPageState extends State<KGTestPage> with TickerProviderStateMixin {
               ),
             ),
           ),
-          SizedBox(height: 18.h),
+          
+          // 结果计数提示
+          if (_vectorResults.isNotEmpty && !_isVectorSearching)
+            Padding(
+              padding: EdgeInsets.symmetric(horizontal: 16.w, vertical: 8.h),
+              child: Text(
+                '找到 ${_vectorResults.length} 个相关事件',
+                style: TextStyle(fontSize: 13.sp, color: Colors.grey[700]),
+              ),
+            ),
+          
+          SizedBox(height: 8.h),
+          
+          // 结果列表
           Expanded(
             child: Container(
               width: double.infinity,
@@ -1953,38 +2045,162 @@ class _KGTestPageState extends State<KGTestPage> with TickerProviderStateMixin {
                 ],
               ),
               child: _isVectorSearching
-                  ? Center(child: CircularProgressIndicator())
+                  ? Center(
+                      child: Column(
+                        mainAxisAlignment: MainAxisAlignment.center,
+                        children: [
+                          CircularProgressIndicator(),
+                          SizedBox(height: 16.h),
+                          Text(
+                            '正在搜索相似事件...',
+                            style: TextStyle(color: Colors.grey[600], fontSize: 14.sp),
+                          ),
+                        ],
+                      ),
+                    )
                   : _vectorResults.isEmpty
                       ? Center(
-                          child: Text('没有找到匹配的事件', style: TextStyle(color: Colors.grey, fontSize: 15.sp)),
+                          child: Column(
+                            mainAxisAlignment: MainAxisAlignment.center,
+                            children: [
+                              Icon(Icons.search_off, size: 64, color: Colors.grey[400]),
+                              SizedBox(height: 16.h),
+                              Text(
+                                '没有找到匹配的事件',
+                                style: TextStyle(color: Colors.grey[600], fontSize: 15.sp),
+                              ),
+                              SizedBox(height: 8.h),
+                              Text(
+                                '试试输入更具体的描述',
+                                style: TextStyle(color: Colors.grey[500], fontSize: 13.sp),
+                              ),
+                            ],
+                          ),
                         )
                       : ListView.separated(
                           itemCount: _vectorResults.length,
-                          separatorBuilder: (_, __) => Divider(height: 18.h, color: Colors.grey[300]),
+                          separatorBuilder: (_, __) => SizedBox(height: 12.h),
                           itemBuilder: (context, index) {
                             final result = _vectorResults[index];
-                            final similarity = (result['similarity'] as double?)?.toStringAsFixed(2) ?? 'N/A';
+                            // 🔥 修复：正确获取 similarity 值
+                            final similarity = (result['similarity'] as double?) ?? 0.0;
                             final event = result['event'] as EventNode?;
                             if (event == null) return SizedBox.shrink();
+                            
                             return Card(
-                              elevation: 2,
+                              elevation: 3,
                               color: _getEventCardColor(event.type),
-                              shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12.r)),
-                              child: ListTile(
-                                contentPadding: EdgeInsets.symmetric(vertical: 10.h, horizontal: 16.w),
-                                title: Text(event.name, style: TextStyle(fontWeight: FontWeight.bold, fontSize: 16.sp)),
-                                subtitle: Text('${event.type} • 相似度: $similarity', style: TextStyle(fontSize: 13.sp)),
-                                trailing: event.startTime != null
-                                    ? Text(DateFormat('MM/dd HH:mm').format(event.startTime!), style: TextStyle(fontSize: 12.sp, color: Colors.grey[600]))
-                                    : null,
+                              shape: RoundedRectangleBorder(
+                                borderRadius: BorderRadius.circular(12.r),
+                              ),
+                              child: InkWell(
                                 onTap: () {
                                   final participants = _allNodes.where((n) =>
                                       _allEventRelations.any((r) => r.eventId == event.id && r.entityId == n.id)
                                   ).toList();
                                   _showEventDetails(event, participants);
                                 },
-                              ));
-                          }
+                                borderRadius: BorderRadius.circular(12.r),
+                                child: Padding(
+                                  padding: EdgeInsets.all(14.w),
+                                  child: Column(
+                                    crossAxisAlignment: CrossAxisAlignment.start,
+                                    children: [
+                                      // 标题行：事件名称 + 相似度徽章
+                                      Row(
+                                        children: [
+                                          Expanded(
+                                            child: Text(
+                                              event.name,
+                                              style: TextStyle(
+                                                fontWeight: FontWeight.bold,
+                                                fontSize: 16.sp,
+                                              ),
+                                            ),
+                                          ),
+                                          SizedBox(width: 8.w),
+                                          _buildSimilarityBadge(similarity),
+                                        ],
+                                      ),
+                                      
+                                      SizedBox(height: 8.h),
+                                      
+                                      // 事件类型和时间
+                                      Row(
+                                        children: [
+                                          // 类型标签
+                                          Container(
+                                            padding: EdgeInsets.symmetric(horizontal: 8.w, vertical: 4.h),
+                                            decoration: BoxDecoration(
+                                              color: _getEventTypeColor(event.type).withOpacity(0.7),
+                                              borderRadius: BorderRadius.circular(8.r),
+                                            ),
+                                            child: Text(
+                                              event.type,
+                                              style: TextStyle(
+                                                color: Colors.white,
+                                                fontSize: 12.sp,
+                                                fontWeight: FontWeight.w500,
+                                              ),
+                                            ),
+                                          ),
+                                          
+                                          if (event.startTime != null) ...[
+                                            SizedBox(width: 12.w),
+                                            Icon(Icons.access_time, size: 14, color: Colors.grey[600]),
+                                            SizedBox(width: 4.w),
+                                            Text(
+                                              DateFormat('MM/dd HH:mm').format(event.startTime!),
+                                              style: TextStyle(
+                                                fontSize: 12.sp,
+                                                color: Colors.grey[700],
+                                              ),
+                                            ),
+                                          ],
+                                        ],
+                                      ),
+                                      
+                                      // 事件描述（如果有）
+                                      if (event.description != null && event.description!.isNotEmpty) ...[
+                                        SizedBox(height: 8.h),
+                                        Text(
+                                          event.description!,
+                                          style: TextStyle(
+                                            fontSize: 13.sp,
+                                            color: Colors.grey[700],
+                                          ),
+                                          maxLines: 2,
+                                          overflow: TextOverflow.ellipsis,
+                                        ),
+                                      ],
+                                      
+                                      // 地点信息（如果有）
+                                      if (event.location != null && event.location!.isNotEmpty) ...[
+                                        SizedBox(height: 6.h),
+                                        Row(
+                                          children: [
+                                            Icon(Icons.location_on, size: 14, color: Colors.grey[600]),
+                                            SizedBox(width: 4.w),
+                                            Expanded(
+                                              child: Text(
+                                                event.location!,
+                                                style: TextStyle(
+                                                  fontSize: 12.sp,
+                                                  color: Colors.grey[600],
+                                                ),
+                                                maxLines: 1,
+                                                overflow: TextOverflow.ellipsis,
+                                              ),
+                                            ),
+                                          ],
+                                        ),
+                                      ],
+                                    ],
+                                  ),
+                                ),
+                              ),
+                            );
+                          },
                         ),
             ),
           ),
