@@ -646,7 +646,7 @@
     },
     {
       "id": "14:5846656904559202287",
-      "lastPropertyId": "13:7536280392832461358",
+      "lastPropertyId": "18:7174202831023623116",
       "name": "EventNode",
       "properties": [
         {
@@ -718,6 +718,31 @@
           "type": 28,
           "flags": 8,
           "indexId": "14:686190427426873451"
+        },
+        {
+          "id": "14:8908034884614944271",
+          "name": "lastSeenTime",
+          "type": 10
+        },
+        {
+          "id": "15:7446940855778969052",
+          "name": "activationHistoryJson",
+          "type": 9
+        },
+        {
+          "id": "16:4373714476858835486",
+          "name": "cachedPriorityScore",
+          "type": 8
+        },
+        {
+          "id": "17:4534327030023267020",
+          "name": "clusterId",
+          "type": 9
+        },
+        {
+          "id": "18:7174202831023623116",
+          "name": "mergedTo",
+          "type": 9
         }
       ],
       "relations": []
@@ -760,10 +785,152 @@
         }
       ],
       "relations": []
+    },
+    {
+      "id": "16:8784476897631658797",
+      "lastPropertyId": "14:8265127239600849901",
+      "name": "ClusterNode",
+      "properties": [
+        {
+          "id": "1:8123556918641011057",
+          "name": "obxId",
+          "type": 6,
+          "flags": 1
+        },
+        {
+          "id": "2:796010327602923370",
+          "name": "id",
+          "type": 9,
+          "flags": 2080,
+          "indexId": "15:2210347515044015551"
+        },
+        {
+          "id": "3:6310947200085472109",
+          "name": "name",
+          "type": 9
+        },
+        {
+          "id": "4:4283782254817134632",
+          "name": "type",
+          "type": 9
+        },
+        {
+          "id": "5:3132910475837383471",
+          "name": "description",
+          "type": 9
+        },
+        {
+          "id": "6:5673147625396072711",
+          "name": "createdAt",
+          "type": 10
+        },
+        {
+          "id": "7:985963795389803212",
+          "name": "lastUpdated",
+          "type": 10
+        },
+        {
+          "id": "8:2226120606648318076",
+          "name": "memberCount",
+          "type": 6
+        },
+        {
+          "id": "9:4923852157538354644",
+          "name": "memberIdsJson",
+          "type": 9
+        },
+        {
+          "id": "10:1525363303244250888",
+          "name": "embedding",
+          "type": 28,
+          "flags": 8,
+          "indexId": "16:8353239551913824510"
+        },
+        {
+          "id": "11:8754864652220949774",
+          "name": "avgSimilarity",
+          "type": 8
+        },
+        {
+          "id": "12:7016974568644563628",
+          "name": "earliestEventTime",
+          "type": 10
+        },
+        {
+          "id": "13:1199270998581890360",
+          "name": "latestEventTime",
+          "type": 10
+        },
+        {
+          "id": "14:8265127239600849901",
+          "name": "memberIds",
+          "type": 30
+        }
+      ],
+      "relations": []
+    },
+    {
+      "id": "17:8528605959876604349",
+      "lastPropertyId": "10:5912309839102960920",
+      "name": "ClusteringMeta",
+      "properties": [
+        {
+          "id": "1:92622969461720393",
+          "name": "obxId",
+          "type": 6,
+          "flags": 1
+        },
+        {
+          "id": "2:803631778626741090",
+          "name": "clusteringTime",
+          "type": 10
+        },
+        {
+          "id": "3:4315751637339301448",
+          "name": "totalEvents",
+          "type": 6
+        },
+        {
+          "id": "4:3465301942675956689",
+          "name": "clustersCreated",
+          "type": 6
+        },
+        {
+          "id": "5:7550180598660778764",
+          "name": "eventsClustered",
+          "type": 6
+        },
+        {
+          "id": "6:1592642056878084786",
+          "name": "eventsUnclustered",
+          "type": 6
+        },
+        {
+          "id": "7:2087804613936434274",
+          "name": "algorithmUsed",
+          "type": 9
+        },
+        {
+          "id": "8:1498288603773962632",
+          "name": "parametersJson",
+          "type": 9
+        },
+        {
+          "id": "9:814576982091261034",
+          "name": "avgClusterSize",
+          "type": 8
+        },
+        {
+          "id": "10:5912309839102960920",
+          "name": "avgIntraClusterSimilarity",
+          "type": 8
+        }
+      ],
+      "relations": []
     }
   ],
-  "lastEntityId": "15:4105732853769386625",
-  "lastIndexId": "14:686190427426873451",
+  "lastEntityId": "17:8528605959876604349",
+  "lastIndexId": "16:8353239551913824510",
   "lastRelationId": "0:0",
   "lastSequenceId": "0:0",
   "modelVersion": 5,

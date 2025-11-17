@@ -2,6 +2,7 @@ import 'package:flutter/material.dart';
 import 'package:flutter_screenutil/flutter_screenutil.dart';
 import 'package:app/services/objectbox_service.dart';
 import 'package:app/services/knowledge_graph_service.dart';
+import 'package:app/services/semantic_clustering_service.dart';
 import 'package:app/models/graph_models.dart';
 import 'package:app/models/record_entity.dart';
 import 'package:intl/intl.dart';
@@ -35,11 +36,16 @@ class _KGTestPageState extends State<KGTestPage> with TickerProviderStateMixin {
   final FocusNode _vectorSearchFocusNode = FocusNode();
   List<Map<String, dynamic>> _vectorResults = [];
   bool _isVectorSearching = false;
+  
+  // 聚类相关状态变量
+  bool _isClusterting = false;
+  String _clusteringProgress = '';
+  Map<String, dynamic>? _clusteringResult;
 
   @override
   void initState() {
     super.initState();
-    _tabController = TabController(length: 5, vsync: this);
+    _tabController = TabController(length: 6, vsync: this);
     _loadKGData();
 
     // 默认设置为最近一周
@@ -105,6 +111,7 @@ class _KGTestPageState extends State<KGTestPage> with TickerProviderStateMixin {
             Tab(text: '数据验证'),
             Tab(text: '图谱清理'),
             Tab(text: '事件向量查询'),
+            Tab(text: '聚类管理'),
           ],
         ),
         actions: [
@@ -124,6 +131,7 @@ class _KGTestPageState extends State<KGTestPage> with TickerProviderStateMixin {
           _buildValidationTab(),
           _buildCleanupTab(),
           _buildVectorSearchTab(),
+          _buildClusteringTab(),
         ],
       ),
     );
@@ -200,10 +208,10 @@ class _KGTestPageState extends State<KGTestPage> with TickerProviderStateMixin {
     );
   }
 
-  Widget _buildStatItem(String label, int count, IconData icon) {
+  Widget _buildStatItem(String label, int count, IconData icon, [Color? color]) {
     return Column(
       children: [
-        Icon(icon, size: 24, color: Colors.blue),
+        Icon(icon, size: 24, color: color ?? Colors.blue),
         SizedBox(height: 4.h),
         Text(count.toString(), style: TextStyle(fontSize: 18.sp, fontWeight: FontWeight.bold)),
         Text(label, style: TextStyle(fontSize: 12.sp, color: Colors.grey[600])),
@@ -654,7 +662,7 @@ class _KGTestPageState extends State<KGTestPage> with TickerProviderStateMixin {
 
   // Tab 2: 图谱维护 - 手动整理知识图谱
   Widget _buildMaintenanceTab() {
-    return Padding(
+    return SingleChildScrollView(
       padding: EdgeInsets.all(16.w),
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
@@ -844,28 +852,83 @@ class _KGTestPageState extends State<KGTestPage> with TickerProviderStateMixin {
             ),
           ),
 
+          SizedBox(height: 12.h),
+
+          // 新增：整理图谱按钮
+          ElevatedButton.icon(
+            onPressed: _isProcessing ? null : _organizeGraph,
+            icon: Icon(Icons.auto_awesome),
+            label: Text('整理图谱（两阶段聚类）'),
+            style: ElevatedButton.styleFrom(
+              backgroundColor: Colors.teal,
+              foregroundColor: Colors.white,
+            ),
+          ),
+
+          SizedBox(height: 12.h),
+
+          // 新增：全量初始化聚类按钮
+          ElevatedButton.icon(
+            onPressed: _isProcessing ? null : _clusterInitAll,
+            icon: Icon(Icons.refresh),
+            label: Text('全量初始化聚类'),
+            style: ElevatedButton.styleFrom(
+              backgroundColor: Colors.orange,
+              foregroundColor: Colors.white,
+            ),
+          ),
+
+          SizedBox(height: 12.h),
+
+          // 新增：按日期聚类按钮
+          ElevatedButton.icon(
+            onPressed: _isProcessing ? null : _clusterByDateRange,
+            icon: Icon(Icons.date_range),
+            label: Text('按日期范围聚类'),
+            style: ElevatedButton.styleFrom(
+              backgroundColor: Colors.indigo,
+              foregroundColor: Colors.white,
+            ),
+          ),
+
+          SizedBox(height: 12.h),
+
+          // 新增：清空聚类按钮
+          ElevatedButton.icon(
+            onPressed: _isProcessing ? null : _clearAllClusters,
+            icon: Icon(Icons.delete_sweep),
+            label: Text('清空所有聚类'),
+            style: ElevatedButton.styleFrom(
+              backgroundColor: Colors.red,
+              foregroundColor: Colors.white,
+            ),
+          ),
 
           SizedBox(height: 20.h),
 
-          // 处理结果显示
+          // 处理结果显示（移除 Expanded，使用可滚动容器避免溢出）
           if (_processResult.isNotEmpty) ...[
             Text('处理结果：', style: TextStyle(fontSize: 14.sp, fontWeight: FontWeight.bold)),
             SizedBox(height: 8.h),
-            Expanded(
-              child: Container(
-                width: double.infinity,
-                padding: EdgeInsets.all(12.w),
-                decoration: BoxDecoration(
-                  border: Border.all(color: Colors.grey[300]!),
-                  borderRadius: BorderRadius.circular(8.r),
-                  color: Colors.grey[50],
-                ),
-                child: SingleChildScrollView(
-                  child: Text(_processResult, style: TextStyle(fontSize: 12.sp)),
-                ),
+            Container(
+              constraints: BoxConstraints(
+                maxHeight: 300.h,
+              ),
+              width: double.infinity,
+              padding: EdgeInsets.all(12.w),
+              decoration: BoxDecoration(
+                border: Border.all(color: Colors.grey[300]!),
+                borderRadius: BorderRadius.circular(8.r),
+                color: Colors.grey[50],
+              ),
+              child: SingleChildScrollView(
+                child: Text(_processResult, style: TextStyle(fontSize: 12.sp)),
               ),
             ),
           ],
+
+          // 底部安全间距，避免被系统手势/导航条遮挡
+          SizedBox(height: MediaQuery.of(context).padding.bottom + 16.h),
         ],
       ),
     );
@@ -2189,6 +2252,1037 @@ class _KGTestPageState extends State<KGTestPage> with TickerProviderStateMixin {
       setState(() => _result = '清除孤立节点失败: $e');
     } finally {
       setState(() => _isLoading = false);
+    }
+  }
+  
+  // ========== 聚类相关方法 ==========
+  
+  /// 执行图谱整理（语义聚类）
+  Future<void> _organizeGraph() async {
+    setState(() {
+      _isClusterting = true;
+      _clusteringProgress = '';
+      _clusteringResult = null;
+    });
+    
+    try {
+      final clusteringService = SemanticClusteringService();
+      
+      final result = await clusteringService.organizeGraph(
+        forceRecluster: false,
+        useTwoStage: true, // 使用两阶段聚类
+        onProgress: (progress) {
+          setState(() {
+            _clusteringProgress += '$progress\n';
+          });
+        },
+      );
+      
+      setState(() {
+        _clusteringResult = result;
+      });
+      
+      // 刷新数据以显示新的聚类
+      await _loadKGData();
+      
+      // 显示结果对话框
+      if (mounted) {
+        showDialog(
+          context: context,
+          builder: (context) => AlertDialog(
+            title: Text(result['success'] ? '✅ 聚类完成' : '❌ 聚类失败'),
+            content: SingleChildScrollView(
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                mainAxisSize: MainAxisSize.min,
+                children: [
+                  if (result['success']) ...[
+                    Text('创建聚类: ${result['clusters_created']} 个'),
+                    Text('处理事件: ${result['events_processed']} 个'),
+                    Text('已聚类事件: ${result['events_clustered']} 个'),
+                    if (result['avg_cluster_size'] != null)
+                      Text('平均聚类大小: ${result['avg_cluster_size'].toStringAsFixed(1)} 个'),
+                    if (result['avg_similarity'] != null)
+                      Text('平均相似度: ${result['avg_similarity'].toStringAsFixed(2)}'),
+                    if (result['duration_seconds'] != null)
+                      Text('耗时: ${result['duration_seconds']} 秒'),
+                  ] else ...[
+                    Text('错误: ${result['error'] ?? "未知错误"}'),
+                  ],
+                ],
+              ),
+            ),
+            actions: [
+              TextButton(
+                onPressed: () => Navigator.pop(context),
+                child: Text('关闭'),
+              ),
+              if (result['success'])
+                ElevatedButton(
+                  onPressed: () {
+                    Navigator.pop(context);
+                    // 切换到聚类管理标签
+                    _tabController.animateTo(5);
+                  },
+                  child: Text('查看聚类'),
+                ),
+            ],
+          ),
+        );
+      }
+      
+    } catch (e) {
+      setState(() {
+        _clusteringProgress += '\n❌ 错误: $e';
+      });
+    } finally {
+      setState(() {
+        _isClusterting = false;
+      });
+    }
+  }
+  
+  /// 聚类管理标签页
+  Widget _buildClusteringTab() {
+    return FutureBuilder<List<ClusterNode>>(
+      future: _loadClusters(),
+      builder: (context, snapshot) {
+        if (snapshot.connectionState == ConnectionState.waiting) {
+          return Center(child: CircularProgressIndicator());
+        }
+        
+        if (snapshot.hasError) {
+          return Center(
+            child: Column(
+              mainAxisAlignment: MainAxisAlignment.center,
+              children: [
+                Icon(Icons.error_outline, size: 64, color: Colors.red),
+                SizedBox(height: 16.h),
+                Text('加载聚类失败'),
+                SizedBox(height: 8.h),
+                Text(
+                  '${snapshot.error}',
+                  style: TextStyle(fontSize: 12.sp, color: Colors.grey),
+                  textAlign: TextAlign.center,
+                ),
+                SizedBox(height: 16.h),
+                ElevatedButton.icon(
+                  onPressed: () => setState(() {}),
+                  icon: Icon(Icons.refresh),
+                  label: Text('重试'),
+                ),
+              ],
+            ),
+          );
+        }
+        
+        final clusters = snapshot.data ?? [];
+
+        if (clusters.isEmpty) {
+          return _buildEmptyState(
+            icon: Icons.workspaces_outline,
+            title: '暂无聚类',
+            subtitle: '点击"图谱维护"标签页中的"整理图谱"按钮创建聚类',
+          );
+        }
+        
+        return Column(
+          children: [
+            // 聚类统计面板
+            Container(
+              margin: EdgeInsets.all(16.w),
+              padding: EdgeInsets.all(12.w),
+              decoration: BoxDecoration(
+                color: Colors.teal[50],
+                borderRadius: BorderRadius.circular(8.r),
+                border: Border.all(color: Colors.teal[200]!),
+              ),
+              child: Row(
+                mainAxisAlignment: MainAxisAlignment.spaceAround,
+                children: [
+                  _buildStatItem('聚类总数', clusters.length, Icons.workspaces, Colors.teal),
+                  _buildStatItem(
+                    '平均大小',
+                    clusters.isEmpty ? 0 : (clusters.fold(0, (sum, c) => sum + c.memberCount) / clusters.length).round(),
+                    Icons.groups,
+                    Colors.blue,
+                  ),
+                  _buildStatItem(
+                    '事件总数',
+                    clusters.fold(0, (sum, c) => sum + c.memberCount),
+                    Icons.event,
+                    Colors.orange,
+                  ),
+                ],
+              ),
+            ),
+            
+            // 质量监控和操作按钮
+            Padding(
+              padding: EdgeInsets.symmetric(horizontal: 16.w, vertical: 8.h),
+              child: Row(
+                children: [
+                  Expanded(
+                    child: ElevatedButton.icon(
+                      onPressed: _showQualityMetrics,
+                      icon: Icon(Icons.analytics, size: 18),
+                      label: Text('质量监控', style: TextStyle(fontSize: 12.sp)),
+                      style: ElevatedButton.styleFrom(
+                        backgroundColor: Colors.blue,
+                        foregroundColor: Colors.white,
+                        padding: EdgeInsets.symmetric(vertical: 8.h),
+                      ),
+                    ),
+                  ),
+                  SizedBox(width: 8.w),
+                  Expanded(
+                    child: ElevatedButton.icon(
+                      onPressed: _detectOutliers,
+                      icon: Icon(Icons.search, size: 18),
+                      label: Text('检测离群点', style: TextStyle(fontSize: 12.sp)),
+                      style: ElevatedButton.styleFrom(
+                        backgroundColor: Colors.purple,
+                        foregroundColor: Colors.white,
+                        padding: EdgeInsets.symmetric(vertical: 8.h),
+                      ),
+                    ),
+                  ),
+                ],
+              ),
+            ),
+            
+            // 聚类列表
+            Expanded(
+              child: ListView.builder(
+                padding: EdgeInsets.symmetric(horizontal: 16.w, vertical: 8.h),
+                itemCount: clusters.length,
+                itemBuilder: (context, index) => _buildClusterCard(clusters[index]),
+              ),
+            ),
+          ],
+        );
+      },
+    );
+  }
+  
+  /// 加载所有聚类节点
+  Future<List<ClusterNode>> _loadClusters() async {
+    try {
+      final clusteringService = SemanticClusteringService();
+      return await clusteringService.getAllClusters();
+    } catch (e) {
+      print('加载聚类失败: $e');
+      // 如果Schema还未生成，返回空列表
+      return <ClusterNode>[];
+    }
+  }
+  
+  /// 构建聚类卡片
+  Widget _buildClusterCard(ClusterNode cluster) {
+    return Card(
+      margin: EdgeInsets.only(bottom: 12.h),
+      elevation: 2,
+      child: Theme(
+        data: Theme.of(context).copyWith(dividerColor: Colors.transparent),
+        child: ExpansionTile(
+          leading: Container(
+            padding: EdgeInsets.all(8.w),
+            decoration: BoxDecoration(
+              color: Colors.teal[100],
+              borderRadius: BorderRadius.circular(8.r),
+            ),
+            child: Icon(Icons.workspaces, color: Colors.teal[700], size: 24),
+          ),
+          title: Text(
+            cluster.name,
+            style: TextStyle(fontSize: 16.sp, fontWeight: FontWeight.bold),
+          ),
+          subtitle: Column(
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              SizedBox(height: 4.h),
+              Text(
+                cluster.description,
+                style: TextStyle(fontSize: 13.sp, color: Colors.grey[600]),
+              ),
+              SizedBox(height: 4.h),
+              Row(
+                children: [
+                  Icon(Icons.event, size: 14, color: Colors.grey[600]),
+                  SizedBox(width: 4.w),
+                  Text(
+                    '${cluster.memberCount} 个事件',
+                    style: TextStyle(fontSize: 12.sp, color: Colors.grey[600]),
+                  ),
+                  SizedBox(width: 12.w),
+                  Icon(Icons.timeline, size: 14, color: Colors.grey[600]),
+                  SizedBox(width: 4.w),
+                  Text(
+                    cluster.earliestEventTime != null && cluster.latestEventTime != null
+                        ? '${DateFormat('MM/dd').format(cluster.earliestEventTime!)} - ${DateFormat('MM/dd').format(cluster.latestEventTime!)}'
+                        : '时间未知',
+                    style: TextStyle(fontSize: 12.sp, color: Colors.grey[600]),
+                  ),
+                ],
+              ),
+            ],
+          ),
+          children: [
+            FutureBuilder<List<EventNode>>(
+              future: _loadClusterMembers(cluster.id),
+              builder: (context, snapshot) {
+                if (snapshot.connectionState == ConnectionState.waiting) {
+                  return Padding(
+                    padding: EdgeInsets.all(16.w),
+                    child: Center(child: CircularProgressIndicator()),
+                  );
+                }
+                
+                final members = snapshot.data ?? [];
+                
+                if (members.isEmpty) {
+                  return Padding(
+                    padding: EdgeInsets.all(16.w),
+                    child: Text(
+                      '无法加载成员事件',
+                      style: TextStyle(color: Colors.grey[600]),
+                    ),
+                  );
+                }
+                
+                return Column(
+                  children: [
+                    Divider(height: 1),
+                    Container(
+                      padding: EdgeInsets.all(12.w),
+                      color: Colors.grey[50],
+                      child: Column(
+                        crossAxisAlignment: CrossAxisAlignment.start,
+                        children: [
+                          Row(
+                            children: [
+                              Icon(Icons.info_outline, size: 16, color: Colors.grey[700]),
+                              SizedBox(width: 4.w),
+                              Text(
+                                '聚类成员 (${members.length}个)',
+                                style: TextStyle(
+                                  fontSize: 13.sp,
+                                  fontWeight: FontWeight.bold,
+                                  color: Colors.grey[700],
+                                ),
+                              ),
+                            ],
+                          ),
+                          SizedBox(height: 8.h),
+                          ...members.map((event) => ListTile(
+                            dense: true,
+                            contentPadding: EdgeInsets.symmetric(horizontal: 8.w, vertical: 2.h),
+                            leading: Container(
+                              padding: EdgeInsets.all(4.w),
+                              decoration: BoxDecoration(
+                                color: _getEventTypeColor(event.type).withOpacity(0.2),
+                                borderRadius: BorderRadius.circular(4.r),
+                              ),
+                              child: Icon(
+                                Icons.event_note,
+                                color: _getEventTypeColor(event.type),
+                                size: 16,
+                              ),
+                            ),
+                            title: Text(
+                              event.name,
+                              style: TextStyle(fontSize: 14.sp),
+                            ),
+                            subtitle: Text(
+                              '${event.type}${event.startTime != null ? " • ${DateFormat('yyyy-MM-dd').format(event.startTime!)}" : ""}',
+                              style: TextStyle(fontSize: 12.sp),
+                            ),
+                            onTap: () {
+                              // 获取参与实体
+                              final participants = _allNodes.where((n) =>
+                                  _allEventRelations.any((r) => r.eventId == event.id && r.entityId == n.id)
+                              ).toList();
+                              _showEventDetails(event, participants);
+                            },
+                          )),
+                        ],
+                      ),
+                    ),
+                  ],
+                );
+              },
+            ),
+          ],
+        ),
+      ),
+    );
+  }
+  
+  /// 加载聚类的成员事件
+  Future<List<EventNode>> _loadClusterMembers(String clusterId) async {
+    try {
+      final clusteringService = SemanticClusteringService();
+      return await clusteringService.getClusterMembers(clusterId);
+    } catch (e) {
+      print('加载聚类成员失败: $e');
+      return <EventNode>[];
+    }
+  }
+
+  /// 全量初始化聚类
+  Future<void> _clusterInitAll() async {
+    // 确认对话框
+    final confirmed = await showDialog<bool>(
+      context: context,
+      builder: (context) => AlertDialog(
+        title: Text('⚠️ 确认全量初始化聚类'),
+        content: Text(
+          '这将对所有历史事件重新执行两阶段聚类。\n\n'
+          '• 会更新所有事件的联合嵌入\n'
+          '• 会清除现有聚类并重新计算\n'
+          '• 可能需要较长时间\n\n'
+          '确定要继续吗？',
+        ),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.pop(context, false),
+            child: Text('取消'),
+          ),
+          ElevatedButton(
+            onPressed: () => Navigator.pop(context, true),
+            child: Text('确定'),
+            style: ElevatedButton.styleFrom(
+              backgroundColor: Colors.orange,
+            ),
+          ),
+        ],
+      ),
+    );
+
+    if (confirmed != true) return;
+
+    setState(() {
+      _isClusterting = true;
+      _clusteringProgress = '';
+      _clusteringResult = null;
+    });
+
+    try {
+      final clusteringService = SemanticClusteringService();
+      
+      final result = await clusteringService.clusterInitAll(
+        onProgress: (progress) {
+          setState(() {
+            _clusteringProgress += '$progress\n';
+          });
+        },
+      );
+
+      setState(() {
+        _clusteringResult = result;
+      });
+
+      // 刷新数据
+      await _loadKGData();
+
+      // 显示结果对话框
+      if (mounted) {
+        showDialog(
+          context: context,
+          builder: (context) => AlertDialog(
+            title: Text(result['success'] ? '✅ 全量聚类完成' : '❌ 聚类失败'),
+            content: SingleChildScrollView(
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                mainAxisSize: MainAxisSize.min,
+                children: [
+                  if (result['success']) ...[
+                    Text('第一阶段聚类: ${result['stage1_clusters']} 个'),
+                    Text('第二阶段聚类: ${result['stage2_clusters']} 个'),
+                    Text('处理事件: ${result['events_processed']} 个'),
+                    if (result['duration_seconds'] != null)
+                      Text('耗时: ${result['duration_seconds']} 秒'),
+                  ] else ...[
+                    Text('错误: ${result['error'] ?? "未知错误"}'),
+                  ],
+                ],
+              ),
+            ),
+            actions: [
+              TextButton(
+                onPressed: () => Navigator.pop(context),
+                child: Text('关闭'),
+              ),
+            ],
+          ),
+        );
+      }
+    } catch (e) {
+      print('全量聚类失败: $e');
+      if (mounted) {
+        showDialog(
+          context: context,
+          builder: (context) => AlertDialog(
+            title: Text('❌ 聚类失败'),
+            content: Text('错误: $e'),
+            actions: [
+              TextButton(
+                onPressed: () => Navigator.pop(context),
+                child: Text('关闭'),
+              ),
+            ],
+          ),
+        );
+      }
+    } finally {
+      setState(() {
+        _isClusterting = false;
+      });
+    }
+  }
+
+  /// 按日期范围聚类
+  Future<void> _clusterByDateRange() async {
+    // 显示日期选择对话框
+    DateTime? startDate;
+    DateTime? endDate;
+
+    final result = await showDialog<Map<String, DateTime>>(
+      context: context,
+      builder: (context) {
+        DateTime tempStart = _selectedStartDate ?? DateTime.now().subtract(Duration(days: 30));
+        DateTime tempEnd = _selectedEndDate ?? DateTime.now();
+
+        return StatefulBuilder(
+          builder: (context, setState) {
+            return AlertDialog(
+              title: Text('选择日期范围'),
+              content: Column(
+                mainAxisSize: MainAxisSize.min,
+                children: [
+                  ListTile(
+                    title: Text('开始日期'),
+                    subtitle: Text(
+                      '${tempStart.year}-${tempStart.month.toString().padLeft(2, '0')}-${tempStart.day.toString().padLeft(2, '0')}',
+                    ),
+                    trailing: Icon(Icons.calendar_today),
+                    onTap: () async {
+                      final picked = await showDatePicker(
+                        context: context,
+                        initialDate: tempStart,
+                        firstDate: DateTime(2020),
+                        lastDate: DateTime.now(),
+                      );
+                      if (picked != null) {
+                        setState(() => tempStart = picked);
+                      }
+                    },
+                  ),
+                  ListTile(
+                    title: Text('结束日期'),
+                    subtitle: Text(
+                      '${tempEnd.year}-${tempEnd.month.toString().padLeft(2, '0')}-${tempEnd.day.toString().padLeft(2, '0')}',
+                    ),
+                    trailing: Icon(Icons.calendar_today),
+                    onTap: () async {
+                      final picked = await showDatePicker(
+                        context: context,
+                        initialDate: tempEnd,
+                        firstDate: DateTime(2020),
+                        lastDate: DateTime.now(),
+                      );
+                      if (picked != null) {
+                        setState(() => tempEnd = picked);
+                      }
+                    },
+                  ),
+                ],
+              ),
+              actions: [
+                TextButton(
+                  onPressed: () => Navigator.pop(context, null),
+                  child: Text('取消'),
+                ),
+                ElevatedButton(
+                  onPressed: () => Navigator.pop(context, {
+                    'start': tempStart,
+                    'end': tempEnd,
+                  }),
+                  child: Text('确定'),
+                ),
+              ],
+            );
+          },
+        );
+      },
+    );
+
+    if (result == null) return;
+
+    startDate = result['start'];
+    endDate = result['end'];
+
+    if (startDate == null || endDate == null) return;
+
+    setState(() {
+      _isClusterting = true;
+      _clusteringProgress = '';
+      _clusteringResult = null;
+    });
+
+    try {
+      final clusteringService = SemanticClusteringService();
+      
+      final clusterResult = await clusteringService.clusterByDateRange(
+        startDate: startDate,
+        endDate: endDate,
+        onProgress: (progress) {
+          setState(() {
+            _clusteringProgress += '$progress\n';
+          });
+        },
+      );
+
+      setState(() {
+        _clusteringResult = clusterResult;
+      });
+
+      // 刷新数据
+      await _loadKGData();
+
+      // 显示结果对话框
+      if (mounted) {
+        showDialog(
+          context: context,
+          builder: (context) => AlertDialog(
+            title: Text(clusterResult['success'] ? '✅ 日期范围聚类完成' : '❌ 聚类失败'),
+            content: SingleChildScrollView(
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                mainAxisSize: MainAxisSize.min,
+                children: [
+                  if (clusterResult['success']) ...[
+                    Text('处理事件: ${clusterResult['events_processed']} 个'),
+                    Text('合并到现有聚类: ${clusterResult['merged_events']} 个'),
+                    Text('新建聚类: ${clusterResult['new_clusters']} 个'),
+                    if (clusterResult['duration_seconds'] != null)
+                      Text('耗时: ${clusterResult['duration_seconds']} 秒'),
+                  ] else ...[
+                    Text('错误: ${clusterResult['error'] ?? "未知错误"}'),
+                  ],
+                ],
+              ),
+            ),
+            actions: [
+              TextButton(
+                onPressed: () => Navigator.pop(context),
+                child: Text('关闭'),
+              ),
+            ],
+          ),
+        );
+      }
+    } catch (e) {
+      print('日期范围聚类失败: $e');
+      if (mounted) {
+        showDialog(
+          context: context,
+          builder: (context) => AlertDialog(
+            title: Text('❌ 聚类失败'),
+            content: Text('错误: $e'),
+            actions: [
+              TextButton(
+                onPressed: () => Navigator.pop(context),
+                child: Text('关闭'),
+              ),
+            ],
+          ),
+        );
+      }
+    } finally {
+      setState(() {
+        _isClusterting = false;
+      });
+    }
+  }
+
+  /// 显示质量监控指标
+  Future<void> _showQualityMetrics() async {
+    showDialog(
+      context: context,
+      barrierDismissible: false,
+      builder: (context) => Center(child: CircularProgressIndicator()),
+    );
+
+    try {
+      final clusteringService = SemanticClusteringService();
+      final metrics = await clusteringService.getClusteringQualityMetrics();
+
+      Navigator.pop(context); // 关闭加载对话框
+
+      if (mounted) {
+        showDialog(
+          context: context,
+          builder: (context) => AlertDialog(
+            title: Row(
+              children: [
+                Icon(Icons.analytics, color: Colors.blue),
+                SizedBox(width: 8.w),
+                Text('聚类质量监控'),
+              ],
+            ),
+            content: SingleChildScrollView(
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                mainAxisSize: MainAxisSize.min,
+                children: [
+                  if (metrics.containsKey('error')) ...[
+                    Text('错误: ${metrics['error']}', style: TextStyle(color: Colors.red)),
+                  ] else ...[
+                    _buildMetricItem(
+                      '聚类总数',
+                      '${metrics['total_clusters']} 个',
+                      Icons.workspaces,
+                    ),
+                    _buildMetricItem(
+                      '平均类内相似度',
+                      (metrics['avg_intra_similarity'] as double).toStringAsFixed(3),
+                      Icons.favorite,
+                    ),
+                    _buildMetricItem(
+                      '平均聚类大小',
+                      (metrics['avg_cluster_size'] as double).toStringAsFixed(1),
+                      Icons.groups,
+                    ),
+                    _buildMetricItem(
+                      '离群点比例',
+                      '${((metrics['outlier_ratio'] as double) * 100).toStringAsFixed(1)}%',
+                      Icons.warning,
+                    ),
+                    _buildMetricItem(
+                      '平均类间距离',
+                      (metrics['avg_inter_distance'] as double).toStringAsFixed(3),
+                      Icons.compare_arrows,
+                    ),
+                    Divider(),
+                    _buildMetricItem(
+                      '综合质量评分',
+                      (metrics['quality_score'] as double).toStringAsFixed(3),
+                      Icons.star,
+                      color: _getQualityColor(metrics['quality_score'] as double),
+                    ),
+                    SizedBox(height: 8.h),
+                    Container(
+                      padding: EdgeInsets.all(8.w),
+                      decoration: BoxDecoration(
+                        color: Colors.grey[100],
+                        borderRadius: BorderRadius.circular(4.r),
+                      ),
+                      child: Text(
+                        _getQualityComment(metrics['quality_score'] as double),
+                        style: TextStyle(fontSize: 12.sp, color: Colors.grey[700]),
+                      ),
+                    ),
+                  ],
+                ],
+              ),
+            ),
+            actions: [
+              TextButton(
+                onPressed: () => Navigator.pop(context),
+                child: Text('关闭'),
+              ),
+            ],
+          ),
+        );
+      }
+    } catch (e) {
+      Navigator.pop(context); // 关闭加载对话框
+      print('获取质量指标失败: $e');
+      if (mounted) {
+        showDialog(
+          context: context,
+          builder: (context) => AlertDialog(
+            title: Text('❌ 获取失败'),
+            content: Text('错误: $e'),
+            actions: [
+              TextButton(
+                onPressed: () => Navigator.pop(context),
+                child: Text('关闭'),
+              ),
+            ],
+          ),
+        );
+      }
+    }
+  }
+
+  Widget _buildMetricItem(String label, String value, IconData icon, {Color? color}) {
+    return Padding(
+      padding: EdgeInsets.symmetric(vertical: 4.h),
+      child: Row(
+        children: [
+          Icon(icon, size: 20, color: color ?? Colors.grey),
+          SizedBox(width: 8.w),
+          Expanded(
+            child: Text(label, style: TextStyle(fontSize: 14.sp)),
+          ),
+          Text(
+            value,
+            style: TextStyle(
+              fontSize: 14.sp,
+              fontWeight: FontWeight.bold,
+              color: color ?? Colors.black,
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+
+  Color _getQualityColor(double score) {
+    if (score >= 0.8) return Colors.green;
+    if (score >= 0.6) return Colors.orange;
+    return Colors.red;
+  }
+
+  String _getQualityComment(double score) {
+    if (score >= 0.8) return '✅ 聚类质量优秀，簇内相似度高且簇间区分明显';
+    if (score >= 0.6) return '⚠️ 聚类质量良好，可能存在少量离群点或混杂';
+    return '❌ 聚类质量较差，建议重新调整参数或执行离群点重分配';
+  }
+
+  /// 检测并重分配离群点
+  Future<void> _detectOutliers() async {
+    // 确认对话框
+    final confirmed = await showDialog<bool>(
+      context: context,
+      builder: (context) => AlertDialog(
+        title: Text('🔍 离群点检测与重分配'),
+        content: Text(
+          '这将检测所有聚类中的离群点（与簇中心相似度低的事件），并尝试将它们重分配到更合适的聚类中。\n\n'
+          '确定要继续吗？',
+        ),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.pop(context, false),
+            child: Text('取消'),
+          ),
+          ElevatedButton(
+            onPressed: () => Navigator.pop(context, true),
+            child: Text('确定'),
+            style: ElevatedButton.styleFrom(
+              backgroundColor: Colors.purple,
+            ),
+          ),
+        ],
+      ),
+    );
+
+    if (confirmed != true) return;
+
+    showDialog(
+      context: context,
+      barrierDismissible: false,
+      builder: (context) => Center(child: CircularProgressIndicator()),
+    );
+
+    try {
+      final clusteringService = SemanticClusteringService();
+      
+      String progressText = '';
+      final result = await clusteringService.detectAndReassignOutliers(
+        onProgress: (progress) {
+          progressText = progress;
+        },
+      );
+
+      Navigator.pop(context); // 关闭加载对话框
+
+      // 刷新数据
+      await _loadKGData();
+
+      // 显示结果
+      if (mounted) {
+        showDialog(
+          context: context,
+          builder: (context) => AlertDialog(
+            title: Text(result['success'] ? '✅ 离群点处理完成' : '❌ 处理失败'),
+            content: SingleChildScrollView(
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                mainAxisSize: MainAxisSize.min,
+                children: [
+                  if (result['success']) ...[
+                    Text('发现离群点: ${result['outliers_detected']} 个'),
+                    Text('成功重分配: ${result['reassigned']} 个'),
+                    Text('无法重分配: ${result['new_singletons']} 个'),
+                    SizedBox(height: 8.h),
+                    Container(
+                      padding: EdgeInsets.all(8.w),
+                      decoration: BoxDecoration(
+                        color: Colors.grey[100],
+                        borderRadius: BorderRadius.circular(4.r),
+                      ),
+                      child: Text(
+                        '提示：无法重分配的离群点已被标记为独立事件，可以在下次聚类时重新评估。',
+                        style: TextStyle(fontSize: 12.sp, color: Colors.grey[700]),
+                      ),
+                    ),
+                  ] else ...[
+                    Text('错误: ${result['error'] ?? "未知错误"}'),
+                  ],
+                ],
+              ),
+            ),
+            actions: [
+              TextButton(
+                onPressed: () => Navigator.pop(context),
+                child: Text('关闭'),
+              ),
+            ],
+          ),
+        );
+      }
+    } catch (e) {
+      Navigator.pop(context); // 关闭加载对话框
+      print('离群点检测失败: $e');
+      if (mounted) {
+        showDialog(
+          context: context,
+          builder: (context) => AlertDialog(
+            title: Text('❌ 处理失败'),
+            content: Text('错误: $e'),
+            actions: [
+              TextButton(
+                onPressed: () => Navigator.pop(context),
+                child: Text('关闭'),
+              ),
+            ],
+          ),
+        );
+      }
+    }
+  }
+
+  /// 清空所有聚类
+  Future<void> _clearAllClusters() async {
+    // 确认对话框
+    final confirmed = await showDialog<bool>(
+      context: context,
+      builder: (context) => AlertDialog(
+        title: Text('⚠️ 确认清空所有聚类'),
+        content: Text(
+          '这将删除所有聚类节点和聚类元数据，并清除所有事件的聚类关联。\n\n'
+          '⚠️ 此操作不可撤销！\n\n'
+          '确定要继续吗？',
+        ),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.pop(context, false),
+            child: Text('取消'),
+          ),
+          ElevatedButton(
+            onPressed: () => Navigator.pop(context, true),
+            child: Text('确定清空'),
+            style: ElevatedButton.styleFrom(
+              backgroundColor: Colors.red,
+            ),
+          ),
+        ],
+      ),
+    );
+
+    if (confirmed != true) return;
+
+    setState(() {
+      _isClusterting = true;
+      _clusteringProgress = '';
+      _clusteringResult = null;
+    });
+
+    try {
+      final clusteringService = SemanticClusteringService();
+      
+      final result = await clusteringService.clearAllClusters(
+        onProgress: (progress) {
+          setState(() {
+            _clusteringProgress += '$progress\n';
+          });
+        },
+      );
+
+      setState(() {
+        _clusteringResult = result;
+      });
+
+      // 刷新数据
+      await _loadKGData();
+
+      // 显示结果对话框
+      if (mounted) {
+        showDialog(
+          context: context,
+          builder: (context) => AlertDialog(
+            title: Text(result['success'] ? '✅ 聚类清空完成' : '❌ 清空失败'),
+            content: SingleChildScrollView(
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                mainAxisSize: MainAxisSize.min,
+                children: [
+                  if (result['success']) ...[
+                    Text('删除聚类节点: ${result['clusters_removed']} 个'),
+                    Text('清除事件关联: ${result['events_cleared']} 个'),
+                    Text('删除元数据: ${result['meta_removed']} 条'),
+                    SizedBox(height: 8.h),
+                    Container(
+                      padding: EdgeInsets.all(8.w),
+                      decoration: BoxDecoration(
+                        color: Colors.green[50],
+                        borderRadius: BorderRadius.circular(4.r),
+                        border: Border.all(color: Colors.green[200]!),
+                      ),
+                      child: Text(
+                        '✅ 所有聚类数据已清空，现在可以重新进行聚类测试了。',
+                        style: TextStyle(fontSize: 12.sp, color: Colors.green[700]),
+                      ),
+                    ),
+                  ] else ...[
+                    Text('错误: ${result['error'] ?? "未知错误"}'),
+                  ],
+                ],
+              ),
+            ),
+            actions: [
+              TextButton(
+                onPressed: () => Navigator.pop(context),
+                child: Text('关闭'),
+              ),
+            ],
+          ),
+        );
+      }
+    } catch (e) {
+      print('清空聚类失败: $e');
+      if (mounted) {
+        showDialog(
+          context: context,
+          builder: (context) => AlertDialog(
+            title: Text('❌ 清空失败'),
+            content: Text('错误: $e'),
+            actions: [
+              TextButton(
+                onPressed: () => Navigator.pop(context),
+                child: Text('关闭'),
+              ),
+            ],
+          ),
+        );
+      }
+    } finally {
+      setState(() {
+        _isClusterting = false;
+      });
     }
   }
 }

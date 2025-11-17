@@ -32,6 +32,9 @@ class ObjectBoxService {
   static late final Box<EventEntityRelation> eventEntityRelationBox;
   static late final Box<EventRelation> eventRelationBox;
   static late final Box<EntityAlignment> entityAlignmentBox;
+  // New: cluster-related boxes
+  static late final Box<ClusterNode> clusterNodeBox;
+  static late final Box<ClusteringMeta> clusteringMetaBox;
 
   // Singleton pattern to ensure only one instance of ObjectBoxService
   static final ObjectBoxService _instance = ObjectBoxService._internal();
@@ -72,6 +75,9 @@ class ObjectBoxService {
     eventEntityRelationBox = Box<EventEntityRelation>(store);
     eventRelationBox = Box<EventRelation>(store);
     entityAlignmentBox = Box<EntityAlignment>(store);
+    // New: initialize cluster-related boxes
+    clusterNodeBox = Box<ClusterNode>(store);
+    clusteringMetaBox = Box<ClusteringMeta>(store);
   }
 
   void insertRecord(RecordEntity record, String category) {
@@ -774,9 +780,43 @@ class ObjectBoxService {
       eventEntityRelationBox.removeAll();
       eventRelationBox.removeAll();
       entityAlignmentBox.removeAll();
+      // New: also clear clustering data
+      clusterNodeBox.removeAll();
+      clusteringMetaBox.removeAll();
+      // Note: ClusterNode and ClusteringMeta boxes will be added after schema regeneration
       print('All knowledge graph data cleared');
     } catch (e) {
       print('Error clearing all knowledge graph data: $e');
     }
   }
+  
+  // ========== 聚类相关方法 (需要在schema生成后使用) ==========
+  
+  // 注意：以下方法需要在运行 flutter pub run build_runner build 后才能使用
+  // 生成schema后需要取消注释以下代码并添加对应的Box声明
+  
+  /*
+  // 根据ID查找聚类节点
+  ClusterNode? findClusterNodeById(String id) {
+    final query = clusterNodeBox.query(ClusterNode_.id.equals(id)).build();
+    final result = query.findFirst();
+    query.close();
+    return result;
+  }
+  
+  // 查询所有聚类元数据（按时间倒序）
+  List<ClusteringMeta> queryClusteringMetas({int limit = 10}) {
+    final query = clusteringMetaBox.query()
+      .order(ClusteringMeta_.clusteringTime, flags: Order.descending)
+      .build();
+    final results = query.find();
+    query.close();
+    return results.take(limit).toList();
+  }
+  
+  DateTime? getLastClusteringTime() {
+    final metas = queryClusteringMetas(limit: 1);
+    return metas.isEmpty ? null : metas.first.clusteringTime;
+  }
+  */
 }

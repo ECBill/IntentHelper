@@ -1070,6 +1070,7 @@ ${patchedUserStateContext['knowledge_graph_info'] != null && patchedUserStateCon
         int topK = 10,
         double similarityThreshold = 0.2, // 降低阈值，便于召回更多结果
         bool usePriorityScoring = true,  // 是否使用动态优先级评分
+        bool includeClusterSummaries = true, // 是否包含聚类摘要节点
       }) async {
     try {
       final objectBox = ObjectBoxService();
@@ -1078,9 +1079,15 @@ ${patchedUserStateContext['knowledge_graph_info'] != null && patchedUserStateCon
       if (!usePriorityScoring) {
         // 使用旧的混合检索（语义 + 词法 + 领域加权）
         final allEvents = objectBox.queryEventNodes();
+        
+        // 过滤掉被合并的事件（如果启用了聚类）
+        final activeEvents = includeClusterSummaries 
+          ? allEvents.where((e) => e.mergedTo == null).toList()
+          : allEvents;
+        
         final results = await embeddingService.searchSimilarEventsHybridByText(
           queryText,
-          allEvents,
+          activeEvents,
           topK: topK,
           cosineThreshold: similarityThreshold,
           wCos: 0.65,
@@ -1092,11 +1099,12 @@ ${patchedUserStateContext['knowledge_graph_info'] != null && patchedUserStateCon
         return results;
       }
 
-      // 使用新的动态优先级评分系统
+      // 使用新的动态优先级评分系统（包含聚类感知）
       return await searchEventsByTextWithPriority(
         queryText,
         topK: topK,
         similarityThreshold: similarityThreshold,
+        includeClusterSummaries: includeClusterSummaries,
       );
     } catch (e) {
       print('[KnowledgeGraphService] ❌ searchEventsByText 错误: $e');
@@ -1109,6 +1117,7 @@ ${patchedUserStateContext['knowledge_graph_info'] != null && patchedUserStateCon
       String queryText, {
         int topK = 10,
         double similarityThreshold = 0.2,
+        bool includeClusterSummaries = true,
       }) async {
     try {
       final objectBox = ObjectBoxService();
@@ -1125,12 +1134,15 @@ ${patchedUserStateContext['knowledge_graph_info'] != null && patchedUserStateCon
         return [];
       }
 
-      // 3. 获取所有事件节点
+      // 3. 获取所有事件节点（过滤已合并的）
       final allEvents = objectBox.queryEventNodes();
+      final activeEvents = includeClusterSummaries
+        ? allEvents.where((e) => e.mergedTo == null).toList()
+        : allEvents;
       
       // 4. 初步筛选：使用余弦相似度进行召回
       final candidates = <EventNode>[];
-      for (final event in allEvents) {
+      for (final event in activeEvents) {
         if (event.embedding.isEmpty) continue;
         
         final cosineSim = embeddingService.calculateCosineSimilarity(
@@ -1143,7 +1155,7 @@ ${patchedUserStateContext['knowledge_graph_info'] != null && patchedUserStateCon
         }
       }
 
-      print('[KnowledgeGraphService] 📊 召回候选事件: ${candidates.length} 个');
+      print('[KnowledgeGraphService] 📊 召回候选事件: ${candidates.length} 个 (过滤已合并: ${allEvents.length - activeEvents.length})');
 
       if (candidates.isEmpty) {
         return [];
@@ -1495,6 +1507,62 @@ ${patchedUserStateContext['knowledge_graph_info'] != null && patchedUserStateCon
     }
 
     return summary.toString().isEmpty ? '未找到相关历史信息' : summary.toString();
+  }
+  
+  /// 🔍 通过聚类ID展开查询结果（获取聚类中的所有成员事件）
+  /// 
+  /// 用于用户点击聚类摘要节点时，展示该聚类包含的所有原始事件
+  static Future<List<EventNode>> expandClusterMembers(String clusterId) async {
+    try {
+      final objectBox = ObjectBoxService();
+      final allEvents = objectBox.queryEventNodes();
+      
+      // 查找属于该聚类的所有事件
+      final members = allEvents.where((e) => e.clusterId == clusterId).toList();
+      
+      // 按时间排序
+      members.sort((a, b) {
+        final timeA = a.startTime ?? a.lastUpdated;
+        final timeB = b.startTime ?? b.lastUpdated;
+        return timeB.compareTo(timeA);
+      });
+      
+      print('[KnowledgeGraphService] 🔍 展开聚类 $clusterId: 找到 ${members.length} 个成员事件');
+      
+      return members;
+    } catch (e) {
+      print('[KnowledgeGraphService] ❌ 展开聚类成员错误: $e');
+      return [];
+    }
+  }
+  
+  /// 🔍 获取未聚类的事件列表
+  /// 
+  /// 用于诊断或向用户展示哪些事件还未被聚类处理
+  static Future<List<EventNode>> getUnclusteredEvents() async {
+    try {
+      final objectBox = ObjectBoxService();
+      final allEvents = objectBox.queryEventNodes();
+      
+      // 过滤出有embedding但未聚类的事件
+      final unclustered = allEvents.where((e) => 
+        e.embedding.isNotEmpty && e.clusterId == null
+      ).toList();
+      
+      // 按时间排序
+      unclustered.sort((a, b) {
+        final timeA = a.startTime ?? a.lastUpdated;
+        final timeB = b.startTime ?? b.lastUpdated;
+        return timeB.compareTo(timeA);
+      });
+      
+      print('[KnowledgeGraphService] 📊 未聚类事件: ${unclustered.length} 个');
+      
+      return unclustered;
+    } catch (e) {
+      print('[KnowledgeGraphService] ❌ 获取未聚类事件错误: $e');
+      return [];
+    }
   }
 
   /// 调试：打印所有事件的 name 和 getEmbeddingText()
