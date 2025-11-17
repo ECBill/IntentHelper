@@ -142,28 +142,80 @@ class EventNode {
         activationHistoryJson = activationHistoryJson ?? '[]';
 
   // 生成用于嵌入的文本内容
+  // 改进版：覆盖更多事件属性字段，提高向量检索质量
   String getEmbeddingText() {
     final buffer = StringBuffer();
 
-    // 事件名称
+    // 1. 事件名称（最重要，权重最高）
     buffer.write(name);
+    buffer.write(' ');
+    buffer.write(name); // 重复一次增加权重
 
-    // 添加描述
+    // 2. 事件类型（重要语义标签）
+    buffer.write(' 类型：');
+    buffer.write(type);
+
+    // 3. 添加描述
     if (description != null && description!.isNotEmpty) {
-      buffer.write(' ');
+      buffer.write(' 描述：');
       buffer.write(description!);
     }
 
-    // 添加目的
+    // 4. 添加目的
     if (purpose != null && purpose!.isNotEmpty) {
       buffer.write(' 目的：');
       buffer.write(purpose!);
     }
 
-    // 添加结果
+    // 5. 添加结果
     if (result != null && result!.isNotEmpty) {
       buffer.write(' 结果：');
       buffer.write(result!);
+    }
+
+    // 6. 添加地点信息
+    if (location != null && location!.isNotEmpty) {
+      buffer.write(' 地点：');
+      buffer.write(location!);
+    }
+
+    // 7. 添加时间信息（转换为可读格式）
+    if (startTime != null) {
+      final year = startTime!.year;
+      final month = startTime!.month;
+      final day = startTime!.day;
+      final hour = startTime!.hour;
+      
+      // 添加日期信息
+      buffer.write(' 时间：');
+      buffer.write('$year年${month}月${day}日');
+      
+      // 添加时段信息（增强时间语义）
+      if (hour >= 0 && hour < 6) {
+        buffer.write('凌晨');
+      } else if (hour >= 6 && hour < 9) {
+        buffer.write('早上');
+      } else if (hour >= 9 && hour < 12) {
+        buffer.write('上午');
+      } else if (hour >= 12 && hour < 13) {
+        buffer.write('中午');
+      } else if (hour >= 13 && hour < 18) {
+        buffer.write('下午');
+      } else if (hour >= 18 && hour < 22) {
+        buffer.write('晚上');
+      } else {
+        buffer.write('深夜');
+      }
+    }
+
+    // 8. 添加持续时间信息
+    if (startTime != null && endTime != null) {
+      final duration = endTime!.difference(startTime!);
+      if (duration.inHours > 0) {
+        buffer.write(' 持续${duration.inHours}小时');
+      } else if (duration.inMinutes > 0) {
+        buffer.write(' 持续${duration.inMinutes}分钟');
+      }
     }
 
     return buffer.toString().trim();

@@ -2026,9 +2026,32 @@ class _KGTestPageState extends State<KGTestPage> with TickerProviderStateMixin {
                           separatorBuilder: (_, __) => Divider(height: 18.h, color: Colors.grey[300]),
                           itemBuilder: (context, index) {
                             final result = _vectorResults[index];
-                            final similarity = (result['similarity'] as double?)?.toStringAsFixed(2) ?? 'N/A';
+                            // 修复：尝试多个可能的相似度字段名
+                            final similarityValue = (result['cosine_similarity'] as double?) ?? 
+                                                   (result['similarity'] as double?) ?? 
+                                                   (result['score'] as double?) ??
+                                                   (result['final_score'] as double?);
+                            final similarity = similarityValue != null 
+                                ? similarityValue.toStringAsFixed(3) 
+                                : '-';
+                            
                             final event = result['event'] as EventNode?;
                             if (event == null) return SizedBox.shrink();
+                            
+                            // 根据相似度值确定颜色
+                            Color similarityColor = Colors.grey;
+                            if (similarityValue != null) {
+                              if (similarityValue >= 0.8) {
+                                similarityColor = Colors.green;
+                              } else if (similarityValue >= 0.6) {
+                                similarityColor = Colors.orange;
+                              } else if (similarityValue >= 0.4) {
+                                similarityColor = Colors.blue;
+                              } else {
+                                similarityColor = Colors.grey;
+                              }
+                            }
+                            
                             return Card(
                               elevation: 2,
                               color: _getEventCardColor(event.type),
@@ -2036,7 +2059,35 @@ class _KGTestPageState extends State<KGTestPage> with TickerProviderStateMixin {
                               child: ListTile(
                                 contentPadding: EdgeInsets.symmetric(vertical: 10.h, horizontal: 16.w),
                                 title: Text(event.name, style: TextStyle(fontWeight: FontWeight.bold, fontSize: 16.sp)),
-                                subtitle: Text('${event.type} • 相似度: $similarity', style: TextStyle(fontSize: 13.sp)),
+                                subtitle: Row(
+                                  children: [
+                                    Text('${event.type}', style: TextStyle(fontSize: 13.sp)),
+                                    SizedBox(width: 8.w),
+                                    Container(
+                                      padding: EdgeInsets.symmetric(horizontal: 8.w, vertical: 2.h),
+                                      decoration: BoxDecoration(
+                                        color: similarityColor.withOpacity(0.2),
+                                        borderRadius: BorderRadius.circular(10.r),
+                                        border: Border.all(color: similarityColor, width: 1),
+                                      ),
+                                      child: Row(
+                                        mainAxisSize: MainAxisSize.min,
+                                        children: [
+                                          Icon(Icons.show_chart, size: 12, color: similarityColor),
+                                          SizedBox(width: 4.w),
+                                          Text(
+                                            similarity,
+                                            style: TextStyle(
+                                              fontSize: 12.sp,
+                                              fontWeight: FontWeight.bold,
+                                              color: similarityColor,
+                                            ),
+                                          ),
+                                        ],
+                                      ),
+                                    ),
+                                  ],
+                                ),
                                 trailing: event.startTime != null
                                     ? Text(DateFormat('MM/dd HH:mm').format(event.startTime!), style: TextStyle(fontSize: 12.sp, color: Colors.grey[600]))
                                     : null,
