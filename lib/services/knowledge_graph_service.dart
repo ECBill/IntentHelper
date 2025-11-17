@@ -1272,6 +1272,48 @@ ${patchedUserStateContext['knowledge_graph_info'] != null && patchedUserStateCon
     }
   }
 
+  /// 🔄 强制重新生成所有事件的嵌入向量（覆盖现有向量）
+  /// 
+  /// 此函数会无条件地为所有事件重新生成嵌入向量，即使它们已经有向量。
+  /// 适用于嵌入生成逻辑更新后，需要更新所有现有节点的场景。
+  static Future<void> regenerateEmbeddingsForAllEvents() async {
+    try {
+      final objectBox = ObjectBoxService();
+      final embeddingService = EmbeddingService();
+
+      final allEvents = objectBox.queryEventNodes();
+      int updatedCount = 0;
+      int failedCount = 0;
+
+      print('[KnowledgeGraphService] 🔄 开始强制重新生成所有事件嵌入, 事件总数: ${allEvents.length}');
+      
+      for (final event in allEvents) {
+        print('[KnowledgeGraphService] ▶️ 重新生成嵌入: id=${event.id}, name=${event.name}');
+        
+        // 无条件重新生成嵌入向量
+        final embedding = await embeddingService.generateEventEmbedding(event);
+        if (embedding != null && embedding.isNotEmpty) {
+          // 先查出数据库中的 obxId
+          final dbEvent = objectBox.findEventNodeById(event.id);
+          if (dbEvent != null) {
+            event.obxId = dbEvent.obxId;
+          }
+          event.embedding = embedding;
+          objectBox.updateEventNode(event);
+          print('[KnowledgeGraphService] ✅ 已覆盖写入embedding, 长度: ${embedding.length}, 前5: ${embedding.take(5).toList()}');
+          updatedCount++;
+        } else {
+          print('[KnowledgeGraphService] ⚠️ 未能生成有效embedding, event: id=${event.id}, name=${event.name}');
+          failedCount++;
+        }
+      }
+
+      print('[KnowledgeGraphService] ✅ 批量重新生成完成, 共更新 $updatedCount 个事件, 失败 $failedCount 个');
+    } catch (e, st) {
+      print('[KnowledgeGraphService] ❌ regenerateEmbeddingsForAllEvents 错误: $e\n$st');
+    }
+  }
+
 
   /// 🧮 计算两个事件的嵌入向量相似度（余弦）
   static double? calculateEventSimilarity(EventNode a, EventNode b) {
