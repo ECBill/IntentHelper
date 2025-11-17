@@ -180,7 +180,18 @@ class EmbeddingService {
   }
 
 
-  /// 使用事件的名称、描述、目的、结果组合生成语义向量
+  /// 使用事件的多个字段组合生成语义向量
+  /// 
+  /// 改进版本：使用 EventNode.getEmbeddingText() 获取增强的文本表示
+  /// 包含以下字段：
+  /// - 事件名称（权重x2）
+  /// - 事件类型
+  /// - 描述
+  /// - 目的
+  /// - 结果
+  /// - 地点
+  /// - 时间信息（日期 + 时段：凌晨/早上/上午/中午/下午/晚上/深夜）
+  /// - 持续时间
   Future<List<double>?> generateEventEmbedding(EventNode eventNode) async {
     try {
       // 获取用于嵌入的文本内容
@@ -218,6 +229,118 @@ class EmbeddingService {
     } catch (e) {
       print('[EmbeddingService] ❌ 生成事件嵌入向量失败: $e');
       return await _generateFallbackEmbedding(eventNode.getEmbeddingText());
+    }
+  }
+
+  /// [进阶方法] 为事件的不同字段生成独立向量并加权融合
+  /// 
+  /// 这是一个更高级的向量生成策略，为每个重要字段单独生成向量，
+  /// 然后根据预定义权重进行加权融合。这种方法可以：
+  /// - 更精确地控制不同字段对最终向量的影响
+  /// - 根据查询类型动态调整字段权重
+  /// - 保留字段级语义信息用于细粒度检索
+  /// 
+  /// 默认权重：
+  /// - 名称: 2.0（最重要）
+  /// - 类型: 1.5
+  /// - 描述: 1.0
+  /// - 地点: 1.2
+  /// - 时间: 0.8
+  /// - 目的: 1.0
+  /// - 结果: 1.0
+  /// 
+  /// 注意：此方法会调用多次 embedding API，成本较高，建议仅在需要极高精度时使用
+  Future<List<double>?> generateEventEmbeddingWeighted(
+    EventNode eventNode, {
+    Map<String, double>? fieldWeights,
+  }) async {
+    try {
+      // 默认权重
+      final weights = fieldWeights ?? {
+        'name': 2.0,
+        'type': 1.5,
+        'description': 1.0,
+        'location': 1.2,
+        'time': 0.8,
+        'purpose': 1.0,
+        'result': 1.0,
+      };
+
+      final fieldEmbeddings = <String, List<double>>{};
+      
+      // 为每个字段生成独立向量
+      if (eventNode.name.isNotEmpty) {
+        final emb = await generateTextEmbedding(eventNode.name);
+        if (emb != null) fieldEmbeddings['name'] = emb;
+      }
+      
+      if (eventNode.type.isNotEmpty) {
+        final emb = await generateTextEmbedding('类型：${eventNode.type}');
+        if (emb != null) fieldEmbeddings['type'] = emb;
+      }
+      
+      if (eventNode.description != null && eventNode.description!.isNotEmpty) {
+        final emb = await generateTextEmbedding(eventNode.description!);
+        if (emb != null) fieldEmbeddings['description'] = emb;
+      }
+      
+      if (eventNode.location != null && eventNode.location!.isNotEmpty) {
+        final emb = await generateTextEmbedding('地点：${eventNode.location!}');
+        if (emb != null) fieldEmbeddings['location'] = emb;
+      }
+      
+      if (eventNode.purpose != null && eventNode.purpose!.isNotEmpty) {
+        final emb = await generateTextEmbedding('目的：${eventNode.purpose!}');
+        if (emb != null) fieldEmbeddings['purpose'] = emb;
+      }
+      
+      if (eventNode.result != null && eventNode.result!.isNotEmpty) {
+        final emb = await generateTextEmbedding('结果：${eventNode.result!}');
+        if (emb != null) fieldEmbeddings['result'] = emb;
+      }
+      
+      // 时间字段
+      if (eventNode.startTime != null) {
+        final timeText = '时间：${eventNode.startTime!.year}年${eventNode.startTime!.month}月${eventNode.startTime!.day}日';
+        final emb = await generateTextEmbedding(timeText);
+        if (emb != null) fieldEmbeddings['time'] = emb;
+      }
+      
+      if (fieldEmbeddings.isEmpty) {
+        print('[EmbeddingService] ⚠️ 没有有效字段可生成嵌入: ${eventNode.name}');
+        return null;
+      }
+      
+      // 加权融合
+      final result = List<double>.filled(vectorDimensions, 0.0);
+      double totalWeight = 0.0;
+      
+      fieldEmbeddings.forEach((field, embedding) {
+        final weight = weights[field] ?? 1.0;
+        totalWeight += weight;
+        
+        for (int i = 0; i < vectorDimensions; i++) {
+          result[i] += embedding[i] * weight;
+        }
+      });
+      
+      // 归一化
+      if (totalWeight > 0) {
+        for (int i = 0; i < vectorDimensions; i++) {
+          result[i] /= totalWeight;
+        }
+      }
+      
+      // L2 归一化
+      final normalized = _normalizeVector(result);
+      
+      print('[EmbeddingService] ✨ 生成加权融合向量: ${eventNode.name} (使用${fieldEmbeddings.length}个字段)');
+      
+      return normalized;
+    } catch (e) {
+      print('[EmbeddingService] ❌ 生成加权融合向量失败: $e');
+      // Fallback 到标准方法
+      return await generateEventEmbedding(eventNode);
     }
   }
 
