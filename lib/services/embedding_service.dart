@@ -19,13 +19,12 @@ class EmbeddingService {
   factory EmbeddingService() => _instance;
   EmbeddingService._internal();
 
-  // 向量维度，与EventNode中的@HnswIndex(dimensions: 384)保持一致
-  static const int vectorDimensions = 384;
+  // 向量维度，与EventNode中的@HnswIndex(dimensions: 1536)保持一致
+  static const int vectorDimensions = 1536;
 
   // OpenAI embedding 配置
   static const String openaiEmbeddingUrl = 'https://api.openai.com/v1/embeddings';
   static const String openaiModel = 'text-embedding-3-small';
-  static const int openaiVectorDimensions = 1536; // OpenAI text-embedding-3-small 维度
   static const int openaiTimeoutSeconds = 30;
   
   String _openaiApiKey = '';
@@ -43,13 +42,9 @@ class EmbeddingService {
 
   /// 初始化服务
   Future<bool> initialize() async {
-    if (_isModelLoaded) return true;
-    
     // 初始化 OpenAI API key
     await _initializeOpenAI();
-    
-    // 初始化本地模型（作为 fallback）
-    return await _initializeModel();
+    return isOpenAiAvailable;
   }
 
   /// 初始化 OpenAI API key
@@ -415,7 +410,7 @@ class EmbeddingService {
   }
 
   /// 使用 OpenAI API 生成嵌入向量
-  /// 返回降维到 384 维的向量以保持与现有系统兼容
+  /// 直接返回 OpenAI 的 1536 维向量
   Future<List<double>?> _generateEmbeddingWithOpenAI(String text) async {
     if (!isOpenAiAvailable) {
       print('[EmbeddingService] ⚠️ OpenAI API Key 不可用，跳过 OpenAI 调用');
@@ -453,13 +448,12 @@ class EmbeddingService {
         }
         
         final embedding = (data['data'][0]['embedding'] as List).cast<double>();
-        final originalDims = embedding.length;
+        final dims = embedding.length;
         
-        print('[EmbeddingService] request.success provider=openai latency=${latency}ms original_dims=$originalDims');
+        print('[EmbeddingService] request.success provider=openai latency=${latency}ms dims=$dims');
         
-        // 降维到 384 维以保持与现有系统兼容
-        final resized = _resizeEmbedding(embedding, vectorDimensions);
-        final normalized = _normalizeVector(resized);
+        // 直接返回 OpenAI 的原始向量，保持 1536 维
+        final normalized = _normalizeVector(embedding);
         
         print('[EmbeddingService] result.delivered source=openai dims=${normalized.length} latency=${latency}ms');
         
@@ -484,7 +478,7 @@ class EmbeddingService {
     }
   }
 
-  /// 为文本生成嵌入向量（通用方法）- 优先使用 OpenAI，失败后使用本地模型
+  /// 为文本生成嵌入向量（通用方法）- 仅使用 OpenAI API
   Future<List<double>?> generateTextEmbedding(String text) async {
     try {
       if (text.trim().isEmpty) {
@@ -502,47 +496,25 @@ class EmbeddingService {
         await _initializeOpenAI();
       }
 
-      List<double>? embedding;
+      // 仅使用 OpenAI API
+      if (!isOpenAiAvailable) {
+        print('[EmbeddingService] ❌ OpenAI API Key 不可用，无法生成嵌入向量');
+        return null;
+      }
+
+      final embedding = await _generateEmbeddingWithOpenAI(text);
       
-      // 优先尝试使用 OpenAI API
-      if (isOpenAiAvailable) {
-        embedding = await _generateEmbeddingWithOpenAI(text);
-        
-        if (embedding != null) {
-          // OpenAI 成功，缓存并返回
-          _embeddingCache[cacheKey] = embedding;
-          return embedding;
-        } else {
-          print('[EmbeddingService] fallback.start provider=gte-small reason=openai_failed text_length=${text.length}');
-        }
+      if (embedding != null) {
+        // OpenAI 成功，缓存并返回
+        _embeddingCache[cacheKey] = embedding;
+        return embedding;
       } else {
-        print('[EmbeddingService] fallback.start provider=gte-small reason=openai_unavailable text_length=${text.length}');
+        print('[EmbeddingService] ❌ OpenAI API 调用失败');
+        return null;
       }
-
-      // OpenAI 失败或不可用，使用本地模型
-      final fallbackStartTime = DateTime.now();
-      
-      if (await initialize()) {
-        embedding = await _generateEmbeddingWithModel(text);
-      }
-
-      // 如果本地模型也失败，使用备用方法
-      if (embedding == null) {
-        print('[EmbeddingService] fallback.failure provider=gte-small; using semantic fallback');
-        embedding = await _generateFallbackEmbedding(text);
-        final latency = DateTime.now().difference(fallbackStartTime).inMilliseconds;
-        print('[EmbeddingService] result.delivered source=semantic_fallback dims=${embedding.length} latency=${latency}ms');
-      } else {
-        final latency = DateTime.now().difference(fallbackStartTime).inMilliseconds;
-        print('[EmbeddingService] fallback.success provider=gte-small latency=${latency}ms dims=${embedding.length}');
-        print('[EmbeddingService] result.delivered source=gte-small dims=${embedding.length} latency=${latency}ms');
-      }
-
-      _embeddingCache[cacheKey] = embedding;
-      return embedding;
     } catch (e) {
       print('[EmbeddingService] ❌ 生成文本嵌入向量失败: $e');
-      return await _generateFallbackEmbedding(text);
+      return null;
     }
   }
 

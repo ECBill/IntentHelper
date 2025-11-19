@@ -19,13 +19,13 @@ void main() {
       expect(service, isNotNull);
     });
 
-    test('generateTextEmbedding should fall back to local model when OpenAI fails', () async {
-      // When OpenAI is not available, should use local model or semantic fallback
+    test('should use OpenAI API only', () async {
+      // When OpenAI is not available, should return null (no fallback)
       final embedding = await service.generateTextEmbedding('test text');
       
-      // Should return some embedding (either from local model or semantic fallback)
-      // May be null if text is empty, but for 'test text' should return something
-      expect(embedding == null || embedding.length == 384, true);
+      // Should return embedding from OpenAI if available, or null if not
+      // No fallback to local model anymore
+      expect(embedding == null || embedding.length == 1536, true);
     });
 
     test('should handle empty text gracefully', () async {
@@ -48,12 +48,12 @@ void main() {
       expect(embedding1, embedding2);
     });
 
-    test('should produce 384-dimensional vectors', () async {
+    test('should produce 1536-dimensional vectors', () async {
       final embedding = await service.generateTextEmbedding('test dimensionality');
       
       if (embedding != null) {
-        // All embeddings should be 384 dimensions to match the system
-        expect(embedding.length, 384);
+        // All embeddings should be 1536 dimensions from OpenAI
+        expect(embedding.length, 1536);
       }
     });
   });
@@ -83,7 +83,7 @@ void main() {
           id: '3',
           name: 'Event 3',
           type: 'test',
-          embedding: List<double>.filled(384, 0.5),
+          embedding: List<double>.filled(1536, 0.5),
         ),
       ];
 
@@ -100,19 +100,19 @@ void main() {
           id: '1',
           name: 'Event 1',
           type: 'test',
-          embedding: List<double>.filled(384, 0.0),
+          embedding: List<double>.filled(1536, 0.0),
         ),
         EventNode(
           id: '2',
           name: 'Event 2',
           type: 'test',
-          embedding: List<double>.filled(384, 0.0),
+          embedding: List<double>.filled(1536, 0.0),
         ),
         EventNode(
           id: '3',
           name: 'Event 3',
           type: 'test',
-          embedding: List<double>.filled(384, 0.5),
+          embedding: List<double>.filled(1536, 0.5),
         ),
       ];
 
@@ -124,7 +124,7 @@ void main() {
     });
 
     test('analyzeEmbeddings should detect duplicate embeddings', () async {
-      final sameEmbedding = List<double>.filled(384, 0.5);
+      final sameEmbedding = List<double>.filled(1536, 0.5);
       final events = [
         EventNode(
           id: '1',
@@ -142,7 +142,7 @@ void main() {
           id: '3',
           name: 'Event 3',
           type: 'test',
-          embedding: List<double>.filled(384, 0.7),
+          embedding: List<double>.filled(1536, 0.7),
         ),
       ];
 
@@ -161,19 +161,19 @@ void main() {
           id: '1',
           name: 'Event 1',
           type: 'test',
-          embedding: List<double>.generate(384, (i) => i / 384.0),
+          embedding: List<double>.generate(1536, (i) => i / 1536.0),
         ),
         EventNode(
           id: '2',
           name: 'Event 2',
           type: 'test',
-          embedding: List<double>.generate(384, (i) => (i + 1) / 384.0),
+          embedding: List<double>.generate(1536, (i) => (i + 1) / 1536.0),
         ),
         EventNode(
           id: '3',
           name: 'Event 3',
           type: 'test',
-          embedding: List<double>.generate(384, (i) => (i + 2) / 384.0),
+          embedding: List<double>.generate(1536, (i) => (i + 2) / 1536.0),
         ),
       ];
 
@@ -194,7 +194,7 @@ void main() {
           id: '$i',
           name: 'Event $i',
           type: 'test',
-          embedding: List<double>.filled(384, 0.0),
+          embedding: List<double>.filled(1536, 0.0),
         ),
       );
 

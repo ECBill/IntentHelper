@@ -105,7 +105,7 @@ class EventNode {
   DateTime lastUpdated; // 最后更新时间
   String? sourceContext; // 来源上下文ID
 
-  @HnswIndex(dimensions: 384)
+  @HnswIndex(dimensions: 1536)
   @Property(type: PropertyType.floatVector)
   List<double> embedding;
 
@@ -420,7 +420,7 @@ class ClusterNode {
   int memberCount;     // 成员数量
   String memberIdsJson; // 成员事件ID列表（JSON格式）
   
-  @HnswIndex(dimensions: 384)
+  @HnswIndex(dimensions: 1536)
   @Property(type: PropertyType.floatVector)
   List<double> embedding; // 聚类中心向量（成员embedding的均值）
   
