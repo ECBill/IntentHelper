@@ -6,6 +6,11 @@ import 'package:crypto/crypto.dart';
 import 'package:flutter/services.dart';
 import 'package:onnxruntime/onnxruntime.dart';
 import 'package:app/models/graph_models.dart';
+import 'package:http/http.dart' as http;
+import 'package:app/models/llm_config.dart';
+import 'package:app/services/objectbox_service.dart';
+import 'package:flutter_foreground_task/flutter_foreground_task.dart';
+import 'package:flutter_dotenv/flutter_dotenv.dart';
 
 /// 嵌入服务 - 专门为EventNode提供向量嵌入功能
 class EmbeddingService {
@@ -15,6 +20,16 @@ class EmbeddingService {
 
   // 向量维度，与EventNode中的@HnswIndex(dimensions: 384)保持一致
   static const int vectorDimensions = 384;
+
+  // OpenAI embedding 配置
+  static const String openaiEmbeddingUrl = 'https://api.openai.com/v1/embeddings';
+  static const String openaiModel = 'text-embedding-3-small';
+  static const int openaiVectorDimensions = 1536; // OpenAI text-embedding-3-small 维度
+  static const int openaiTimeoutSeconds = 30;
+  
+  String _openaiApiKey = '';
+  bool _openaiInitialized = false;
+  bool get isOpenAiAvailable => _openaiApiKey.isNotEmpty;
 
   // 缓存已计算的向量，避免重复计算
   final Map<String, List<double>> _embeddingCache = {};
@@ -28,7 +43,61 @@ class EmbeddingService {
   /// 初始化服务
   Future<bool> initialize() async {
     if (_isModelLoaded) return true;
+    
+    // 初始化 OpenAI API key
+    await _initializeOpenAI();
+    
+    // 初始化本地模型（作为 fallback）
     return await _initializeModel();
+  }
+
+  /// 初始化 OpenAI API key
+  Future<void> _initializeOpenAI() async {
+    if (_openaiInitialized) return;
+    
+    try {
+      print('[EmbeddingService] 🔄 开始初始化 OpenAI embedding API...');
+      
+      // 尝试从 ObjectBox 获取配置
+      LlmConfigEntity? config = ObjectBoxService().getConfigsByProvider("OpenAI");
+      if (config != null && config.apiKey != null) {
+        _openaiApiKey = config.apiKey!;
+        print('[EmbeddingService] ✅ 从数据库获取到 OpenAI API Key');
+      } else {
+        // 尝试从 FlutterForegroundTask 获取
+        final tokenData = await FlutterForegroundTask.getData(key: 'llmToken');
+        if (tokenData != null && tokenData.isNotEmpty) {
+          _openaiApiKey = tokenData;
+          print('[EmbeddingService] ✅ 从 FlutterForegroundTask 获取到 OpenAI API Key');
+        } else {
+          // 尝试从 dotenv 获取
+          try {
+            if (!dotenv.isInitialized) {
+              await dotenv.load(fileName: ".env");
+            }
+            final apiKey = dotenv.env['OPENAI_API_KEY'] ?? '';
+            if (apiKey.isNotEmpty) {
+              _openaiApiKey = apiKey;
+              print('[EmbeddingService] ✅ 从 dotenv 获取到 OpenAI API Key');
+            }
+          } catch (e) {
+            print('[EmbeddingService] ⚠️ 从 dotenv 获取 API Key 失败: $e');
+          }
+        }
+      }
+      
+      if (_openaiApiKey.isEmpty) {
+        print('[EmbeddingService] ⚠️ 未找到 OpenAI API Key，将仅使用本地模型');
+      } else {
+        print('[EmbeddingService] ✅ OpenAI embedding API 初始化完成');
+      }
+      
+      _openaiInitialized = true;
+    } catch (e) {
+      print('[EmbeddingService] ❌ OpenAI 初始化失败: $e');
+      _openaiApiKey = '';
+      _openaiInitialized = true;
+    }
   }
 
   /// 初始化GTE模型
@@ -344,7 +413,77 @@ class EmbeddingService {
     }
   }
 
-  /// 为文本生成嵌入向量（通用方法）
+  /// 使用 OpenAI API 生成嵌入向量
+  /// 返回降维到 384 维的向量以保持与现有系统兼容
+  Future<List<double>?> _generateEmbeddingWithOpenAI(String text) async {
+    if (!isOpenAiAvailable) {
+      print('[EmbeddingService] ⚠️ OpenAI API Key 不可用，跳过 OpenAI 调用');
+      return null;
+    }
+    
+    final startTime = DateTime.now();
+    
+    try {
+      print('[EmbeddingService] request.start provider=openai text_length=${text.length} model=$openaiModel');
+      
+      final uri = Uri.parse(openaiEmbeddingUrl);
+      final headers = {
+        'Content-Type': 'application/json',
+        'Authorization': 'Bearer $_openaiApiKey',
+      };
+      
+      final body = jsonEncode({
+        'model': openaiModel,
+        'input': text,
+      });
+      
+      final response = await http
+          .post(uri, headers: headers, body: body)
+          .timeout(Duration(seconds: openaiTimeoutSeconds));
+      
+      final latency = DateTime.now().difference(startTime).inMilliseconds;
+      
+      if (response.statusCode == 200) {
+        final data = jsonDecode(utf8.decode(response.bodyBytes));
+        
+        if (data['data'] == null || data['data'].isEmpty) {
+          print('[EmbeddingService] request.failure provider=openai error=empty_data latency=${latency}ms');
+          return null;
+        }
+        
+        final embedding = (data['data'][0]['embedding'] as List).cast<double>();
+        final originalDims = embedding.length;
+        
+        print('[EmbeddingService] request.success provider=openai latency=${latency}ms original_dims=$originalDims');
+        
+        // 降维到 384 维以保持与现有系统兼容
+        final resized = _resizeEmbedding(embedding, vectorDimensions);
+        final normalized = _normalizeVector(resized);
+        
+        print('[EmbeddingService] result.delivered source=openai dims=${normalized.length} latency=${latency}ms');
+        
+        return normalized;
+      } else {
+        final errorBody = utf8.decode(response.bodyBytes);
+        print('[EmbeddingService] request.failure provider=openai status=${response.statusCode} error=${response.reasonPhrase} latency=${latency}ms body=$errorBody');
+        return null;
+      }
+    } on TimeoutException catch (e) {
+      final latency = DateTime.now().difference(startTime).inMilliseconds;
+      print('[EmbeddingService] request.failure provider=openai error=timeout latency=${latency}ms detail=$e');
+      return null;
+    } on SocketException catch (e) {
+      final latency = DateTime.now().difference(startTime).inMilliseconds;
+      print('[EmbeddingService] request.failure provider=openai error=network latency=${latency}ms detail=$e');
+      return null;
+    } catch (e) {
+      final latency = DateTime.now().difference(startTime).inMilliseconds;
+      print('[EmbeddingService] request.failure provider=openai error=exception latency=${latency}ms detail=$e');
+      return null;
+    }
+  }
+
+  /// 为文本生成嵌入向量（通用方法）- 优先使用 OpenAI，失败后使用本地模型
   Future<List<double>?> generateTextEmbedding(String text) async {
     try {
       if (text.trim().isEmpty) {
@@ -353,28 +492,59 @@ class EmbeddingService {
 
       final cacheKey = _generateCacheKey(text);
       if (_embeddingCache.containsKey(cacheKey)) {
+        print('[EmbeddingService] cache.hit text_length=${text.length}');
         return _embeddingCache[cacheKey];
       }
 
-      // 尝试使用GTE模型生成嵌入向量
+      // 确保 OpenAI 已初始化
+      if (!_openaiInitialized) {
+        await _initializeOpenAI();
+      }
+
       List<double>? embedding;
+      
+      // 优先尝试使用 OpenAI API
+      if (isOpenAiAvailable) {
+        embedding = await _generateEmbeddingWithOpenAI(text);
+        
+        if (embedding != null) {
+          // OpenAI 成功，缓存并返回
+          _embeddingCache[cacheKey] = embedding;
+          return embedding;
+        } else {
+          print('[EmbeddingService] fallback.start provider=gte-small reason=openai_failed text_length=${text.length}');
+        }
+      } else {
+        print('[EmbeddingService] fallback.start provider=gte-small reason=openai_unavailable text_length=${text.length}');
+      }
+
+      // OpenAI 失败或不可用，使用本地模型
+      final fallbackStartTime = DateTime.now();
+      
       if (await initialize()) {
         embedding = await _generateEmbeddingWithModel(text);
       }
 
-      // 如果模型失败，使用备用方法
+      // 如果本地模型也失败，使用备用方法
       if (embedding == null) {
-        print('[EmbeddingService] ❌ 模型生成嵌入失败，使用备用方法');
+        print('[EmbeddingService] fallback.failure provider=gte-small; using semantic fallback');
         embedding = await _generateFallbackEmbedding(text);
+        final latency = DateTime.now().difference(fallbackStartTime).inMilliseconds;
+        print('[EmbeddingService] result.delivered source=semantic_fallback dims=${embedding.length} latency=${latency}ms');
+      } else {
+        final latency = DateTime.now().difference(fallbackStartTime).inMilliseconds;
+        print('[EmbeddingService] fallback.success provider=gte-small latency=${latency}ms dims=${embedding.length}');
+        print('[EmbeddingService] result.delivered source=gte-small dims=${embedding.length} latency=${latency}ms');
       }
 
       _embeddingCache[cacheKey] = embedding;
       return embedding;
     } catch (e) {
-      print('[EmbeddingService] ❌ 生成文本嵌入�����量失败: $e');
+      print('[EmbeddingService] ❌ 生成文本嵌入向量失败: $e');
       return await _generateFallbackEmbedding(text);
     }
   }
+
 
   List<int> _createAttentionMask(List<int> tokens) {
     return tokens.map((id) => id == 0 ? 0 : 1).toList();
