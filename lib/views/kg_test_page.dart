@@ -1991,27 +1991,27 @@ class _KGTestPageState extends State<KGTestPage> with TickerProviderStateMixin {
       });
     }
 
-    // 新增：事件类型对应卡片背景色
+    // 新增：事件类型对应卡片背景色 - 高级配色方案
     Color _getEventCardColor(String type) {
       switch (type.toLowerCase()) {
         case '讨论': case 'discussion':
-        return Colors.orange.shade100;
+          return Color(0xFFFFF4E6); // 柔和橙色背景
         case '生活': case 'life':
-        return Color(0xFFF8E1E9); // 梅红色
+          return Color(0xFFFCE4EC); // 温暖粉红
         case '工作': case 'work':
-        return Color(0xFFCCE2D0); // 墨绿色
+          return Color(0xFFE8F5E9); // 专业绿色
         case '娱乐': case 'entertainment':
-        return Colors.amber.shade100;
+          return Color(0xFFFFF9C4); // 明亮黄色
         case '学习': case 'study':
-        return Colors.purple.shade50;
+          return Color(0xFFF3E5F5); // 优雅紫色
         case '计划': case 'plan':
-        return Colors.indigo.shade50;
+          return Color(0xFFE3F2FD); // 清爽蓝色
         case '会议': case 'meeting':
-        return Colors.blue.shade50;
+          return Color(0xFFE1F5FE); // 天蓝色
         case '购买': case 'purchase':
-        return Colors.green.shade50;
+          return Color(0xFFE0F2F1); // 青绿色
         default:
-          return Colors.grey.shade100;
+          return Color(0xFFFAFAFA); // 高级灰白
       }
     }
 
@@ -2083,7 +2083,46 @@ class _KGTestPageState extends State<KGTestPage> with TickerProviderStateMixin {
                   ? Center(
                 child: Text('没有找到匹配的事件', style: TextStyle(color: Colors.grey, fontSize: 15.sp)),
               )
-                  : ListView.separated(
+                  : Column(
+                      children: [
+                        // 排序提示标签
+                        Container(
+                          padding: EdgeInsets.symmetric(horizontal: 16.w, vertical: 8.h),
+                          child: Row(
+                            children: [
+                              Icon(Icons.sort, size: 16.sp, color: Color(0xFF7C4DFF)),
+                              SizedBox(width: 6.w),
+                              Text(
+                                '按相似度从高到低排序',
+                                style: TextStyle(
+                                  fontSize: 12.sp,
+                                  color: Color(0xFF7C4DFF),
+                                  fontWeight: FontWeight.w500,
+                                  letterSpacing: 0.3,
+                                ),
+                              ),
+                              Spacer(),
+                              Container(
+                                padding: EdgeInsets.symmetric(horizontal: 8.w, vertical: 3.h),
+                                decoration: BoxDecoration(
+                                  color: Color(0xFF7C4DFF).withOpacity(0.1),
+                                  borderRadius: BorderRadius.circular(8.r),
+                                  border: Border.all(color: Color(0xFF7C4DFF).withOpacity(0.3)),
+                                ),
+                                child: Text(
+                                  '${_vectorResults.length} 个结果',
+                                  style: TextStyle(
+                                    fontSize: 11.sp,
+                                    color: Color(0xFF7C4DFF),
+                                    fontWeight: FontWeight.w600,
+                                  ),
+                                ),
+                              ),
+                            ],
+                          ),
+                        ),
+                        Expanded(
+                          child: ListView.separated(
                   itemCount: _vectorResults.length,
                   separatorBuilder: (_, __) => Divider(height: 18.h, color: Colors.grey[300]),
                   itemBuilder: (context, index) {
@@ -2100,49 +2139,97 @@ class _KGTestPageState extends State<KGTestPage> with TickerProviderStateMixin {
                     final event = result['event'] as EventNode?;
                     if (event == null) return SizedBox.shrink();
 
-                    // 根据相似度值确定颜色
-                    Color similarityColor = Colors.grey;
+                    // 根据相似度值确定颜色 - 高级渐变配色
+                    Color similarityColor = Color(0xFF9E9E9E); // 默认中性灰
                     if (similarityValue != null) {
                       if (similarityValue >= 0.8) {
-                        similarityColor = Colors.green;
+                        similarityColor = Color(0xFF4CAF50); // 鲜活绿色 - 极高相关
                       } else if (similarityValue >= 0.6) {
-                        similarityColor = Colors.orange;
+                        similarityColor = Color(0xFF66BB6A); // 浅绿色 - 高相关
                       } else if (similarityValue >= 0.4) {
-                        similarityColor = Colors.blue;
+                        similarityColor = Color(0xFFFFB74D); // 温暖橙色 - 中等相关
+                      } else if (similarityValue >= 0.2) {
+                        similarityColor = Color(0xFF64B5F6); // 柔和蓝色 - 低相关
                       } else {
-                        similarityColor = Colors.grey;
+                        similarityColor = Color(0xFFBDBDBD); // 浅灰色 - 极低相关
                       }
                     }
 
                     return Card(
-                        elevation: 2,
+                        elevation: 3,
                         color: _getEventCardColor(event.type),
-                        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12.r)),
+                        shape: RoundedRectangleBorder(
+                          borderRadius: BorderRadius.circular(16.r),
+                          side: BorderSide(
+                            color: similarityColor.withOpacity(0.3),
+                            width: 1.5,
+                          ),
+                        ),
+                        shadowColor: similarityColor.withOpacity(0.3),
                         child: ListTile(
-                          contentPadding: EdgeInsets.symmetric(vertical: 10.h, horizontal: 16.w),
-                          title: Text(event.name, style: TextStyle(fontWeight: FontWeight.bold, fontSize: 16.sp)),
-                          subtitle: Row(
-                            children: [
-                              Text('${event.type}', style: TextStyle(fontSize: 13.sp)),
-                              SizedBox(width: 8.w),
+                          contentPadding: EdgeInsets.symmetric(vertical: 12.h, horizontal: 18.w),
+                          title: Text(
+                            event.name,
+                            style: TextStyle(
+                              fontWeight: FontWeight.w600,
+                              fontSize: 16.sp,
+                              color: Color(0xFF212121),
+                              letterSpacing: 0.2,
+                            ),
+                          ),
+                          subtitle: Padding(
+                            padding: EdgeInsets.only(top: 6.h),
+                            child: Row(
+                              children: [
+                                Container(
+                                  padding: EdgeInsets.symmetric(horizontal: 8.w, vertical: 3.h),
+                                  decoration: BoxDecoration(
+                                    color: Colors.black.withOpacity(0.06),
+                                    borderRadius: BorderRadius.circular(6.r),
+                                  ),
+                                  child: Text(
+                                    '${event.type}',
+                                    style: TextStyle(
+                                      fontSize: 12.sp,
+                                      color: Color(0xFF424242),
+                                      fontWeight: FontWeight.w500,
+                                    ),
+                                  ),
+                                ),
+                                SizedBox(width: 10.w),
                               Container(
-                                padding: EdgeInsets.symmetric(horizontal: 8.w, vertical: 2.h),
+                                padding: EdgeInsets.symmetric(horizontal: 10.w, vertical: 4.h),
                                 decoration: BoxDecoration(
-                                  color: similarityColor.withOpacity(0.2),
-                                  borderRadius: BorderRadius.circular(10.r),
-                                  border: Border.all(color: similarityColor, width: 1),
+                                  gradient: LinearGradient(
+                                    colors: [
+                                      similarityColor.withOpacity(0.15),
+                                      similarityColor.withOpacity(0.25),
+                                    ],
+                                    begin: Alignment.topLeft,
+                                    end: Alignment.bottomRight,
+                                  ),
+                                  borderRadius: BorderRadius.circular(12.r),
+                                  border: Border.all(color: similarityColor.withOpacity(0.6), width: 1.2),
+                                  boxShadow: [
+                                    BoxShadow(
+                                      color: similarityColor.withOpacity(0.2),
+                                      blurRadius: 4,
+                                      offset: Offset(0, 2),
+                                    ),
+                                  ],
                                 ),
                                 child: Row(
                                   mainAxisSize: MainAxisSize.min,
                                   children: [
-                                    Icon(Icons.show_chart, size: 12, color: similarityColor),
-                                    SizedBox(width: 4.w),
+                                    Icon(Icons.analytics_outlined, size: 13, color: similarityColor),
+                                    SizedBox(width: 5.w),
                                     Text(
                                       similarity,
                                       style: TextStyle(
                                         fontSize: 12.sp,
-                                        fontWeight: FontWeight.bold,
+                                        fontWeight: FontWeight.w600,
                                         color: similarityColor,
+                                        letterSpacing: 0.3,
                                       ),
                                     ),
                                   ],
@@ -2150,8 +2237,23 @@ class _KGTestPageState extends State<KGTestPage> with TickerProviderStateMixin {
                               ),
                             ],
                           ),
+                        ),
                           trailing: event.startTime != null
-                              ? Text(DateFormat('MM/dd HH:mm').format(event.startTime!), style: TextStyle(fontSize: 12.sp, color: Colors.grey[600]))
+                              ? Container(
+                                  padding: EdgeInsets.symmetric(horizontal: 10.w, vertical: 6.h),
+                                  decoration: BoxDecoration(
+                                    color: Colors.black.withOpacity(0.04),
+                                    borderRadius: BorderRadius.circular(8.r),
+                                  ),
+                                  child: Text(
+                                    DateFormat('MM/dd HH:mm').format(event.startTime!),
+                                    style: TextStyle(
+                                      fontSize: 11.sp,
+                                      color: Color(0xFF616161),
+                                      fontWeight: FontWeight.w500,
+                                    ),
+                                  ),
+                                )
                               : null,
                           onTap: () {
                             final participants = _allNodes.where((n) =>
@@ -2162,6 +2264,9 @@ class _KGTestPageState extends State<KGTestPage> with TickerProviderStateMixin {
                         ));
                   }
               ),
+                        ),
+                      ],
+                    ),
             ),
           ),
         ],
