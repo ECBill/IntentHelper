@@ -1980,13 +1980,26 @@ class _KGTestPageState extends State<KGTestPage> with TickerProviderStateMixin {
   }
 
   Widget _buildVectorSearchTab() {
+    // 统一提取相似度分数的方法（支持多种字段名与类型）
+    double? _extractSimilarity(Map<String, dynamic> r) {
+      final dynamic v = r['cosine_similarity'] ?? r['similarity'] ?? r['score'] ?? r['final_score'] ?? r['distance'];
+      if (v == null) return null;
+      if (v is num) return v.toDouble();
+      if (v is String) return double.tryParse(v);
+      return null;
+    }
+
     Future<void> _doVectorSearch() async {
       final query = _vectorSearchController.text.trim();
       if (query.isEmpty) return;
       setState(() => _isVectorSearching = true);
       final results = await KnowledgeGraphService.searchEventsByText(query);
+      // 按相似度从高到低排序（基于与卡片展示一致的分数提取逻辑）
+      final sorted = List<Map<String, dynamic>>.from(results);
+      sorted.sort((a, b) => (_extractSimilarity(b) ?? double.negativeInfinity)
+          .compareTo(_extractSimilarity(a) ?? double.negativeInfinity));
       setState(() {
-        _vectorResults = results;
+        _vectorResults = sorted;
         _isVectorSearching = false;
       });
     }
@@ -2127,11 +2140,8 @@ class _KGTestPageState extends State<KGTestPage> with TickerProviderStateMixin {
                   separatorBuilder: (_, __) => Divider(height: 18.h, color: Colors.grey[300]),
                   itemBuilder: (context, index) {
                     final result = _vectorResults[index];
-                    // 修复：尝试多个可能的相似度字段名
-                    final similarityValue = (result['cosine_similarity'] as double?) ??
-                        (result['similarity'] as double?) ??
-                        (result['score'] as double?) ??
-                        (result['final_score'] as double?);
+                    // 使用统一的相似度提取逻辑，确保排序与显示一致
+                    final double? similarityValue = _extractSimilarity(result);
                     final similarity = similarityValue != null
                         ? similarityValue.toStringAsFixed(3)
                         : '-';
@@ -2197,47 +2207,47 @@ class _KGTestPageState extends State<KGTestPage> with TickerProviderStateMixin {
                                   ),
                                 ),
                                 SizedBox(width: 10.w),
-                              Container(
-                                padding: EdgeInsets.symmetric(horizontal: 10.w, vertical: 4.h),
-                                decoration: BoxDecoration(
-                                  gradient: LinearGradient(
-                                    colors: [
-                                      similarityColor.withOpacity(0.15),
-                                      similarityColor.withOpacity(0.25),
-                                    ],
-                                    begin: Alignment.topLeft,
-                                    end: Alignment.bottomRight,
-                                  ),
-                                  borderRadius: BorderRadius.circular(12.r),
-                                  border: Border.all(color: similarityColor.withOpacity(0.6), width: 1.2),
-                                  boxShadow: [
-                                    BoxShadow(
-                                      color: similarityColor.withOpacity(0.2),
-                                      blurRadius: 4,
-                                      offset: Offset(0, 2),
-                                    ),
-                                  ],
-                                ),
-                                child: Row(
-                                  mainAxisSize: MainAxisSize.min,
-                                  children: [
-                                    Icon(Icons.analytics_outlined, size: 13, color: similarityColor),
-                                    SizedBox(width: 5.w),
-                                    Text(
-                                      similarity,
-                                      style: TextStyle(
-                                        fontSize: 12.sp,
-                                        fontWeight: FontWeight.w600,
-                                        color: similarityColor,
-                                        letterSpacing: 0.3,
-                                      ),
-                                    ),
-                                  ],
-                                ),
-                              ),
-                            ],
-                          ),
-                        ),
+                               Container(
+                                 padding: EdgeInsets.symmetric(horizontal: 10.w, vertical: 4.h),
+                                 decoration: BoxDecoration(
+                                   gradient: LinearGradient(
+                                     colors: [
+                                       similarityColor.withOpacity(0.15),
+                                       similarityColor.withOpacity(0.25),
+                                     ],
+                                     begin: Alignment.topLeft,
+                                     end: Alignment.bottomRight,
+                                   ),
+                                   borderRadius: BorderRadius.circular(12.r),
+                                   border: Border.all(color: similarityColor.withOpacity(0.6), width: 1.2),
+                                   boxShadow: [
+                                     BoxShadow(
+                                       color: similarityColor.withOpacity(0.2),
+                                       blurRadius: 4,
+                                       offset: Offset(0, 2),
+                                     ),
+                                   ],
+                                 ),
+                                 child: Row(
+                                   mainAxisSize: MainAxisSize.min,
+                                   children: [
+                                     Icon(Icons.analytics_outlined, size: 13, color: similarityColor),
+                                     SizedBox(width: 5.w),
+                                     Text(
+                                       similarity,
+                                       style: TextStyle(
+                                         fontSize: 12.sp,
+                                         fontWeight: FontWeight.w600,
+                                         color: similarityColor,
+                                         letterSpacing: 0.3,
+                                       ),
+                                     ),
+                                   ],
+                                 ),
+                               ),
+                             ],
+                           ),
+                         ),
                           trailing: event.startTime != null
                               ? Container(
                                   padding: EdgeInsets.symmetric(horizontal: 10.w, vertical: 6.h),
@@ -2262,17 +2272,17 @@ class _KGTestPageState extends State<KGTestPage> with TickerProviderStateMixin {
                             _showEventDetails(event, participants);
                           },
                         ));
-                  }
-              ),
-                        ),
-                      ],
-                    ),
-            ),
-          ),
-        ],
-      ),
-    );
-  }
+                   }
+               ),
+                         ),
+                       ],
+                     ),
+             ),
+           ),
+         ],
+       ),
+     );
+   }
 
 
   // 新增：分析孤立实体的详细调试方法
