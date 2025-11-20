@@ -250,11 +250,11 @@ class EmbeddingService {
   /// 返回 embeddingV2 如果存在且非空，否则返回旧的 embedding
   List<double>? getEventEmbedding(EventNode eventNode) {
     if (eventNode.embeddingV2 != null && eventNode.embeddingV2!.isNotEmpty) {
-      print('[EmbeddingService] 输出embeddingV2');
+      // print('[EmbeddingService] 输出embeddingV2');
       return eventNode.embeddingV2;
     }
     if (eventNode.embedding.isNotEmpty) {
-      print('[EmbeddingService] 输出embeddingV1');
+      // print('[EmbeddingService] 输出embeddingV1');
       return eventNode.embedding;
     }
     return null;

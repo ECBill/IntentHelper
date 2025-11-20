@@ -646,7 +646,7 @@
     },
     {
       "id": "14:5846656904559202287",
-      "lastPropertyId": "18:7174202831023623116",
+      "lastPropertyId": "19:3082203645438342631",
       "name": "EventNode",
       "properties": [
         {
@@ -743,6 +743,13 @@
           "id": "18:7174202831023623116",
           "name": "mergedTo",
           "type": 9
+        },
+        {
+          "id": "19:3082203645438342631",
+          "name": "embeddingV2",
+          "type": 28,
+          "flags": 8,
+          "indexId": "18:2812150223287652341"
         }
       ],
       "relations": []
@@ -788,7 +795,7 @@
     },
     {
       "id": "16:8784476897631658797",
-      "lastPropertyId": "14:8265127239600849901",
+      "lastPropertyId": "17:5051838422091373332",
       "name": "ClusterNode",
       "properties": [
         {
@@ -865,6 +872,23 @@
           "id": "14:8265127239600849901",
           "name": "memberIds",
           "type": 30
+        },
+        {
+          "id": "15:5449370376462073862",
+          "name": "embeddingV2",
+          "type": 28,
+          "flags": 8,
+          "indexId": "17:4238239680203268548"
+        },
+        {
+          "id": "16:9184470508068444519",
+          "name": "level",
+          "type": 6
+        },
+        {
+          "id": "17:5051838422091373332",
+          "name": "parentClusterId",
+          "type": 9
         }
       ],
       "relations": []
@@ -930,7 +954,7 @@
     }
   ],
   "lastEntityId": "17:8528605959876604349",
-  "lastIndexId": "16:8353239551913824510",
+  "lastIndexId": "18:2812150223287652341",
   "lastRelationId": "0:0",
   "lastSequenceId": "0:0",
   "modelVersion": 5,

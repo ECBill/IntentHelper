@@ -1267,6 +1267,9 @@ ${patchedUserStateContext['knowledge_graph_info'] != null && patchedUserStateCon
           skippedCount++;
         }
         i++;
+        // if(i>10){
+        //   break;
+        // }
       }
 
       print('[KnowledgeGraphService] ✅ 批量嵌入完成, 共更新 \\${updatedCount} 个事件, 跳过 \\${skippedCount} 个, 失败 \\${failedCount} 个');

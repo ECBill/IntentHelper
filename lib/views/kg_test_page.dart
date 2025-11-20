@@ -38,7 +38,7 @@ class _KGTestPageState extends State<KGTestPage> with TickerProviderStateMixin {
   final FocusNode _vectorSearchFocusNode = FocusNode();
   List<Map<String, dynamic>> _vectorResults = [];
   bool _isVectorSearching = false;
-  
+
   // 聚类相关状态变量
   bool _isClusterting = false;
   String _clusteringProgress = '';
@@ -106,8 +106,8 @@ class _KGTestPageState extends State<KGTestPage> with TickerProviderStateMixin {
         title: Text('⚠️ 确认覆盖向量'),
         content: Text(
           '该操作会重新计算并覆盖所有事件的现有向量。\n\n'
-          '这适用于嵌入生成逻辑更新后，需要更新所有现存节点的场景。\n\n'
-          '⚠️ 此操作不可撤销，确认继续吗？',
+              '这适用于嵌入生成逻辑更新后，需要更新所有现存节点的场景。\n\n'
+              '⚠️ 此操作不可撤销，确认继续吗？',
         ),
         actions: [
           TextButton(
@@ -1995,21 +1995,21 @@ class _KGTestPageState extends State<KGTestPage> with TickerProviderStateMixin {
     Color _getEventCardColor(String type) {
       switch (type.toLowerCase()) {
         case '讨论': case 'discussion':
-          return Colors.orange.shade100;
+        return Colors.orange.shade100;
         case '生活': case 'life':
-          return Color(0xFFF8E1E9); // 梅红色
+        return Color(0xFFF8E1E9); // 梅红色
         case '工作': case 'work':
-          return Color(0xFFCCE2D0); // 墨绿色
+        return Color(0xFFCCE2D0); // 墨绿色
         case '娱乐': case 'entertainment':
-          return Colors.amber.shade100;
+        return Colors.amber.shade100;
         case '学习': case 'study':
-          return Colors.purple.shade50;
+        return Colors.purple.shade50;
         case '计划': case 'plan':
-          return Colors.indigo.shade50;
+        return Colors.indigo.shade50;
         case '会议': case 'meeting':
-          return Colors.blue.shade50;
+        return Colors.blue.shade50;
         case '购买': case 'purchase':
-          return Colors.green.shade50;
+        return Colors.green.shade50;
         default:
           return Colors.grey.shade100;
       }
@@ -2080,88 +2080,88 @@ class _KGTestPageState extends State<KGTestPage> with TickerProviderStateMixin {
               child: _isVectorSearching
                   ? Center(child: CircularProgressIndicator())
                   : _vectorResults.isEmpty
-                      ? Center(
-                          child: Text('没有找到匹配的事件', style: TextStyle(color: Colors.grey, fontSize: 15.sp)),
-                        )
-                      : ListView.separated(
-                          itemCount: _vectorResults.length,
-                          separatorBuilder: (_, __) => Divider(height: 18.h, color: Colors.grey[300]),
-                          itemBuilder: (context, index) {
-                            final result = _vectorResults[index];
-                            // 修复：尝试多个可能的相似度字段名
-                            final similarityValue = (result['cosine_similarity'] as double?) ?? 
-                                                   (result['similarity'] as double?) ?? 
-                                                   (result['score'] as double?) ??
-                                                   (result['final_score'] as double?);
-                            final similarity = similarityValue != null 
-                                ? similarityValue.toStringAsFixed(3) 
-                                : '-';
-                            
-                            final event = result['event'] as EventNode?;
-                            if (event == null) return SizedBox.shrink();
-                            
-                            // 根据相似度值确定颜色
-                            Color similarityColor = Colors.grey;
-                            if (similarityValue != null) {
-                              if (similarityValue >= 0.8) {
-                                similarityColor = Colors.green;
-                              } else if (similarityValue >= 0.6) {
-                                similarityColor = Colors.orange;
-                              } else if (similarityValue >= 0.4) {
-                                similarityColor = Colors.blue;
-                              } else {
-                                similarityColor = Colors.grey;
-                              }
-                            }
-                            
-                            return Card(
-                              elevation: 2,
-                              color: _getEventCardColor(event.type),
-                              shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12.r)),
-                              child: ListTile(
-                                contentPadding: EdgeInsets.symmetric(vertical: 10.h, horizontal: 16.w),
-                                title: Text(event.name, style: TextStyle(fontWeight: FontWeight.bold, fontSize: 16.sp)),
-                                subtitle: Row(
+                  ? Center(
+                child: Text('没有找到匹配的事件', style: TextStyle(color: Colors.grey, fontSize: 15.sp)),
+              )
+                  : ListView.separated(
+                  itemCount: _vectorResults.length,
+                  separatorBuilder: (_, __) => Divider(height: 18.h, color: Colors.grey[300]),
+                  itemBuilder: (context, index) {
+                    final result = _vectorResults[index];
+                    // 修复：尝试多个可能的相似度字段名
+                    final similarityValue = (result['cosine_similarity'] as double?) ??
+                        (result['similarity'] as double?) ??
+                        (result['score'] as double?) ??
+                        (result['final_score'] as double?);
+                    final similarity = similarityValue != null
+                        ? similarityValue.toStringAsFixed(3)
+                        : '-';
+
+                    final event = result['event'] as EventNode?;
+                    if (event == null) return SizedBox.shrink();
+
+                    // 根据相似度值确定颜色
+                    Color similarityColor = Colors.grey;
+                    if (similarityValue != null) {
+                      if (similarityValue >= 0.8) {
+                        similarityColor = Colors.green;
+                      } else if (similarityValue >= 0.6) {
+                        similarityColor = Colors.orange;
+                      } else if (similarityValue >= 0.4) {
+                        similarityColor = Colors.blue;
+                      } else {
+                        similarityColor = Colors.grey;
+                      }
+                    }
+
+                    return Card(
+                        elevation: 2,
+                        color: _getEventCardColor(event.type),
+                        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12.r)),
+                        child: ListTile(
+                          contentPadding: EdgeInsets.symmetric(vertical: 10.h, horizontal: 16.w),
+                          title: Text(event.name, style: TextStyle(fontWeight: FontWeight.bold, fontSize: 16.sp)),
+                          subtitle: Row(
+                            children: [
+                              Text('${event.type}', style: TextStyle(fontSize: 13.sp)),
+                              SizedBox(width: 8.w),
+                              Container(
+                                padding: EdgeInsets.symmetric(horizontal: 8.w, vertical: 2.h),
+                                decoration: BoxDecoration(
+                                  color: similarityColor.withOpacity(0.2),
+                                  borderRadius: BorderRadius.circular(10.r),
+                                  border: Border.all(color: similarityColor, width: 1),
+                                ),
+                                child: Row(
+                                  mainAxisSize: MainAxisSize.min,
                                   children: [
-                                    Text('${event.type}', style: TextStyle(fontSize: 13.sp)),
-                                    SizedBox(width: 8.w),
-                                    Container(
-                                      padding: EdgeInsets.symmetric(horizontal: 8.w, vertical: 2.h),
-                                      decoration: BoxDecoration(
-                                        color: similarityColor.withOpacity(0.2),
-                                        borderRadius: BorderRadius.circular(10.r),
-                                        border: Border.all(color: similarityColor, width: 1),
-                                      ),
-                                      child: Row(
-                                        mainAxisSize: MainAxisSize.min,
-                                        children: [
-                                          Icon(Icons.show_chart, size: 12, color: similarityColor),
-                                          SizedBox(width: 4.w),
-                                          Text(
-                                            similarity,
-                                            style: TextStyle(
-                                              fontSize: 12.sp,
-                                              fontWeight: FontWeight.bold,
-                                              color: similarityColor,
-                                            ),
-                                          ),
-                                        ],
+                                    Icon(Icons.show_chart, size: 12, color: similarityColor),
+                                    SizedBox(width: 4.w),
+                                    Text(
+                                      similarity,
+                                      style: TextStyle(
+                                        fontSize: 12.sp,
+                                        fontWeight: FontWeight.bold,
+                                        color: similarityColor,
                                       ),
                                     ),
                                   ],
                                 ),
-                                trailing: event.startTime != null
-                                    ? Text(DateFormat('MM/dd HH:mm').format(event.startTime!), style: TextStyle(fontSize: 12.sp, color: Colors.grey[600]))
-                                    : null,
-                                onTap: () {
-                                  final participants = _allNodes.where((n) =>
-                                      _allEventRelations.any((r) => r.eventId == event.id && r.entityId == n.id)
-                                  ).toList();
-                                  _showEventDetails(event, participants);
-                                },
-                              ));
-                          }
-                        ),
+                              ),
+                            ],
+                          ),
+                          trailing: event.startTime != null
+                              ? Text(DateFormat('MM/dd HH:mm').format(event.startTime!), style: TextStyle(fontSize: 12.sp, color: Colors.grey[600]))
+                              : null,
+                          onTap: () {
+                            final participants = _allNodes.where((n) =>
+                                _allEventRelations.any((r) => r.eventId == event.id && r.entityId == n.id)
+                            ).toList();
+                            _showEventDetails(event, participants);
+                          },
+                        ));
+                  }
+              ),
             ),
           ),
         ],
@@ -2367,9 +2367,9 @@ class _KGTestPageState extends State<KGTestPage> with TickerProviderStateMixin {
       setState(() => _isLoading = false);
     }
   }
-  
+
   // ========== 聚类相关方法 ==========
-  
+
   /// 执行图谱整理（语义聚类）
   Future<void> _organizeGraph() async {
     setState(() {
@@ -2377,10 +2377,10 @@ class _KGTestPageState extends State<KGTestPage> with TickerProviderStateMixin {
       _clusteringProgress = '';
       _clusteringResult = null;
     });
-    
+
     try {
       final clusteringService = SemanticClusteringService();
-      
+
       final result = await clusteringService.organizeGraph(
         forceRecluster: false,
         useTwoStage: true, // 使用两阶段聚类
@@ -2390,14 +2390,14 @@ class _KGTestPageState extends State<KGTestPage> with TickerProviderStateMixin {
           });
         },
       );
-      
+
       setState(() {
         _clusteringResult = result;
       });
-      
+
       // 刷新数据以显示新的聚类
       await _loadKGData();
-      
+
       // 显示结果对话框
       if (mounted) {
         showDialog(
@@ -2443,7 +2443,7 @@ class _KGTestPageState extends State<KGTestPage> with TickerProviderStateMixin {
           ),
         );
       }
-      
+
     } catch (e) {
       setState(() {
         _clusteringProgress += '\n❌ 错误: $e';
@@ -2454,7 +2454,7 @@ class _KGTestPageState extends State<KGTestPage> with TickerProviderStateMixin {
       });
     }
   }
-  
+
   /// 聚类管理标签页
   Widget _buildClusteringTab() {
     return FutureBuilder<List<ClusterNode>>(
@@ -2463,7 +2463,7 @@ class _KGTestPageState extends State<KGTestPage> with TickerProviderStateMixin {
         if (snapshot.connectionState == ConnectionState.waiting) {
           return Center(child: CircularProgressIndicator());
         }
-        
+
         if (snapshot.hasError) {
           return Center(
             child: Column(
@@ -2488,7 +2488,7 @@ class _KGTestPageState extends State<KGTestPage> with TickerProviderStateMixin {
             ),
           );
         }
-        
+
         final clusters = snapshot.data ?? [];
 
         if (clusters.isEmpty) {
@@ -2498,7 +2498,7 @@ class _KGTestPageState extends State<KGTestPage> with TickerProviderStateMixin {
             subtitle: '点击"图谱维护"标签页中的"整理图谱"按钮创建聚类',
           );
         }
-        
+
         return Column(
           children: [
             // 聚类统计面板
@@ -2529,7 +2529,7 @@ class _KGTestPageState extends State<KGTestPage> with TickerProviderStateMixin {
                 ],
               ),
             ),
-            
+
             // 质量监控和操作按钮
             Padding(
               padding: EdgeInsets.symmetric(horizontal: 16.w, vertical: 8.h),
@@ -2563,7 +2563,7 @@ class _KGTestPageState extends State<KGTestPage> with TickerProviderStateMixin {
                 ],
               ),
             ),
-            
+
             // 聚类列表
             Expanded(
               child: ListView.builder(
@@ -2577,7 +2577,7 @@ class _KGTestPageState extends State<KGTestPage> with TickerProviderStateMixin {
       },
     );
   }
-  
+
   /// 加载所有聚类节点
   Future<List<ClusterNode>> _loadClusters() async {
     try {
@@ -2589,7 +2589,7 @@ class _KGTestPageState extends State<KGTestPage> with TickerProviderStateMixin {
       return <ClusterNode>[];
     }
   }
-  
+
   /// 构建聚类卡片
   Widget _buildClusterCard(ClusterNode cluster) {
     return Card(
@@ -2650,9 +2650,9 @@ class _KGTestPageState extends State<KGTestPage> with TickerProviderStateMixin {
                     child: Center(child: CircularProgressIndicator()),
                   );
                 }
-                
+
                 final members = snapshot.data ?? [];
-                
+
                 if (members.isEmpty) {
                   return Padding(
                     padding: EdgeInsets.all(16.w),
@@ -2662,7 +2662,7 @@ class _KGTestPageState extends State<KGTestPage> with TickerProviderStateMixin {
                     ),
                   );
                 }
-                
+
                 return Column(
                   children: [
                     Divider(height: 1),
@@ -2730,7 +2730,7 @@ class _KGTestPageState extends State<KGTestPage> with TickerProviderStateMixin {
       ),
     );
   }
-  
+
   /// 加载聚类的成员事件
   Future<List<EventNode>> _loadClusterMembers(String clusterId) async {
     try {
@@ -2751,10 +2751,10 @@ class _KGTestPageState extends State<KGTestPage> with TickerProviderStateMixin {
         title: Text('⚠️ 确认全量初始化聚类'),
         content: Text(
           '这将对所有历史事件重新执行两阶段聚类。\n\n'
-          '• 会更新所有事件的联合嵌入\n'
-          '• 会清除现有聚类并重新计算\n'
-          '• 可能需要较长时间\n\n'
-          '确定要继续吗？',
+              '• 会更新所有事件的联合嵌入\n'
+              '• 会清除现有聚类并重新计算\n'
+              '• 可能需要较长时间\n\n'
+              '确定要继续吗？',
         ),
         actions: [
           TextButton(
@@ -2782,7 +2782,7 @@ class _KGTestPageState extends State<KGTestPage> with TickerProviderStateMixin {
 
     try {
       final clusteringService = SemanticClusteringService();
-      
+
       final result = await clusteringService.clusterInitAll(
         onProgress: (progress) {
           setState(() {
@@ -2945,7 +2945,7 @@ class _KGTestPageState extends State<KGTestPage> with TickerProviderStateMixin {
 
     try {
       final clusteringService = SemanticClusteringService();
-      
+
       final clusterResult = await clusteringService.clusterByDateRange(
         startDate: startDate,
         endDate: endDate,
@@ -3174,7 +3174,7 @@ class _KGTestPageState extends State<KGTestPage> with TickerProviderStateMixin {
         title: Text('🔍 离群点检测与重分配'),
         content: Text(
           '这将检测所有聚类中的离群点（与簇中心相似度低的事件），并尝试将它们重分配到更合适的聚类中。\n\n'
-          '确定要继续吗？',
+              '确定要继续吗？',
         ),
         actions: [
           TextButton(
@@ -3202,7 +3202,7 @@ class _KGTestPageState extends State<KGTestPage> with TickerProviderStateMixin {
 
     try {
       final clusteringService = SemanticClusteringService();
-      
+
       String progressText = '';
       final result = await clusteringService.detectAndReassignOutliers(
         onProgress: (progress) {
@@ -3287,8 +3287,8 @@ class _KGTestPageState extends State<KGTestPage> with TickerProviderStateMixin {
         title: Text('⚠️ 确认清空所有聚类'),
         content: Text(
           '这将删除所有聚类节点和聚类元数据，并清除所有事件的聚类关联。\n\n'
-          '⚠️ 此操作不可撤销！\n\n'
-          '确定要继续吗？',
+              '⚠️ 此操作不可撤销！\n\n'
+              '确定要继续吗？',
         ),
         actions: [
           TextButton(
@@ -3316,7 +3316,7 @@ class _KGTestPageState extends State<KGTestPage> with TickerProviderStateMixin {
 
     try {
       final clusteringService = SemanticClusteringService();
-      
+
       final result = await clusteringService.clearAllClusters(
         onProgress: (progress) {
           setState(() {

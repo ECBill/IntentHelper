@@ -674,7 +674,7 @@ final _entities = <obx_int.ModelEntity>[
   obx_int.ModelEntity(
       id: const obx_int.IdUid(14, 5846656904559202287),
       name: 'EventNode',
-      lastPropertyId: const obx_int.IdUid(18, 7174202831023623116),
+      lastPropertyId: const obx_int.IdUid(19, 3082203645438342631),
       flags: 0,
       properties: <obx_int.ModelProperty>[
         obx_int.ModelProperty(
@@ -771,7 +771,16 @@ final _entities = <obx_int.ModelEntity>[
             id: const obx_int.IdUid(18, 7174202831023623116),
             name: 'mergedTo',
             type: 9,
-            flags: 0)
+            flags: 0),
+        obx_int.ModelProperty(
+            id: const obx_int.IdUid(19, 3082203645438342631),
+            name: 'embeddingV2',
+            type: 28,
+            flags: 8,
+            indexId: const obx_int.IdUid(18, 2812150223287652341),
+            hnswParams: obx_int.ModelHnswParams(
+              dimensions: 1536,
+            ))
       ],
       relations: <obx_int.ModelRelation>[],
       backlinks: <obx_int.ModelBacklink>[]),
@@ -817,7 +826,7 @@ final _entities = <obx_int.ModelEntity>[
   obx_int.ModelEntity(
       id: const obx_int.IdUid(16, 8784476897631658797),
       name: 'ClusterNode',
-      lastPropertyId: const obx_int.IdUid(14, 8265127239600849901),
+      lastPropertyId: const obx_int.IdUid(17, 5051838422091373332),
       flags: 0,
       properties: <obx_int.ModelProperty>[
         obx_int.ModelProperty(
@@ -894,6 +903,25 @@ final _entities = <obx_int.ModelEntity>[
             id: const obx_int.IdUid(14, 8265127239600849901),
             name: 'memberIds',
             type: 30,
+            flags: 0),
+        obx_int.ModelProperty(
+            id: const obx_int.IdUid(15, 5449370376462073862),
+            name: 'embeddingV2',
+            type: 28,
+            flags: 8,
+            indexId: const obx_int.IdUid(17, 4238239680203268548),
+            hnswParams: obx_int.ModelHnswParams(
+              dimensions: 1536,
+            )),
+        obx_int.ModelProperty(
+            id: const obx_int.IdUid(16, 9184470508068444519),
+            name: 'level',
+            type: 6,
+            flags: 0),
+        obx_int.ModelProperty(
+            id: const obx_int.IdUid(17, 5051838422091373332),
+            name: 'parentClusterId',
+            type: 9,
             flags: 0)
       ],
       relations: <obx_int.ModelRelation>[],
@@ -995,7 +1023,7 @@ obx_int.ModelDefinition getObjectBoxModel() {
   final model = obx_int.ModelInfo(
       entities: _entities,
       lastEntityId: const obx_int.IdUid(17, 8528605959876604349),
-      lastIndexId: const obx_int.IdUid(16, 8353239551913824510),
+      lastIndexId: const obx_int.IdUid(18, 2812150223287652341),
       lastRelationId: const obx_int.IdUid(0, 0),
       lastSequenceId: const obx_int.IdUid(0, 0),
       retiredEntityUids: const [],
@@ -1835,7 +1863,10 @@ obx_int.ModelDefinition getObjectBoxModel() {
           final mergedToOffset = object.mergedTo == null
               ? null
               : fbb.writeString(object.mergedTo!);
-          fbb.startTable(19);
+          final embeddingV2Offset = object.embeddingV2 == null
+              ? null
+              : fbb.writeListFloat32(object.embeddingV2!);
+          fbb.startTable(20);
           fbb.addInt64(0, object.obxId);
           fbb.addOffset(1, idOffset);
           fbb.addOffset(2, nameOffset);
@@ -1854,6 +1885,7 @@ obx_int.ModelDefinition getObjectBoxModel() {
           fbb.addFloat64(15, object.cachedPriorityScore);
           fbb.addOffset(16, clusterIdOffset);
           fbb.addOffset(17, mergedToOffset);
+          fbb.addOffset(18, embeddingV2Offset);
           fbb.finish(fbb.endTable());
           return object.obxId;
         },
@@ -1897,6 +1929,9 @@ obx_int.ModelDefinition getObjectBoxModel() {
           final embeddingParam =
               const fb.ListReader<double>(fb.Float32Reader(), lazy: false)
                   .vTableGet(buffer, rootOffset, 28, []);
+          final embeddingV2Param =
+              const fb.ListReader<double>(fb.Float32Reader(), lazy: false)
+                  .vTableGetNullable(buffer, rootOffset, 40);
           final lastSeenTimeParam = lastSeenTimeValue == null
               ? null
               : DateTime.fromMillisecondsSinceEpoch(lastSeenTimeValue);
@@ -1923,6 +1958,7 @@ obx_int.ModelDefinition getObjectBoxModel() {
               lastUpdated: lastUpdatedParam,
               sourceContext: sourceContextParam,
               embedding: embeddingParam,
+              embeddingV2: embeddingV2Param,
               lastSeenTime: lastSeenTimeParam,
               activationHistoryJson: activationHistoryJsonParam,
               cachedPriorityScore: cachedPriorityScoreParam,
@@ -2002,7 +2038,13 @@ obx_int.ModelDefinition getObjectBoxModel() {
           final embeddingOffset = fbb.writeListFloat32(object.embedding);
           final memberIdsOffset = fbb.writeList(
               object.memberIds.map(fbb.writeString).toList(growable: false));
-          fbb.startTable(15);
+          final embeddingV2Offset = object.embeddingV2 == null
+              ? null
+              : fbb.writeListFloat32(object.embeddingV2!);
+          final parentClusterIdOffset = object.parentClusterId == null
+              ? null
+              : fbb.writeString(object.parentClusterId!);
+          fbb.startTable(18);
           fbb.addInt64(0, object.obxId);
           fbb.addOffset(1, idOffset);
           fbb.addOffset(2, nameOffset);
@@ -2017,6 +2059,9 @@ obx_int.ModelDefinition getObjectBoxModel() {
           fbb.addInt64(11, object.earliestEventTime?.millisecondsSinceEpoch);
           fbb.addInt64(12, object.latestEventTime?.millisecondsSinceEpoch);
           fbb.addOffset(13, memberIdsOffset);
+          fbb.addOffset(14, embeddingV2Offset);
+          fbb.addInt64(15, object.level);
+          fbb.addOffset(16, parentClusterIdOffset);
           fbb.finish(fbb.endTable());
           return object.obxId;
         },
@@ -2050,6 +2095,9 @@ obx_int.ModelDefinition getObjectBoxModel() {
           final embeddingParam =
               const fb.ListReader<double>(fb.Float32Reader(), lazy: false)
                   .vTableGet(buffer, rootOffset, 22, []);
+          final embeddingV2Param =
+              const fb.ListReader<double>(fb.Float32Reader(), lazy: false)
+                  .vTableGetNullable(buffer, rootOffset, 32);
           final avgSimilarityParam =
               const fb.Float64Reader().vTableGet(buffer, rootOffset, 24, 0);
           final earliestEventTimeParam = earliestEventTimeValue == null
@@ -2058,6 +2106,11 @@ obx_int.ModelDefinition getObjectBoxModel() {
           final latestEventTimeParam = latestEventTimeValue == null
               ? null
               : DateTime.fromMillisecondsSinceEpoch(latestEventTimeValue);
+          final levelParam =
+              const fb.Int64Reader().vTableGet(buffer, rootOffset, 34, 0);
+          final parentClusterIdParam =
+              const fb.StringReader(asciiOptimization: true)
+                  .vTableGetNullable(buffer, rootOffset, 36);
           final object = ClusterNode(
               obxId: obxIdParam,
               id: idParam,
@@ -2069,9 +2122,12 @@ obx_int.ModelDefinition getObjectBoxModel() {
               memberCount: memberCountParam,
               memberIdsJson: memberIdsJsonParam,
               embedding: embeddingParam,
+              embeddingV2: embeddingV2Param,
               avgSimilarity: avgSimilarityParam,
               earliestEventTime: earliestEventTimeParam,
-              latestEventTime: latestEventTimeParam)
+              latestEventTime: latestEventTimeParam,
+              level: levelParam,
+              parentClusterId: parentClusterIdParam)
             ..memberIds = const fb.ListReader<String>(
                     fb.StringReader(asciiOptimization: true),
                     lazy: false)
@@ -2659,6 +2715,10 @@ class EventNode_ {
   /// See [EventNode.mergedTo].
   static final mergedTo =
       obx.QueryStringProperty<EventNode>(_entities[13].properties[17]);
+
+  /// See [EventNode.embeddingV2].
+  static final embeddingV2 =
+      obx.QueryHnswProperty<EventNode>(_entities[13].properties[18]);
 }
 
 /// [EventRelation] entity fields to define ObjectBox queries.
@@ -2745,6 +2805,18 @@ class ClusterNode_ {
   /// See [ClusterNode.memberIds].
   static final memberIds =
       obx.QueryStringVectorProperty<ClusterNode>(_entities[15].properties[13]);
+
+  /// See [ClusterNode.embeddingV2].
+  static final embeddingV2 =
+      obx.QueryHnswProperty<ClusterNode>(_entities[15].properties[14]);
+
+  /// See [ClusterNode.level].
+  static final level =
+      obx.QueryIntegerProperty<ClusterNode>(_entities[15].properties[15]);
+
+  /// See [ClusterNode.parentClusterId].
+  static final parentClusterId =
+      obx.QueryStringProperty<ClusterNode>(_entities[15].properties[16]);
 }
 
 /// [ClusteringMeta] entity fields to define ObjectBox queries.
