@@ -244,6 +244,24 @@ class EmbeddingService {
     }
   }
 
+  /// 获取事件的嵌入向量（优先使用新的 1536 维向量）
+  /// 
+  /// 返回 embeddingV2 如果存在且非空，否则返回旧的 embedding
+  List<double>? getEventEmbedding(EventNode eventNode) {
+    if (eventNode.embeddingV2 != null && eventNode.embeddingV2!.isNotEmpty) {
+      return eventNode.embeddingV2;
+    }
+    if (eventNode.embedding.isNotEmpty) {
+      return eventNode.embedding;
+    }
+    return null;
+  }
+
+  /// 设置事件的嵌入向量（写入新的 1536 维字段）
+  void setEventEmbedding(EventNode eventNode, List<double> embedding) {
+    eventNode.embeddingV2 = embedding;
+  }
+
 
   /// 使用事件的多个字段组合生成语义向量
   /// 
@@ -896,8 +914,9 @@ class EmbeddingService {
 
     final candidates = <Map<String, dynamic>>[];
     for (final e in eventNodes) {
-      if (e.embedding == null || e.embedding!.isEmpty) continue;
-      final cos = calculateCosineSimilarity(queryVector, e.embedding!);
+      final embedding = getEventEmbedding(e);
+      if (embedding == null || embedding.isEmpty) continue;
+      final cos = calculateCosineSimilarity(queryVector, embedding);
       if (cos < cosineThreshold) continue; // 先做一次语义召回
       final lex = _lexicalScore(query: queryText, event: e);
       final boost = _domainBoost(queryText, e);
@@ -1014,8 +1033,9 @@ class EmbeddingService {
     final qv = useWhitening ? whitenVector(queryVector) : queryVector;
     final candidates = <Map<String, dynamic>>[];
     for (final eventNode in eventNodes) {
-      if (eventNode.embedding != null && eventNode.embedding!.isNotEmpty) {
-        final emb = useWhitening ? whitenVector(eventNode.embedding!) : eventNode.embedding!;
+      final embedding = getEventEmbedding(eventNode);
+      if (embedding != null && embedding.isNotEmpty) {
+        final emb = useWhitening ? whitenVector(embedding) : embedding;
         final cosine = calculateCosineSimilarity(qv, emb);
         if (cosine >= threshold) {
           candidates.add({'event': eventNode, 'similarity': cosine, 'embedding': emb});
@@ -1084,9 +1104,10 @@ class EmbeddingService {
     final results = <Map<String, dynamic>>[];
     int debugCount = 0;
     for (final eventNode in eventNodes) {
-      print('[EmbeddingService][调试] eventNode: \\${eventNode.name}, embedding: \\${eventNode.embedding}');
-      if (eventNode.embedding != null && eventNode.embedding!.isNotEmpty) {
-        final similarity = calculateCosineSimilarity(queryVector, eventNode.embedding!);
+      final embedding = getEventEmbedding(eventNode);
+      print('[EmbeddingService][调试] eventNode: \\${eventNode.name}, embedding: \\${embedding}');
+      if (embedding != null && embedding.isNotEmpty) {
+        final similarity = calculateCosineSimilarity(queryVector, embedding);
         if (debugCount < 10) {
           print('[EmbeddingService][调试] 事件: "\\${eventNode.name}", embeddingText: "\\${eventNode.getEmbeddingText()}"');
           print('[EmbeddingService][调试] 相似度: \\${similarity}');
@@ -1188,11 +1209,11 @@ class EmbeddingService {
     final similarities = <double>[];
 
     for (final e in events) {
-      if (e.embedding == null) {
+      final emb = getEventEmbedding(e);
+      if (emb == null) {
         nullCount++;
         continue;
       }
-      final emb = e.embedding!;
       
       // 检查零向量
       if (emb.every((v) => v == 0.0)) {
@@ -1206,14 +1227,14 @@ class EmbeddingService {
     }
 
     // 计算相似度分布（采样前100个非空向量对）
-    final nonNullEvents = events.where((e) => e.embedding != null && e.embedding!.isNotEmpty).toList();
+    final nonNullEvents = events.where((e) => getEventEmbedding(e) != null && getEventEmbedding(e)!.isNotEmpty).toList();
     if (nonNullEvents.length > 1) {
       final sampleSize = nonNullEvents.length < 100 ? nonNullEvents.length : 100;
       for (int i = 0; i < sampleSize - 1; i++) {
         for (int j = i + 1; j < sampleSize && j < i + 10; j++) {
           final sim = calculateCosineSimilarity(
-            nonNullEvents[i].embedding!,
-            nonNullEvents[j].embedding!,
+            getEventEmbedding(nonNullEvents[i])!,
+            getEventEmbedding(nonNullEvents[j])!,
           );
           similarities.add(sim);
         }

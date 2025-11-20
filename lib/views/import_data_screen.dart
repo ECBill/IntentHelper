@@ -285,9 +285,10 @@ class _ImportDataScreenState extends State<ImportDataScreen> {
               );
               // 生成 embedding
               try {
-                final embedding = await EmbeddingService().generateEventEmbedding(eventNode);
+                final embeddingService = EmbeddingService();
+                final embedding = await embeddingService.generateEventEmbedding(eventNode);
                 if (embedding != null && embedding.isNotEmpty) {
-                  eventNode.embedding = embedding;
+                  embeddingService.setEventEmbedding(eventNode, embedding);
                   print('[ImportData] EventNode id=$nodeId embedding 生成成功');
                 } else {
                   _problems.add('eventNodeEntities id=$nodeId 未能生成 embedding');

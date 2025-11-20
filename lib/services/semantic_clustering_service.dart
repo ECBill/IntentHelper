@@ -47,8 +47,9 @@ class SemanticClusteringService {
   Future<List<double>?> _generateJointEmbedding(EventNode event) async {
     try {
       // 如果事件已有embedding且内容未变，直接使用
-      if (event.embedding.isNotEmpty) {
-        return event.embedding;
+      final existingEmbedding = _embeddingService.getEventEmbedding(event);
+      if (existingEmbedding != null && existingEmbedding.isNotEmpty) {
+        return existingEmbedding;
       }
       
       // 生成标题embedding
@@ -80,7 +81,8 @@ class SemanticClusteringService {
           : titleEmbedding;
     } catch (e) {
       print('[SemanticClusteringService] ⚠️ 生成联合嵌入失败: $e');
-      return event.embedding.isNotEmpty ? event.embedding : null;
+      final existingEmbedding = _embeddingService.getEventEmbedding(event);
+      return existingEmbedding != null && existingEmbedding.isNotEmpty ? existingEmbedding : null;
     }
   }
 
@@ -654,11 +656,15 @@ $exampleTitles
         
         for (final cluster in existingClusters) {
           if (cluster.level != 2) continue; // 只合并到细分层
-          if (cluster.embedding.isEmpty) continue;
+          final clusterEmbedding = cluster.embeddingV2 ?? cluster.embedding;
+          if (clusterEmbedding.isEmpty) continue;
+          
+          final eventEmbedding = _embeddingService.getEventEmbedding(event);
+          if (eventEmbedding == null) continue;
           
           final similarity = _embeddingService.calculateCosineSimilarity(
-            event.embedding,
-            cluster.embedding,
+            eventEmbedding,
+            clusterEmbedding,
           );
           
           if (similarity > bestSimilarity && similarity >= MERGE_SIMILARITY_THRESHOLD) {
@@ -733,8 +739,9 @@ $exampleTitles
     int updated = 0;
     for (final event in events) {
       final jointEmbedding = await _generateJointEmbedding(event);
-      if (jointEmbedding != null && jointEmbedding != event.embedding) {
-        event.embedding = jointEmbedding;
+      final currentEmbedding = _embeddingService.getEventEmbedding(event);
+      if (jointEmbedding != null && jointEmbedding != currentEmbedding) {
+        _embeddingService.setEventEmbedding(event, jointEmbedding);
         ObjectBoxService.eventNodeBox.put(event);
         updated++;
       }

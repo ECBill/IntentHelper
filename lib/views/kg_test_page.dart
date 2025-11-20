@@ -1286,7 +1286,7 @@ class _KGTestPageState extends State<KGTestPage> with TickerProviderStateMixin {
                           child: Scrollbar(
                             child: ListView(
                               children: _allEventNodes.map((event) {
-                                final emb = event.embedding;
+                                final emb = EmbeddingService().getEventEmbedding(event);
                                 return Text(
                                   '事件: \\${event.name}\nembedding 长度: \\${emb?.length ?? 0}\n前5: \\${emb != null ? emb.take(5).toList() : '无'}\n',
                                   style: TextStyle(fontSize: 13),
