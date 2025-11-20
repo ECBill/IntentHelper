@@ -587,7 +587,7 @@ class ObjectBoxService {
     try {
       final nodes = eventNodeBox.getAll();
       for (final node in nodes) {
-        print('[调试] queryEventNodes: id=${node.id}, name=${node.name}, embedding=${node.embedding}');
+        print('[调试] queryEventNodes: id=${node.id}, name=${node.name}, embedding(old)=${node.embedding.length}, embeddingV2=${node.embeddingV2?.length ?? 0}');
       }
       return nodes;
     } catch (e) {

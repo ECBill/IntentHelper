@@ -275,7 +275,11 @@ class EmbeddingService {
   /// - 地点
   /// - 时间信息（日期 + 时段：凌晨/早上/上午/中午/下午/晚上/深夜）
   /// - 持续时间
+  /// 
+  /// 优先使用 OpenAI API (text-embedding-3-small)，失败时回退到本地模型
   Future<List<double>?> generateEventEmbedding(EventNode eventNode) async {
+    final startTime = DateTime.now();
+    
     try {
       // 获取用于嵌入的文本内容
       final embeddingText = eventNode.getEmbeddingText();
@@ -285,32 +289,71 @@ class EmbeddingService {
         return null;
       }
 
+      print('[EmbeddingService] 🔄 开始为事件生成嵌入: ${eventNode.name}, 文本长度=${embeddingText.length}');
+
       // 检查缓存
       final cacheKey = _generateCacheKey(embeddingText);
       if (_embeddingCache.containsKey(cacheKey)) {
-        print('[EmbeddingService] 📋 使用缓存的嵌入向量: ${eventNode.name}');
-        return _embeddingCache[cacheKey];
+        final cached = _embeddingCache[cacheKey]!;
+        print('[EmbeddingService] 📋 使用缓存的嵌入向量: ${eventNode.name}, dims=${cached.length}');
+        return cached;
       }
 
-      // 尝试使用GTE模型生成嵌入向量
+      // 确保 OpenAI 已初始化
+      if (!_openaiInitialized) {
+        await _initializeOpenAI();
+      }
+
       List<double>? embedding;
-      if (await initialize()) {
+
+      // 1. 优先尝试使用 OpenAI API
+      if (isOpenAiAvailable) {
+        print('[EmbeddingService] 🔄 尝试使用 OpenAI API 生成嵌入...');
+        embedding = await _generateEmbeddingWithOpenAI(embeddingText);
+        
+        if (embedding != null) {
+          final latency = DateTime.now().difference(startTime).inMilliseconds;
+          print('[EmbeddingService] ✅ OpenAI embedding 成功: ${eventNode.name}, dims=${embedding.length}, latency=${latency}ms');
+          _embeddingCache[cacheKey] = embedding;
+          return embedding;
+        } else {
+          print('[EmbeddingService] ⚠️ OpenAI API 调用失败，准备回退到本地模型');
+        }
+      } else {
+        print('[EmbeddingService] ⚠️ OpenAI API Key 不可用，跳过 OpenAI，使用本地模型');
+      }
+
+      // 2. 回退到本地 GTE 模型
+      print('[EmbeddingService] 🔄 回退到本地模型生成嵌入...');
+      if (await _initializeModel()) {
         embedding = await _generateEmbeddingWithModel(embeddingText);
+        
+        if (embedding != null) {
+          final latency = DateTime.now().difference(startTime).inMilliseconds;
+          print('[EmbeddingService] 🧩 本地模型 embedding 成功: ${eventNode.name}, dims=${embedding.length}, latency=${latency}ms');
+          _embeddingCache[cacheKey] = embedding;
+          return embedding;
+        } else {
+          print('[EmbeddingService] ⚠️ 本地模型生成失败，准备使用 fallback 方法');
+        }
+      } else {
+        print('[EmbeddingService] ⚠️ 本地模型未加载，跳过本地模型');
       }
 
-      // 如果模型失败，使用备用方法
-      if (embedding == null) {
-        print('[EmbeddingService] ❌ 模型生成嵌入失败，使用备用方法: ${eventNode.name}');
-        embedding = await _generateFallbackEmbedding(embeddingText);
-      }
-
+      // 3. 最终回退到基于哈希的向量生成
+      print('[EmbeddingService] ❌ OpenAI 和本地模型均失败，使用 fallback 方法: ${eventNode.name}');
+      embedding = await _generateFallbackEmbedding(embeddingText);
+      
+      final latency = DateTime.now().difference(startTime).inMilliseconds;
+      print('[EmbeddingService] 🔧 Fallback embedding 生成: ${eventNode.name}, dims=${embedding.length}, latency=${latency}ms');
+      
       // 缓存结果
       _embeddingCache[cacheKey] = embedding;
-
-      print('[EmbeddingService] ✨ 生成事件嵌入向量: ${eventNode.name} (${embedding.length}维)');
       return embedding;
+      
     } catch (e) {
-      print('[EmbeddingService] ❌ 生成事件嵌入向量失败: $e');
+      final latency = DateTime.now().difference(startTime).inMilliseconds;
+      print('[EmbeddingService] ❌ 生成事件嵌入向量异常: $e, latency=${latency}ms');
       return await _generateFallbackEmbedding(eventNode.getEmbeddingText());
     }
   }
