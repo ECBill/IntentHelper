@@ -7,6 +7,8 @@ import 'package:app/models/graph_models.dart';
 import 'package:app/models/record_entity.dart';
 import 'package:intl/intl.dart';
 
+import '../services/embedding_service.dart';
+
 class KGTestPage extends StatefulWidget {
   const KGTestPage({Key? key}) : super(key: key);
 

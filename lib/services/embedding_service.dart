@@ -22,8 +22,9 @@ class EmbeddingService {
   // 向量维度，与EventNode中的@HnswIndex(dimensions: 1536)保持一致
   static const int vectorDimensions = 1536;
 
-  // OpenAI embedding 配置
-  static const String openaiEmbeddingUrl = 'https://api.openai.com/v1/embeddings';
+  // OpenAI embedding 配置 (通过代理服务器访问，参考 llm.dart)
+  // 原始: https://api.openai.com/v1/embeddings -> 代理: https://xiaomi.dns.navy/v1/embeddings
+  static const String openaiEmbeddingUrl = 'https://xiaomi.dns.navy/v1/embeddings';
   static const String openaiModel = 'text-embedding-3-small';
   static const int openaiTimeoutSeconds = 30;
   
@@ -249,9 +250,11 @@ class EmbeddingService {
   /// 返回 embeddingV2 如果存在且非空，否则返回旧的 embedding
   List<double>? getEventEmbedding(EventNode eventNode) {
     if (eventNode.embeddingV2 != null && eventNode.embeddingV2!.isNotEmpty) {
+      print('[EmbeddingService] 输出embeddingV2');
       return eventNode.embeddingV2;
     }
     if (eventNode.embedding.isNotEmpty) {
+      print('[EmbeddingService] 输出embeddingV1');
       return eventNode.embedding;
     }
     return null;
@@ -477,64 +480,51 @@ class EmbeddingService {
       print('[EmbeddingService] ⚠️ OpenAI API Key 不可用，跳过 OpenAI 调用');
       return null;
     }
-    
     final startTime = DateTime.now();
-    
     try {
-      print('[EmbeddingService] request.start provider=openai text_length=${text.length} model=$openaiModel');
-      
+      // 使用代理服务器访问 OpenAI Embeddings 接口
+      print('[EmbeddingService] request.start provider=openai via_proxy=1 base_url=$openaiEmbeddingUrl text_length=${text.length} model=$openaiModel');
       final uri = Uri.parse(openaiEmbeddingUrl);
       final headers = {
         'Content-Type': 'application/json',
         'Authorization': 'Bearer $_openaiApiKey',
       };
-      
       final body = jsonEncode({
         'model': openaiModel,
         'input': text,
       });
-      
       final response = await http
           .post(uri, headers: headers, body: body)
           .timeout(Duration(seconds: openaiTimeoutSeconds));
-      
       final latency = DateTime.now().difference(startTime).inMilliseconds;
-      
       if (response.statusCode == 200) {
         final data = jsonDecode(utf8.decode(response.bodyBytes));
-        
         if (data['data'] == null || data['data'].isEmpty) {
-          print('[EmbeddingService] request.failure provider=openai error=empty_data latency=${latency}ms');
+          print('[EmbeddingService] request.failure provider=openai via_proxy=1 error=empty_data latency=${latency}ms');
           return null;
         }
-        
         final embedding = (data['data'][0]['embedding'] as List).cast<double>();
         final dims = embedding.length;
-        
-        print('[EmbeddingService] request.success provider=openai latency=${latency}ms dims=$dims');
-        
-        // 直接返回 OpenAI 的原始向量，保持 1536 维
+        print('[EmbeddingService] request.success provider=openai via_proxy=1 latency=${latency}ms dims=$dims');
         final normalized = _normalizeVector(embedding);
-        
-        print('[EmbeddingService] result.delivered source=openai dims=${normalized.length} latency=${latency}ms');
-        
+        print('[EmbeddingService] result.delivered source=openai via_proxy=1 dims=${normalized.length} latency=${latency}ms');
         return normalized;
       } else {
         final errorBody = utf8.decode(response.bodyBytes);
-        print('[EmbeddingService] request.failure provider=openai status=${response.statusCode} error=${response.reasonPhrase} latency=${latency}ms body=$errorBody');
+        print('[EmbeddingService] request.failure provider=openai via_proxy=1 status=${response.statusCode} error=${response.reasonPhrase} latency=${latency}ms body=$errorBody');
         return null;
       }
     } on TimeoutException catch (e) {
       final latency = DateTime.now().difference(startTime).inMilliseconds;
-      print('[EmbeddingService] request.failure provider=openai error=timeout latency=${latency}ms detail=$e');
+      print('[EmbeddingService] request.failure provider=openai via_proxy=1 error=timeout latency=${latency}ms detail=$e');
       return null;
     } on SocketException catch (e) {
       final latency = DateTime.now().difference(startTime).inMilliseconds;
-      print('[EmbeddingService] request.failure provider=openai error=network latency=${latency}ms detail=$e');
+      print('[EmbeddingService] request.failure provider=openai via_proxy=1 error=network latency=${latency}ms detail=$e');
       return null;
     } catch (e) {
       final latency = DateTime.now().difference(startTime).inMilliseconds;
-      print('[EmbeddingService] request.failure provider=openai error=exception latency=${latency}ms detail=$e');
+      print('[EmbeddingService] request.failure provider=openai via_proxy=1 error=exception latency=${latency}ms detail=$e');
       return null;
     }
   }
@@ -953,6 +943,7 @@ class EmbeddingService {
     double wBoost = 0.1,
   }) async {
     final queryVector = await generateTextEmbedding(queryText);
+    print('[EmbeddingService] 输出一下query Vector $queryVector');
     if (queryVector == null) return [];
 
     final candidates = <Map<String, dynamic>>[];
