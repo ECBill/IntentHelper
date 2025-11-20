@@ -198,15 +198,17 @@ class SemanticClusteringService {
 
     if (forceRecluster) {
       // 强制重新聚类所有事件
-      return allEvents.where((e) => 
-        e.embedding.isNotEmpty
-      ).toList();
+      return allEvents.where((e) {
+        final embedding = _embeddingService.getEventEmbedding(e);
+        return embedding != null && embedding.isNotEmpty;
+      }).toList();
     }
     
     if (!useTemporalConstraint) {
       // 不使用时间约束：只处理未聚类的事件
       return allEvents.where((e) {
-        return e.embedding.isNotEmpty && e.clusterId == null;
+        final embedding = _embeddingService.getEventEmbedding(e);
+        return embedding != null && embedding.isNotEmpty && e.clusterId == null;
       }).toList();
     }
     
@@ -216,7 +218,8 @@ class SemanticClusteringService {
     
     return allEvents.where((e) {
       // 必须有embedding
-      if (e.embedding.isEmpty) return false;
+      final embedding = _embeddingService.getEventEmbedding(e);
+      if (embedding == null || embedding.isEmpty) return false;
       
       // 未被聚类的事件
       if (e.clusterId == null) return true;
@@ -252,10 +255,16 @@ class SemanticClusteringService {
       for (int j = i + 1; j < events.length; j++) {
         if (assigned.contains(j)) continue;
         
+        // 获取事件嵌入向量
+        final embeddingI = _embeddingService.getEventEmbedding(events[i]);
+        final embeddingJ = _embeddingService.getEventEmbedding(events[j]);
+        
+        if (embeddingI == null || embeddingJ == null) continue;
+        
         // 检查相似度
         final similarity = _embeddingService.calculateCosineSimilarity(
-          events[i].embedding,
-          events[j].embedding,
+          embeddingI,
+          embeddingJ,
         );
         
         if (similarity >= SIMILARITY_THRESHOLD) {
@@ -318,7 +327,12 @@ class SemanticClusteringService {
     final members = cluster['members'] as List<EventNode>;
     
     // 1. 生成聚类中心向量（成员embedding的均值）
-    final centroid = _calculateCentroid(members.map((e) => e.embedding).toList());
+    final memberEmbeddings = members
+        .map((e) => _embeddingService.getEventEmbedding(e))
+        .where((emb) => emb != null && emb.isNotEmpty)
+        .cast<List<double>>()
+        .toList();
+    final centroid = _calculateCentroid(memberEmbeddings);
     
     // 2. 计算平均相似度
     final avgSimilarity = _calculateAvgSimilarity(members);
@@ -393,9 +407,14 @@ class SemanticClusteringService {
     
     for (int i = 0; i < members.length - 1; i++) {
       for (int j = i + 1; j < members.length; j++) {
+        final embeddingI = _embeddingService.getEventEmbedding(members[i]);
+        final embeddingJ = _embeddingService.getEventEmbedding(members[j]);
+        
+        if (embeddingI == null || embeddingJ == null) continue;
+        
         final similarity = _embeddingService.calculateCosineSimilarity(
-          members[i].embedding,
-          members[j].embedding,
+          embeddingI,
+          embeddingJ,
         );
         totalSimilarity += similarity;
         pairCount++;
@@ -544,9 +563,10 @@ $exampleTitles
   /// 获取未聚类的事件
   Future<List<EventNode>> getUnclusteredEvents() async {
     final allEvents = ObjectBoxService.eventNodeBox.getAll();
-    return allEvents.where((e) =>
-      e.embedding.isNotEmpty && e.clusterId == null
-    ).toList();
+    return allEvents.where((e) {
+      final embedding = _embeddingService.getEventEmbedding(e);
+      return embedding != null && embedding.isNotEmpty && e.clusterId == null;
+    }).toList();
   }
 
   /// 全量初始化聚类：对所有历史事件执行两阶段聚类
@@ -559,7 +579,10 @@ $exampleTitles
       
       // 1. 获取所有有embedding的事件
       final allEvents = ObjectBoxService.eventNodeBox.getAll()
-          .where((e) => e.embedding.isNotEmpty)
+          .where((e) {
+            final embedding = _embeddingService.getEventEmbedding(e);
+            return embedding != null && embedding.isNotEmpty;
+          })
           .toList();
       
       onProgress?.call('找到 ${allEvents.length} 个事件');
@@ -619,7 +642,8 @@ $exampleTitles
       // 1. 获取日期范围内的事件
       final allEvents = ObjectBoxService.eventNodeBox.getAll();
       final rangeEvents = allEvents.where((e) {
-        if (e.embedding.isEmpty) return false;
+        final embedding = _embeddingService.getEventEmbedding(e);
+        if (embedding == null || embedding.isEmpty) return false;
         final eventTime = e.startTime ?? e.lastUpdated;
         return eventTime.isAfter(startDate) && eventTime.isBefore(endDate);
       }).toList();
