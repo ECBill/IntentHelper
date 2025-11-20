@@ -307,3 +307,135 @@ void main() {
     });
   });
 }
+
+  group('EmbeddingService V2 Field Priority', () {
+    late EmbeddingService service;
+
+    setUp(() {
+      service = EmbeddingService();
+    });
+
+    test('getEventEmbedding should prioritize embeddingV2 over embedding', () {
+      final event = EventNode(
+        id: 'test1',
+        name: 'Test Event',
+        type: 'test',
+        embedding: [1.0, 2.0, 3.0], // Old 3-dim embedding
+        embeddingV2: [4.0, 5.0, 6.0, 7.0], // New 4-dim embedding
+      );
+
+      final result = service.getEventEmbedding(event);
+      
+      // Should return embeddingV2, not embedding
+      expect(result, equals([4.0, 5.0, 6.0, 7.0]));
+      expect(result, isNot(equals([1.0, 2.0, 3.0])));
+    });
+
+    test('getEventEmbedding should fallback to embedding when embeddingV2 is null', () {
+      final event = EventNode(
+        id: 'test2',
+        name: 'Test Event',
+        type: 'test',
+        embedding: [1.0, 2.0, 3.0],
+        embeddingV2: null, // No V2
+      );
+
+      final result = service.getEventEmbedding(event);
+      
+      // Should fallback to embedding
+      expect(result, equals([1.0, 2.0, 3.0]));
+    });
+
+    test('getEventEmbedding should fallback to embedding when embeddingV2 is empty', () {
+      final event = EventNode(
+        id: 'test3',
+        name: 'Test Event',
+        type: 'test',
+        embedding: [1.0, 2.0, 3.0],
+        embeddingV2: [], // Empty V2
+      );
+
+      final result = service.getEventEmbedding(event);
+      
+      // Should fallback to embedding
+      expect(result, equals([1.0, 2.0, 3.0]));
+    });
+
+    test('getEventEmbedding should return null when both fields are empty', () {
+      final event = EventNode(
+        id: 'test4',
+        name: 'Test Event',
+        type: 'test',
+        embedding: [],
+        embeddingV2: null,
+      );
+
+      final result = service.getEventEmbedding(event);
+      
+      // Should return null
+      expect(result, isNull);
+    });
+
+    test('getClusterEmbedding should prioritize embeddingV2 over embedding', () {
+      final cluster = ClusterNode(
+        id: 'cluster1',
+        name: 'Test Cluster',
+        description: 'Test',
+        embedding: [1.0, 2.0, 3.0],
+        embeddingV2: [4.0, 5.0, 6.0, 7.0],
+      );
+
+      final result = service.getClusterEmbedding(cluster);
+      
+      // Should return embeddingV2
+      expect(result, equals([4.0, 5.0, 6.0, 7.0]));
+    });
+
+    test('getClusterEmbedding should fallback to embedding when embeddingV2 is null', () {
+      final cluster = ClusterNode(
+        id: 'cluster2',
+        name: 'Test Cluster',
+        description: 'Test',
+        embedding: [1.0, 2.0, 3.0],
+        embeddingV2: null,
+      );
+
+      final result = service.getClusterEmbedding(cluster);
+      
+      // Should fallback to embedding
+      expect(result, equals([1.0, 2.0, 3.0]));
+    });
+
+    test('setEventEmbedding should write to embeddingV2 field', () {
+      final event = EventNode(
+        id: 'test5',
+        name: 'Test Event',
+        type: 'test',
+        embedding: [1.0, 2.0, 3.0],
+      );
+
+      service.setEventEmbedding(event, [4.0, 5.0, 6.0, 7.0]);
+      
+      // Should write to embeddingV2
+      expect(event.embeddingV2, equals([4.0, 5.0, 6.0, 7.0]));
+      // Should not modify embedding
+      expect(event.embedding, equals([1.0, 2.0, 3.0]));
+    });
+
+    test('setClusterEmbedding should write to embeddingV2 field', () {
+      final cluster = ClusterNode(
+        id: 'cluster3',
+        name: 'Test Cluster',
+        description: 'Test',
+        embedding: [1.0, 2.0, 3.0],
+      );
+
+      service.setClusterEmbedding(cluster, [4.0, 5.0, 6.0, 7.0]);
+      
+      // Should write to embeddingV2
+      expect(cluster.embeddingV2, equals([4.0, 5.0, 6.0, 7.0]));
+      // Should not modify embedding
+      expect(cluster.embedding, equals([1.0, 2.0, 3.0]));
+    });
+  });
+}
