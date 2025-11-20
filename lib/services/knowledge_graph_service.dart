@@ -1323,8 +1323,10 @@ ${patchedUserStateContext['knowledge_graph_info'] != null && patchedUserStateCon
     try {
       final embeddingService = EmbeddingService();
 
-      if (a.embedding == null || b.embedding == null) return null;
-      return embeddingService.calculateCosineSimilarity(a.embedding!, b.embedding!);
+      final embeddingA = embeddingService.getEventEmbedding(a);
+      final embeddingB = embeddingService.getEventEmbedding(b);
+      if (embeddingA == null || embeddingB == null) return null;
+      return embeddingService.calculateCosineSimilarity(embeddingA, embeddingB);
     } catch (e) {
       print('[KnowledgeGraphService] ❌ calculateEventSimilarity 错误: $e');
       return null;
@@ -1587,12 +1589,14 @@ ${patchedUserStateContext['knowledge_graph_info'] != null && patchedUserStateCon
   static Future<List<EventNode>> getUnclusteredEvents() async {
     try {
       final objectBox = ObjectBoxService();
+      final embeddingService = EmbeddingService();
       final allEvents = objectBox.queryEventNodes();
       
       // 过滤出有embedding但未聚类的事件
-      final unclustered = allEvents.where((e) => 
-        e.embedding.isNotEmpty && e.clusterId == null
-      ).toList();
+      final unclustered = allEvents.where((e) {
+        final embedding = embeddingService.getEventEmbedding(e);
+        return embedding != null && embedding.isNotEmpty && e.clusterId == null;
+      }).toList();
       
       // 按时间排序
       unclustered.sort((a, b) {
