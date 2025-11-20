@@ -265,6 +265,24 @@ class EmbeddingService {
     eventNode.embeddingV2 = embedding;
   }
 
+  /// 获取聚类的嵌入向量（优先 embeddingV2）
+  /// 
+  /// 返回 embeddingV2 如果存在且非空，否则返回旧的 embedding
+  List<double>? getClusterEmbedding(ClusterNode clusterNode) {
+    if (clusterNode.embeddingV2 != null && clusterNode.embeddingV2!.isNotEmpty) {
+      return clusterNode.embeddingV2;
+    }
+    if (clusterNode.embedding.isNotEmpty) {
+      return clusterNode.embedding;
+    }
+    return null;
+  }
+
+  /// 设置聚类的嵌入向量（写入新的 1536 维字段）
+  void setClusterEmbedding(ClusterNode clusterNode, List<double> embedding) {
+    clusterNode.embeddingV2 = embedding;
+  }
+
 
   /// 使用事件的多个字段组合生成语义向量
   /// 
