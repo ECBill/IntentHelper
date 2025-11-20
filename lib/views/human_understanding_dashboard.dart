@@ -798,6 +798,7 @@ class _HumanUnderstandingDashboardState extends State<HumanUnderstandingDashboar
       MapEntry('name', '名称'),
       MapEntry('type', '类型'),
       MapEntry('description', '描述'),
+      MapEntry('composite_score', '综合得分'),
       MapEntry('cosine_similarity', '余弦相似度'),
       MapEntry('similarity', '相关度'),
       MapEntry('final_score', '最终排序分数'),
@@ -935,6 +936,54 @@ class _HumanUnderstandingDashboardState extends State<HumanUnderstandingDashboar
                                         ],
                                       ),
                                     ),
+                                // 显示多约束得分详情
+                                if (node['constraint_scores'] != null && (node['constraint_scores'] as Map).isNotEmpty)
+                                  Padding(
+                                    padding: EdgeInsets.only(top: 12, bottom: 8),
+                                    child: Column(
+                                      crossAxisAlignment: CrossAxisAlignment.start,
+                                      children: [
+                                        Text('约束得分详情:', style: TextStyle(fontWeight: FontWeight.w600, color: Colors.grey[700])),
+                                        SizedBox(height: 8),
+                                        ...(node['constraint_scores'] as Map<String, dynamic>).entries.map((e) {
+                                          final constraintName = e.key.toString();
+                                          final score = (e.value as num?)?.toDouble() ?? 0.0;
+                                          Color scoreColor = Colors.grey[600]!;
+                                          IconData icon = Icons.info;
+                                          
+                                          // 根据约束类型设置颜色和图标
+                                          if (constraintName.contains('Time') || constraintName.contains('Temporal')) {
+                                            scoreColor = Colors.orange[700]!;
+                                            icon = Icons.access_time;
+                                          } else if (constraintName.contains('Location')) {
+                                            scoreColor = Colors.blue[700]!;
+                                            icon = Icons.place;
+                                          } else if (constraintName.contains('Freshness')) {
+                                            scoreColor = Colors.green[700]!;
+                                            icon = Icons.new_releases;
+                                          } else if (constraintName.contains('Entity')) {
+                                            scoreColor = Colors.purple[700]!;
+                                            icon = Icons.account_circle;
+                                          }
+                                          
+                                          return Padding(
+                                            padding: EdgeInsets.only(bottom: 4),
+                                            child: Row(
+                                              children: [
+                                                Icon(icon, size: 16, color: scoreColor),
+                                                SizedBox(width: 6),
+                                                Text('$constraintName: ', style: TextStyle(fontSize: 13, color: Colors.grey[600])),
+                                                Text(
+                                                  score.toStringAsFixed(4),
+                                                  style: TextStyle(color: scoreColor, fontWeight: FontWeight.w500),
+                                                ),
+                                              ],
+                                            ),
+                                          );
+                                        }).toList(),
+                                      ],
+                                    ),
+                                  ),
                                 // 显示四大组件得分
                                 if (node['components'] != null)
                                   Padding(
@@ -1095,6 +1144,21 @@ class _HumanUnderstandingDashboardState extends State<HumanUnderstandingDashboar
                                           ],
                                         ),
                                       ),
+                                  ],
+                                ),
+                              ),
+                            // 多约束得分指示器（如果有的话）
+                            if (node['constraint_scores'] != null && (node['constraint_scores'] as Map).isNotEmpty)
+                              Padding(
+                                padding: EdgeInsets.only(top: 4.h),
+                                child: Row(
+                                  children: [
+                                    Icon(Icons.tune, color: Colors.deepPurple[300], size: 13.sp),
+                                    SizedBox(width: 4.w),
+                                    Text(
+                                      '多约束评分: ${(node['constraint_scores'] as Map).length} 项',
+                                      style: TextStyle(fontSize: 11.sp, color: Colors.deepPurple[400], fontWeight: FontWeight.w500),
+                                    ),
                                   ],
                                 ),
                               ),
