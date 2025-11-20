@@ -319,7 +319,8 @@ void main() {
 
         // 为每个事件生成嵌入向量
         for (final event in testEvents) {
-          event.embedding = await embeddingService.generateEventEmbedding(event) ?? <double>[];
+          final embedding = await embeddingService.generateEventEmbedding(event) ?? <double>[];
+          embeddingService.setEventEmbedding(event, embedding);
         }
       });
 
@@ -592,7 +593,8 @@ void main() {
         ];
 
         for (final event in events) {
-          event.embedding = await embeddingService.generateEventEmbedding(event) ?? <double>[];
+          final embedding = await embeddingService.generateEventEmbedding(event) ?? <double>[];
+          embeddingService.setEventEmbedding(event, embedding);
         }
 
         // 中文查询

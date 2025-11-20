@@ -105,9 +105,15 @@ class EventNode {
   DateTime lastUpdated; // 最后更新时间
   String? sourceContext; // 来源上下文ID
 
+  // 保留旧的 384 维向量字段以兼容历史数据
   @HnswIndex(dimensions: 384)
   @Property(type: PropertyType.floatVector)
   List<double> embedding;
+
+  // 新的 1536 维 OpenAI embedding 字段
+  @HnswIndex(dimensions: 1536)
+  @Property(type: PropertyType.floatVector)
+  List<double>? embeddingV2;
 
   // 动态优先级分数相关字段
   DateTime? lastSeenTime;        // 最后被检索/访问的时间
@@ -132,6 +138,7 @@ class EventNode {
     DateTime? lastUpdated,
     this.sourceContext,
     List<double>? embedding,
+    this.embeddingV2,
     this.lastSeenTime,
     String? activationHistoryJson,
     this.cachedPriorityScore = 0.0,
@@ -420,9 +427,15 @@ class ClusterNode {
   int memberCount;     // 成员数量
   String memberIdsJson; // 成员事件ID列表（JSON格式）
   
+  // 保留旧的 384 维向量字段以兼容历史数据
   @HnswIndex(dimensions: 384)
   @Property(type: PropertyType.floatVector)
   List<double> embedding; // 聚类中心向量（成员embedding的均值）
+
+  // 新的 1536 维 OpenAI embedding 字段
+  @HnswIndex(dimensions: 1536)
+  @Property(type: PropertyType.floatVector)
+  List<double>? embeddingV2;
   
   double avgSimilarity; // 成员间平均相似度
   DateTime? earliestEventTime; // 最早事件时间
@@ -443,6 +456,7 @@ class ClusterNode {
     this.memberCount = 0,
     String? memberIdsJson,
     List<double>? embedding,
+    this.embeddingV2,
     this.avgSimilarity = 0.0,
     this.earliestEventTime,
     this.latestEventTime,

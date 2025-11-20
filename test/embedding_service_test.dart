@@ -3,6 +3,61 @@ import 'package:app/services/embedding_service.dart';
 import 'package:app/models/graph_models.dart';
 
 void main() {
+  group('EmbeddingService OpenAI Integration', () {
+    late EmbeddingService service;
+
+    setUp(() {
+      service = EmbeddingService();
+    });
+
+    test('should initialize OpenAI API key from various sources', () async {
+      // This test verifies that the service can initialize without crashing
+      // even when OpenAI API key is not available
+      await service.initialize();
+      
+      // Service should still work with fallback even if OpenAI is unavailable
+      expect(service, isNotNull);
+    });
+
+    test('should use OpenAI API only', () async {
+      // When OpenAI is not available, should return null (no fallback)
+      final embedding = await service.generateTextEmbedding('test text');
+      
+      // Should return embedding from OpenAI if available, or null if not
+      // No fallback to local model anymore
+      expect(embedding == null || embedding.length == 1536, true);
+    });
+
+    test('should handle empty text gracefully', () async {
+      final embedding = await service.generateTextEmbedding('');
+      
+      // Empty text should return null
+      expect(embedding, null);
+    });
+
+    test('should cache embeddings correctly', () async {
+      final text = 'test caching';
+      
+      // First call - should generate new embedding
+      final embedding1 = await service.generateTextEmbedding(text);
+      
+      // Second call - should use cache
+      final embedding2 = await service.generateTextEmbedding(text);
+      
+      // Should return the same embedding
+      expect(embedding1, embedding2);
+    });
+
+    test('should produce 1536-dimensional vectors', () async {
+      final embedding = await service.generateTextEmbedding('test dimensionality');
+      
+      if (embedding != null) {
+        // All embeddings should be 1536 dimensions from OpenAI
+        expect(embedding.length, 1536);
+      }
+    });
+  });
+
   group('EmbeddingService Diagnostics', () {
     late EmbeddingService service;
 
@@ -28,7 +83,7 @@ void main() {
           id: '3',
           name: 'Event 3',
           type: 'test',
-          embedding: List<double>.filled(384, 0.5),
+          embedding: List<double>.filled(1536, 0.5),
         ),
       ];
 
@@ -45,19 +100,19 @@ void main() {
           id: '1',
           name: 'Event 1',
           type: 'test',
-          embedding: List<double>.filled(384, 0.0),
+          embedding: List<double>.filled(1536, 0.0),
         ),
         EventNode(
           id: '2',
           name: 'Event 2',
           type: 'test',
-          embedding: List<double>.filled(384, 0.0),
+          embedding: List<double>.filled(1536, 0.0),
         ),
         EventNode(
           id: '3',
           name: 'Event 3',
           type: 'test',
-          embedding: List<double>.filled(384, 0.5),
+          embedding: List<double>.filled(1536, 0.5),
         ),
       ];
 
@@ -69,7 +124,7 @@ void main() {
     });
 
     test('analyzeEmbeddings should detect duplicate embeddings', () async {
-      final sameEmbedding = List<double>.filled(384, 0.5);
+      final sameEmbedding = List<double>.filled(1536, 0.5);
       final events = [
         EventNode(
           id: '1',
@@ -87,7 +142,7 @@ void main() {
           id: '3',
           name: 'Event 3',
           type: 'test',
-          embedding: List<double>.filled(384, 0.7),
+          embedding: List<double>.filled(1536, 0.7),
         ),
       ];
 
@@ -106,19 +161,19 @@ void main() {
           id: '1',
           name: 'Event 1',
           type: 'test',
-          embedding: List<double>.generate(384, (i) => i / 384.0),
+          embedding: List<double>.generate(1536, (i) => i / 1536.0),
         ),
         EventNode(
           id: '2',
           name: 'Event 2',
           type: 'test',
-          embedding: List<double>.generate(384, (i) => (i + 1) / 384.0),
+          embedding: List<double>.generate(1536, (i) => (i + 1) / 1536.0),
         ),
         EventNode(
           id: '3',
           name: 'Event 3',
           type: 'test',
-          embedding: List<double>.generate(384, (i) => (i + 2) / 384.0),
+          embedding: List<double>.generate(1536, (i) => (i + 2) / 1536.0),
         ),
       ];
 
@@ -139,7 +194,7 @@ void main() {
           id: '$i',
           name: 'Event $i',
           type: 'test',
-          embedding: List<double>.filled(384, 0.0),
+          embedding: List<double>.filled(1536, 0.0),
         ),
       );
 

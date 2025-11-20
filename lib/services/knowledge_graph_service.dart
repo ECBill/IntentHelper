@@ -395,7 +395,7 @@ ${patchedUserStateContext['knowledge_graph_info'] != null && patchedUserStateCon
             final embeddingService = EmbeddingService();
             final embedding = await embeddingService.generateEventEmbedding(eventNode);
             if (embedding != null && embedding.isNotEmpty) {
-              eventNode.embedding = embedding;
+              embeddingService.setEventEmbedding(eventNode, embedding);
             }
             objectBox.insertEventNode(eventNode);
 
@@ -1143,11 +1143,12 @@ ${patchedUserStateContext['knowledge_graph_info'] != null && patchedUserStateCon
       // 4. 初步筛选：使用余弦相似度进行召回
       final candidates = <EventNode>[];
       for (final event in activeEvents) {
-        if (event.embedding.isEmpty) continue;
+        final eventEmbedding = embeddingService.getEventEmbedding(event);
+        if (eventEmbedding == null || eventEmbedding.isEmpty) continue;
         
         final cosineSim = embeddingService.calculateCosineSimilarity(
           queryVector,
-          event.embedding,
+          eventEmbedding,
         );
         
         if (cosineSim >= similarityThreshold) {
@@ -1206,14 +1207,15 @@ ${patchedUserStateContext['knowledge_graph_info'] != null && patchedUserStateCon
       final objectBox = ObjectBoxService();
       final embeddingService = EmbeddingService();
 
-      if (eventNode.embedding != null && eventNode.embedding!.isNotEmpty) {
+      final existingEmbedding = embeddingService.getEventEmbedding(eventNode);
+      if (existingEmbedding != null && existingEmbedding.isNotEmpty) {
         print('[KnowledgeGraphService] ✅ 事件已存在嵌入，无需生成: ${eventNode.name}');
         return;
       }
 
       final embedding = await embeddingService.generateEventEmbedding(eventNode);
       if (embedding != null) {
-        eventNode.embedding = embedding;
+        embeddingService.setEventEmbedding(eventNode, embedding);
         objectBox.updateEventNode(eventNode);
         print('[KnowledgeGraphService] 💾 嵌入向量已保存: ${eventNode.name}');
       } else {
@@ -1239,10 +1241,11 @@ ${patchedUserStateContext['knowledge_graph_info'] != null && patchedUserStateCon
       print('[KnowledgeGraphService] 🚩 开始批量生成事件嵌入, 事件总数: \\${allEvents.length}, force=\\$force');
       int i = 0;
       for (final event in allEvents) {
-        print('[调试] eventNode: id=${event.id}, name=${event.name}, embedding: ${event.embedding}');
+        final currentEmbedding = embeddingService.getEventEmbedding(event);
+        print('[调试] eventNode: id=${event.id}, name=${event.name}, embedding: ${currentEmbedding}');
         // 修复历史数据逻辑已不需要，直接跳过
-        print('[KnowledgeGraphService] ▶️ 处理事件: id=${event.id}, name=${event.name}, 当前embedding长度: ${event.embedding?.length ?? 0}');
-        if (force || event.embedding == null || event.embedding.isEmpty) {
+        print('[KnowledgeGraphService] ▶️ 处理事件: id=${event.id}, name=${event.name}, 当前embedding长度: ${currentEmbedding?.length ?? 0}');
+        if (force || currentEmbedding == null || currentEmbedding.isEmpty) {
           final embedding = await embeddingService.generateEventEmbedding(event);
           if (embedding != null && embedding.isNotEmpty) {
             // 先查出数据库中的 obxId
@@ -1250,10 +1253,10 @@ ${patchedUserStateContext['knowledge_graph_info'] != null && patchedUserStateCon
             if (dbEvent != null) {
               event.obxId = dbEvent.obxId;
             }
-            event.embedding = embedding;
+            embeddingService.setEventEmbedding(event, embedding);
             objectBox.updateEventNode(event);
             print('[KnowledgeGraphService] ✅ 已写入embedding, 长度: ${embedding.length}, 前5: ${embedding.take(5).toList()}');
-            print('[调试] 写入后 eventNode: id=${event.id}, embedding: ${event.embedding}');
+            print('[调试] 写入后 eventNode: id=${event.id}, embedding: ${embeddingService.getEventEmbedding(event)}');
             updatedCount++;
           } else {
             print('[KnowledgeGraphService] ⚠️ 未能生成有效embedding, event: id=${event.id}, name=${event.name}');
@@ -1298,7 +1301,7 @@ ${patchedUserStateContext['knowledge_graph_info'] != null && patchedUserStateCon
           if (dbEvent != null) {
             event.obxId = dbEvent.obxId;
           }
-          event.embedding = embedding;
+          embeddingService.setEventEmbedding(event, embedding);
           objectBox.updateEventNode(event);
           print('[KnowledgeGraphService] ✅ 已覆盖写入embedding, 长度: ${embedding.length}, 前5: ${embedding.take(5).toList()}');
           updatedCount++;

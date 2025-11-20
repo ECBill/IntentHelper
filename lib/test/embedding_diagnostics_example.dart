@@ -40,7 +40,7 @@ Future<void> runEmbeddingDiagnostics() async {
   // Generate embeddings for all events
   for (final event in events) {
     final embedding = await service.generateEventEmbedding(event);
-    event.embedding = embedding ?? [];
+    service.setEventEmbedding(event, embedding ?? []);
   }
   
   // Run diagnostics
@@ -166,7 +166,7 @@ Future<void> compareSearchMethods() async {
   // Generate embeddings
   for (final event in events) {
     final embedding = await service.generateEventEmbedding(event);
-    event.embedding = embedding ?? [];
+    service.setEventEmbedding(event, embedding ?? []);
   }
   
   final query = '外卖';
