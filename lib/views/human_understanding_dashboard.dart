@@ -834,25 +834,63 @@ class _HumanUnderstandingDashboardState extends State<HumanUnderstandingDashboar
                   ),
               ],
             ),
-            child: Row(
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
               children: [
-                Icon(
-                  isDataEmpty ? Icons.error_outline : Icons.hub,
-                  size: 22.sp,
-                  color: isDataEmpty ? Colors.red[400] : Colors.blueGrey[700],
-                ),
-                SizedBox(width: 12.w),
-                Expanded(
-                  child: Text(
-                    isDataEmpty ? '未找到相关知识图谱节点' : '知识图谱节点 · 向量匹配结果',
-                    style: TextStyle(
-                      fontSize: 16.sp,
-                      fontWeight: FontWeight.w600,
-                      color: isDataEmpty ? Colors.red[700] : Colors.blueGrey[800],
-                      letterSpacing: 1.1,
+                Row(
+                  children: [
+                    Icon(
+                      isDataEmpty ? Icons.error_outline : Icons.hub,
+                      size: 22.sp,
+                      color: isDataEmpty ? Colors.red[400] : Colors.blueGrey[700],
                     ),
-                  ),
+                    SizedBox(width: 12.w),
+                    Expanded(
+                      child: Text(
+                        isDataEmpty ? '未找到相关知识图谱节点' : '知识图谱节点 · 向量匹配结果',
+                        style: TextStyle(
+                          fontSize: 16.sp,
+                          fontWeight: FontWeight.w600,
+                          color: isDataEmpty ? Colors.red[700] : Colors.blueGrey[800],
+                          letterSpacing: 1.1,
+                        ),
+                      ),
+                    ),
+                  ],
                 ),
+                if (!isDataEmpty) ...[
+                  SizedBox(height: 8.h),
+                  Row(
+                    children: [
+                      Icon(Icons.sort_rounded, size: 14.sp, color: Color(0xFF7C4DFF)),
+                      SizedBox(width: 4.w),
+                      Text(
+                        '按优先级评分排序',
+                        style: TextStyle(
+                          fontSize: 11.sp,
+                          color: Color(0xFF7C4DFF),
+                          fontWeight: FontWeight.w500,
+                        ),
+                      ),
+                      SizedBox(width: 8.w),
+                      Container(
+                        padding: EdgeInsets.symmetric(horizontal: 6.w, vertical: 2.h),
+                        decoration: BoxDecoration(
+                          color: Color(0xFF7C4DFF).withOpacity(0.1),
+                          borderRadius: BorderRadius.circular(6.r),
+                        ),
+                        child: Text(
+                          '${kgResults.length} 个节点',
+                          style: TextStyle(
+                            fontSize: 10.sp,
+                            color: Color(0xFF7C4DFF),
+                            fontWeight: FontWeight.w600,
+                          ),
+                        ),
+                      ),
+                    ],
+                  ),
+                ],
               ],
             ),
           ),
