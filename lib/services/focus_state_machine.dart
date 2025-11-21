@@ -2,10 +2,12 @@
 /// 统一管理用户在开放式长对话中的关注点追踪、漂移和预测
 
 import 'dart:async';
+import 'dart:convert';
 import 'dart:math' as math;
 import 'package:app/models/focus_models.dart';
 import 'package:app/models/human_understanding_models.dart';
 import 'package:app/services/focus_drift_model.dart';
+import 'package:app/services/llm.dart';
 
 /// 对话关注点状态机
 /// 整合意图管理、主题追踪和因果分析，提供统一的关注点模型
@@ -53,8 +55,15 @@ class FocusStateMachine {
   Future<void> ingestUtterance(SemanticAnalysisInput analysis) async {
     print('[FocusStateMachine] 📥 摄入新对话: ${analysis.content.substring(0, math.min(50, analysis.content.length))}...');
     
-    // 从语义分析中提取关注点
-    final extractedFocuses = _extractFocusesFromAnalysis(analysis);
+    // 使用LLM深度提取关注点（异步）
+    List<FocusPoint> extractedFocuses = [];
+    try {
+      extractedFocuses = await _extractFocusesWithLLM(analysis);
+    } catch (e) {
+      print('[FocusStateMachine] ⚠️ LLM提取失败，使用基础提取: $e');
+      // 降级到基础提取
+      extractedFocuses = _extractFocusesFromAnalysis(analysis);
+    }
     
     // 处理每个提取的关注点
     for (final newFocus in extractedFocuses) {
@@ -73,7 +82,121 @@ class FocusStateMachine {
     print('[FocusStateMachine] ✅ 处理完成，活跃: ${_activeFocuses.length}, 潜在: ${_latentFocuses.length}');
   }
 
-  /// 从语义分析中提取关注点
+  /// 使用LLM深度提取关注点（更精确、更具体）
+  Future<List<FocusPoint>> _extractFocusesWithLLM(SemanticAnalysisInput analysis) async {
+    final focusExtractionPrompt = '''
+你是一个对话关注点提取专家。请从用户的对话中提取**具体的、细粒度的**关注点。
+
+【核心原则】：
+1. **具体性优先**：提取具体的人名、事件、项目、问题，而非抽象类别
+   - ❌ 错误："工作"、"对话"、"casual_chat"
+   - ✅ 正确："朋友的恋情进展"、"Flutter项目的性能优化"、"下周的产品发布会"
+2. **关系和上下文**：捕捉人物关系、事件细节、时间背景
+   - 例如："同事小李建议的新架构方案"、"母亲提到的体检结果"
+3. **动态性**：关注点应该反映对话的实时演进
+4. **多样性**：同时捕捉事件、实体、主题三种类型
+
+【对话内容】：
+${analysis.content}
+
+【用户情感】：${analysis.emotion}
+【提取的实体】：${analysis.entities.join(', ')}
+【意图】：${analysis.intent}
+
+【输出格式】（JSON数组）：
+[
+  {
+    "type": "event|topic|entity",
+    "canonicalLabel": "简洁但具体的标签（10字以内）",
+    "aliases": ["其他可能的叫法"],
+    "emotionalScore": 0.5,
+    "metadata": {
+      "source": "llm_extraction",
+      "specific_context": "详细上下文（如涉及谁、什么时间、什么地方）",
+      "content_snippet": "相关的对话片段",
+      "entities": ["相关实体列表"],
+      "temporal_info": "时间信息（如有）",
+      "relational_info": "关系信息（如：朋友、同事、家人）"
+    }
+  }
+]
+
+【分类指导】：
+- **event（事件）**：具体发生的或将要发生的事情
+  - 例：朋友的恋情、产品发布、会议、旅行计划
+- **topic（主题）**：讨论的话题或领域（需要具体）
+  - 例：Flutter性能调优、机器学习入门、职业发展规划
+- **entity（实体）**：具体的人、地点、物品、工具
+  - 例：朋友张三、北京、iPhone、VS Code
+
+【严格要求】：
+- 每个标签必须具体，避免泛泛而谈
+- 最多返回5个关注点
+- 置信度低的不要强行提取
+- 如果对话太简短（<20字）或无实质内容，返回空数组 []
+''';
+
+    try {
+      final llm = await LLM.create('gpt-4.1-mini');
+      final response = await llm.createRequest(content: focusExtractionPrompt);
+      
+      // 解析JSON响应
+      final jsonResponse = _extractJsonFromResponse(response);
+      final focusesJson = jsonDecode(jsonResponse) as List;
+      
+      final focuses = <FocusPoint>[];
+      for (final item in focusesJson) {
+        final typeStr = item['type'] as String;
+        FocusType type;
+        if (typeStr == 'event') {
+          type = FocusType.event;
+        } else if (typeStr == 'entity') {
+          type = FocusType.entity;
+        } else {
+          type = FocusType.topic;
+        }
+        
+        final focus = FocusPoint(
+          type: type,
+          canonicalLabel: item['canonicalLabel'] as String,
+          aliases: (item['aliases'] as List?)?.map((e) => e.toString()).toSet() ?? {},
+          emotionalScore: (item['emotionalScore'] as num?)?.toDouble() ?? 0.5,
+          metadata: Map<String, dynamic>.from(item['metadata'] ?? {}),
+        );
+        
+        focuses.add(focus);
+      }
+      
+      print('[FocusStateMachine] ✅ LLM提取了 ${focuses.length} 个关注点: ${focuses.map((f) => f.canonicalLabel).join(', ')}');
+      return focuses;
+      
+    } catch (e) {
+      print('[FocusStateMachine] ❌ LLM提取失败: $e');
+      rethrow;
+    }
+  }
+
+  /// 从LLM响应中提取JSON（处理markdown代码块等格式）
+  String _extractJsonFromResponse(String response) {
+    // 尝试提取markdown代码块中的JSON
+    final jsonBlockPattern = RegExp(r'```json?\s*(\[[\s\S]*?\])\s*```', multiLine: true);
+    final match = jsonBlockPattern.firstMatch(response);
+    if (match != null) {
+      return match.group(1)!;
+    }
+    
+    // 尝试直接查找JSON数组
+    final jsonArrayPattern = RegExp(r'\[[\s\S]*\]');
+    final arrayMatch = jsonArrayPattern.firstMatch(response);
+    if (arrayMatch != null) {
+      return arrayMatch.group(0)!;
+    }
+    
+    // 如果都找不到，返回原始响应
+    return response.trim();
+  }
+
+  /// 从语义分析中提取关注点（基础版，作为降级方案）
   List<FocusPoint> _extractFocusesFromAnalysis(SemanticAnalysisInput analysis) {
     final focuses = <FocusPoint>[];
     
