@@ -39,13 +39,17 @@ class FocusStateMachine {
   // 相似度阈值（用于合并）
   static const double _similarityThreshold = 0.7;
   
+  // LLM提取控制（用于测试环境）
+  bool _useLLMExtraction = true;
+  
   bool _initialized = false;
 
   /// 初始化状态机
-  Future<void> initialize() async {
+  Future<void> initialize({bool useLLMExtraction = true}) async {
     if (_initialized) return;
     
-    print('[FocusStateMachine] 🚀 初始化关注点状态机...');
+    _useLLMExtraction = useLLMExtraction;
+    print('[FocusStateMachine] 🚀 初始化关注点状态机 (LLM提取: $_useLLMExtraction)...');
     _initialized = true;
     print('[FocusStateMachine] ✅ 关注点状态机初始化完成');
   }
@@ -57,11 +61,16 @@ class FocusStateMachine {
     
     // 使用LLM深度提取关注点（异步）
     List<FocusPoint> extractedFocuses = [];
-    try {
-      extractedFocuses = await _extractFocusesWithLLM(analysis);
-    } catch (e) {
-      print('[FocusStateMachine] ⚠️ LLM提取失败，使用基础提取: $e');
-      // 降级到基础提取
+    if (_useLLMExtraction) {
+      try {
+        extractedFocuses = await _extractFocusesWithLLM(analysis);
+      } catch (e) {
+        print('[FocusStateMachine] ⚠️ LLM提取失败，使用基础提取: $e');
+        // 降级到基础提取
+        extractedFocuses = _extractFocusesFromAnalysis(analysis);
+      }
+    } else {
+      // 直接使用基础提取（测试模式）
       extractedFocuses = _extractFocusesFromAnalysis(analysis);
     }
     
