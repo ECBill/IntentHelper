@@ -146,11 +146,12 @@ ${analysis.content}
 ''';
 
     try {
-      final llm = await LLM.create('gpt-4.1-mini');
+      final llm = await LLM.create('gpt-4o-mini');
       final response = await llm.createRequest(content: focusExtractionPrompt);
       
       // 解析JSON响应
       final jsonResponse = _extractJsonFromResponse(response);
+      print("[FocusStateMachine] ${jsonResponse}");
       final focusesJson = jsonDecode(jsonResponse) as List;
       
       final focuses = <FocusPoint>[];
