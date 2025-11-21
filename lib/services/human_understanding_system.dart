@@ -13,6 +13,8 @@ import 'package:app/services/objectbox_service.dart';
 import 'package:app/models/graph_models.dart';
 import 'package:app/services/natural_language_reminder_service.dart';
 import 'package:app/services/knowledge_graph_manager.dart'; // 🔥 新增：导入知识图谱管理器
+import 'package:app/services/focus_state_machine.dart'; // 🔥 新增：导入关注点状态机
+import 'package:app/models/focus_models.dart'; // 🔥 新增：导入关注点模型
 
 class HumanUnderstandingSystem {
   static final HumanUnderstandingSystem _instance = HumanUnderstandingSystem._internal();
@@ -28,6 +30,7 @@ class HumanUnderstandingSystem {
   final IntelligentReminderManager _reminderManager = IntelligentReminderManager();
   final NaturalLanguageReminderService _naturalReminderService = NaturalLanguageReminderService();
   final KnowledgeGraphManager _knowledgeGraphManager = KnowledgeGraphManager(); // 🔥 新增：知识图谱管理器实例
+  final FocusStateMachine _focusStateMachine = FocusStateMachine(); // 🔥 新增：关注点状态机实例
 
   // 🔥 知识图谱数据缓存
   Map<String, dynamic>? _cachedKnowledgeGraphData;
@@ -81,6 +84,7 @@ class HumanUnderstandingSystem {
         _graphBuilder.initialize(),
         _loadEstimator.initialize(),
         _knowledgeGraphManager.initialize(), // 🔥 新增：初始化知识图谱管理器
+        _focusStateMachine.initialize(), // 🔥 新增：初始化关注点状态机
       ]);
 
       print('[HumanUnderstandingSystem] ✅ 所有子模块初始化完成');
@@ -490,7 +494,10 @@ class HumanUnderstandingSystem {
     try {
       final stopwatch = Stopwatch()..start();
 
-      // 基础处理
+      // 🔥 新增：先让关注点状态机摄入对话
+      await _focusStateMachine.ingestUtterance(analysis);
+
+      // 基础处理（保留原有逻辑作为备份）
       final results = await Future.wait([
         _intentManager.processSemanticAnalysis(analysis),
         _topicTracker.processConversation(analysis),
@@ -499,14 +506,20 @@ class HumanUnderstandingSystem {
         _naturalReminderService.processSemanticAnalysis(analysis),
       ]);
 
-      // 🔥 新增：主题追踪后自动同步知识图谱
-      await _knowledgeGraphManager.updateActiveTopics(
-        _topicTracker.getActiveTopics().map((t) => t.name).toList(),
-      );
+      // 🔥 修改：使用关注点状态机的结果更新知识图谱
+      final topFocuses = _focusStateMachine.getTop(12);
+      final focusLabels = topFocuses.map((f) => f.canonicalLabel).toList();
+      
+      if (focusLabels.isNotEmpty) {
+        await _knowledgeGraphManager.updateActiveTopics(focusLabels);
+      }
 
       final intents = results[0] as List<Intent>;
       final topics = results[1] as List<ConversationTopic>;
       final causalRelations = results[2] as List<CausalRelation>;
+
+      // 🔥 新增：建立关注点之间的因果链接
+      _linkFocusesWithCausalRelations(causalRelations);
 
       // 构建语义图谱
       final triples = await _graphBuilder.buildSemanticGraph(
@@ -529,6 +542,8 @@ class HumanUnderstandingSystem {
 
       // 生成系统状态快照
       final reminderStats = _naturalReminderService.getStatistics();
+      final focusStats = _focusStateMachine.getStatistics();
+      
       final systemState = HumanUnderstandingSystemState(
         activeIntents: _intentManager.getActiveIntents(),
         activeTopics: _topicTracker.getActiveTopics(),
@@ -542,6 +557,7 @@ class HumanUnderstandingSystem {
           'new_causal_relations': causalRelations.length,
           'new_triples': triples.length,
           'reminder_statistics': reminderStats,
+          'focus_statistics': focusStats, // 🔥 新增：关注点统计
           'analysis_timestamp': analysis.timestamp.toIso8601String(),
         },
       );
@@ -653,6 +669,38 @@ class HumanUnderstandingSystem {
       return 'focused';
     }
     return 'neutral';
+  }
+
+  /// 🔥 新增：建立关注点之间的因果链接
+  void _linkFocusesWithCausalRelations(List<CausalRelation> causalRelations) {
+    final allFocuses = _focusStateMachine.getAllFocuses();
+    
+    for (final causal in causalRelations) {
+      // 查找与因果关系相关的关注点
+      FocusPoint? causeFocus;
+      FocusPoint? effectFocus;
+      
+      for (final focus in allFocuses) {
+        if (causal.cause.contains(focus.canonicalLabel) || 
+            focus.aliases.any((alias) => causal.cause.contains(alias))) {
+          causeFocus = focus;
+        }
+        if (causal.effect.contains(focus.canonicalLabel) || 
+            focus.aliases.any((alias) => causal.effect.contains(alias))) {
+          effectFocus = focus;
+        }
+      }
+      
+      // 建立链接
+      if (causeFocus != null && effectFocus != null) {
+        if (!causeFocus.linkedFocusIds.contains(effectFocus.id)) {
+          causeFocus.linkedFocusIds.add(effectFocus.id);
+        }
+        if (!effectFocus.linkedFocusIds.contains(causeFocus.id)) {
+          effectFocus.linkedFocusIds.add(causeFocus.id);
+        }
+      }
+    }
   }
 
   /// 搜索相关信息
@@ -929,6 +977,7 @@ class HumanUnderstandingSystem {
       _loadEstimator.dispose();
       _reminderManager.dispose();
       _naturalReminderService.dispose();
+      _focusStateMachine.dispose(); // 🔥 新增：释放关注点状态机资源
 
       _cachedKnowledgeGraphData = null;
       _lastKnowledgeGraphUpdate = null;
@@ -960,6 +1009,7 @@ class HumanUnderstandingSystem {
   // 提供只读访问器，便于外部安全获取主题追踪器和知识图谱管理器
   ConversationTopicTracker get topicTracker => _topicTracker;
   KnowledgeGraphManager get knowledgeGraphManager => _knowledgeGraphManager;
+  FocusStateMachine get focusStateMachine => _focusStateMachine; // 🔥 新增：关注点状态机访问器
 
   /// 获取当前最新认知负载评估（public方法，供外部调用）
   CognitiveLoadAssessment getCurrentCognitiveLoadAssessment() {
