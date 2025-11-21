@@ -17,7 +17,7 @@ void main() {
     });
 
     test('FocusStateMachine should initialize correctly', () async {
-      await stateMachine.initialize();
+      await stateMachine.initialize(useLLMExtraction: false);
       
       final activeFocuses = stateMachine.getActiveFocuses();
       final latentFocuses = stateMachine.getLatentFocuses();
@@ -27,7 +27,7 @@ void main() {
     });
 
     test('FocusStateMachine should ingest utterance and create focus points', () async {
-      await stateMachine.initialize();
+      await stateMachine.initialize(useLLMExtraction: false);
       
       final analysis = SemanticAnalysisInput(
         entities: ['Flutter', 'AI'],
@@ -69,7 +69,7 @@ void main() {
     });
 
     test('FocusPoint should calculate scores correctly', () async {
-      await stateMachine.initialize();
+      await stateMachine.initialize(useLLMExtraction: false);
       
       final analysis = SemanticAnalysisInput(
         entities: ['测试实体'],
@@ -96,7 +96,7 @@ void main() {
     });
 
     test('FocusStateMachine should limit active focuses', () async {
-      await stateMachine.initialize();
+      await stateMachine.initialize(useLLMExtraction: false);
       
       // Create many utterances to generate many focuses
       for (int i = 0; i < 20; i++) {
@@ -118,7 +118,7 @@ void main() {
     });
 
     test('FocusStateMachine should return statistics', () async {
-      await stateMachine.initialize();
+      await stateMachine.initialize(useLLMExtraction: false);
       
       final analysis = SemanticAnalysisInput(
         entities: ['实体A'],
