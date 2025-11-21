@@ -26,7 +26,7 @@ class FocusStateMachine {
   
   // 配置参数
   static const int _maxActiveFocuses = 12;  // 活跃关注点上限
-  static const int _minActiveFocuses = 3;   // 活跃关注点下限（降低以避免空状态）
+  static const int _minActiveFocuses = 3;   // 活跃关注点下限（从6降至3以减少空状态，确保UI始终有内容展示）
   static const int _maxLatentFocuses = 8;   // 潜在关注点上限
   
   // 评分权重配置
@@ -115,9 +115,12 @@ class FocusStateMachine {
   /// 使用LLM深度提取关注点（更精确、更具体）
   Future<List<FocusPoint>> _extractFocusesWithLLM(SemanticAnalysisInput analysis) async {
     // 构建对话上下文（最近N条消息）
-    final contextMessages = _conversationHistory.take(5).map((msg) {
-      return msg.content;
-    }).join('\n');
+    final contextBuffer = StringBuffer();
+    final recentMessages = _conversationHistory.take(5);
+    for (final msg in recentMessages) {
+      contextBuffer.writeln(msg.content);
+    }
+    final contextMessages = contextBuffer.toString();
     
     final focusExtractionPrompt = '''
 你是一个对话关注点提取专家。请从用户的对话中提取**具体的、细粒度的**关注点。
@@ -182,7 +185,7 @@ ${analysis.content}
       
       // 解析JSON响应
       final jsonResponse = _extractJsonFromResponse(response);
-      print("[FocusStateMachine] LLM响应: ${jsonResponse.substring(0, math.min(200, jsonResponse.length))}${jsonResponse.length > 200 ? '...' : ''}");
+      print("[FocusStateMachine] LLM响应: ${_truncateForLog(jsonResponse, 200)}");
       final focusesJson = jsonDecode(jsonResponse) as List;
       
       final focuses = <FocusPoint>[];
@@ -215,6 +218,12 @@ ${analysis.content}
       print('[FocusStateMachine] ❌ LLM提取失败: $e');
       rethrow;
     }
+  }
+  
+  /// 截断文本用于日志输出
+  String _truncateForLog(String text, int maxLength) {
+    if (text.length <= maxLength) return text;
+    return '${text.substring(0, maxLength)}...';
   }
 
   /// 从LLM响应中提取JSON（处理markdown代码块等格式）
@@ -535,16 +544,20 @@ ${analysis.content}
     }
     
     // 如果还是不够，从所有关注点中提升
-    while (_activeFocuses.length < _minActiveFocuses && _allFocuses.length > _activeFocuses.length) {
+    if (_activeFocuses.length < _minActiveFocuses && _allFocuses.length > _activeFocuses.length) {
+      // 使用Set提高性能
+      final activeFocusIds = _activeFocuses.map((f) => f.id).toSet();
+      final latentFocusIds = _latentFocuses.map((f) => f.id).toSet();
+      
       for (final focus in _allFocuses) {
-        if (!_activeFocuses.contains(focus) && !_latentFocuses.contains(focus)) {
+        if (!activeFocusIds.contains(focus.id) && !latentFocusIds.contains(focus.id)) {
           focus.updateState(FocusState.active);
           _activeFocuses.add(focus);
+          activeFocusIds.add(focus.id);
           print('[FocusStateMachine] ⬆️ 强制提升关注点到活跃以满足最小数量: ${focus.canonicalLabel}');
           if (_activeFocuses.length >= _minActiveFocuses) break;
         }
       }
-      break; // 防止无限循环
     }
     
     // 修剪过旧的关注点
@@ -560,6 +573,11 @@ ${analysis.content}
   
   /// 回退提取：当LLM返回空但有对话历史时，使用基础方法提取
   void _performFallbackExtraction() {
+    if (_conversationHistory.isEmpty) {
+      print('[FocusStateMachine] ⚠️ 无法执行回退提取：对话历史为空');
+      return;
+    }
+    
     print('[FocusStateMachine] 🔄 执行回退提取...');
     final recentAnalysis = _conversationHistory.last;
     final fallbackFocuses = _extractFocusesFromAnalysis(recentAnalysis);
