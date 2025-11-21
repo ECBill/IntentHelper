@@ -3,16 +3,15 @@
 
 import 'dart:async';
 import 'package:app/models/human_understanding_models.dart';
-import 'package:app/services/intent_lifecycle_manager.dart';
-import 'package:app/services/conversation_topic_tracker.dart';
-import 'package:app/services/causal_chain_extractor.dart';
 import 'package:app/services/semantic_graph_builder.dart';
 import 'package:app/services/cognitive_load_estimator.dart';
 import 'package:app/services/intelligent_reminder_manager.dart';
 import 'package:app/services/objectbox_service.dart';
 import 'package:app/models/graph_models.dart';
 import 'package:app/services/natural_language_reminder_service.dart';
-import 'package:app/services/knowledge_graph_manager.dart'; // 🔥 新增：导入知识图谱管理器
+import 'package:app/services/knowledge_graph_manager.dart';
+import 'package:app/services/focus_state_machine.dart';
+import 'package:app/models/focus_models.dart';
 
 class HumanUnderstandingSystem {
   static final HumanUnderstandingSystem _instance = HumanUnderstandingSystem._internal();
@@ -20,14 +19,12 @@ class HumanUnderstandingSystem {
   HumanUnderstandingSystem._internal();
 
   // 子模块实例
-  final IntentLifecycleManager _intentManager = IntentLifecycleManager();
-  final ConversationTopicTracker _topicTracker = ConversationTopicTracker();
-  final CausalChainExtractor _causalExtractor = CausalChainExtractor();
   final SemanticGraphBuilder _graphBuilder = SemanticGraphBuilder();
   final CognitiveLoadEstimator _loadEstimator = CognitiveLoadEstimator();
   final IntelligentReminderManager _reminderManager = IntelligentReminderManager();
   final NaturalLanguageReminderService _naturalReminderService = NaturalLanguageReminderService();
-  final KnowledgeGraphManager _knowledgeGraphManager = KnowledgeGraphManager(); // 🔥 新增：知识图谱管理器实例
+  final KnowledgeGraphManager _knowledgeGraphManager = KnowledgeGraphManager();
+  final FocusStateMachine _focusStateMachine = FocusStateMachine();
 
   // 🔥 知识图谱数据缓存
   Map<String, dynamic>? _cachedKnowledgeGraphData;
@@ -75,12 +72,10 @@ class HumanUnderstandingSystem {
     try {
       // 并行初始化所有子模块
       await Future.wait([
-        _intentManager.initialize(),
-        _topicTracker.initialize(),
-        _causalExtractor.initialize(),
         _graphBuilder.initialize(),
         _loadEstimator.initialize(),
-        _knowledgeGraphManager.initialize(), // 🔥 新增：初始化知识图谱管理器
+        _knowledgeGraphManager.initialize(),
+        _focusStateMachine.initialize(),
       ]);
 
       print('[HumanUnderstandingSystem] ✅ 所有子模块初始化完成');
@@ -398,19 +393,40 @@ class HumanUnderstandingSystem {
 
     // 直接获取知识图谱数据
     final knowledgeGraphData = _knowledgeGraphManager.getLastResult() ?? {};
-    final intentTopicRelations = _generateIntentTopicRelations();
+    final focusStats = _focusStateMachine.getStatistics();
+    
+    // 从关注点构建简化的数据结构
+    final activeFocuses = _focusStateMachine.getActiveFocuses();
+    final mockIntents = activeFocuses
+        .where((f) => f.type == FocusType.event)
+        .map((f) => Intent(
+              description: f.canonicalLabel,
+              category: 'focus_derived',
+              confidence: f.salienceScore,
+            ))
+        .toList();
+    
+    final mockTopics = activeFocuses
+        .where((f) => f.type == FocusType.topic)
+        .map((f) => ConversationTopic(
+              name: f.canonicalLabel,
+              category: 'focus_derived',
+              relevanceScore: f.salienceScore,
+            ))
+        .toList();
 
     return HumanUnderstandingSystemState(
-      activeIntents: _intentManager.getActiveIntents(),
-      activeTopics: _topicTracker.getActiveTopics(),
-      recentCausalChains: _causalExtractor.getRecentCausalRelations(limit: 5),
+      activeIntents: mockIntents,
+      activeTopics: mockTopics,
+      recentCausalChains: [],
       recentTriples: _graphBuilder.getRecentTriples(limit: 10),
       currentCognitiveLoad: currentLoad,
       knowledgeGraphData: knowledgeGraphData,
-      intentTopicRelations: intentTopicRelations,
+      intentTopicRelations: {},
       systemMetrics: {
         'request_type': 'current_state',
         'system_initialized': _initialized,
+        'focus_statistics': focusStats,
       },
     );
   }
@@ -434,46 +450,7 @@ class HumanUnderstandingSystem {
     }
   }
 
-  /// 生成意图主题关系映射
-  Map<String, List<Intent>> _generateIntentTopicRelations() {
-    try {
-      final activeIntents = _intentManager.getActiveIntents();
-      final activeTopics = _topicTracker.getActiveTopics();
-      final relations = <String, List<Intent>>{};
-
-      for (final topic in activeTopics) {
-        final relatedIntents = <Intent>[];
-
-        for (final intent in activeIntents) {
-          final hasEntityMatch = intent.relatedEntities.any((entity) =>
-              topic.keywords.any((keyword) =>
-              entity.toLowerCase().contains(keyword.toLowerCase()) ||
-                  keyword.toLowerCase().contains(entity.toLowerCase())
-              )
-          );
-
-          final hasCategoryMatch = intent.category == topic.category;
-          final hasDescriptionMatch = intent.description.toLowerCase().contains(topic.name.toLowerCase()) ||
-              topic.name.toLowerCase().contains(intent.description.toLowerCase());
-
-          if (hasEntityMatch || hasCategoryMatch || hasDescriptionMatch) {
-            relatedIntents.add(intent);
-          }
-        }
-
-        if (relatedIntents.isNotEmpty) {
-          relations[topic.name] = relatedIntents;
-        }
-      }
-
-      return relations;
-    } catch (e) {
-      print('[HumanUnderstandingSystem] ❌ 生成意图主题关系映射失败: $e');
-      return {};
-    }
-  }
-
-  /// 处理新的语义分析输入
+/// 处理新的语义分析输入
   Future<HumanUnderstandingSystemState> processSemanticInput(SemanticAnalysisInput analysis) async {
     if (_initializing) {
       print('[HumanUnderstandingSystem] ⚠️ 系统正在初始化中，跳过语义输入处理');
@@ -490,71 +467,82 @@ class HumanUnderstandingSystem {
     try {
       final stopwatch = Stopwatch()..start();
 
-      // 基础处理
-      final results = await Future.wait([
-        _intentManager.processSemanticAnalysis(analysis),
-        _topicTracker.processConversation(analysis),
-        _causalExtractor.extractCausalRelations(analysis),
+      // 让关注点状态机摄入对话
+      await _focusStateMachine.ingestUtterance(analysis);
+
+      // 处理提醒服务
+      await Future.wait([
         _reminderManager.processSemanticAnalysis(analysis),
         _naturalReminderService.processSemanticAnalysis(analysis),
       ]);
 
-      // 🔥 新增：主题追踪后自动同步知识图谱
-      await _knowledgeGraphManager.updateActiveTopics(
-        _topicTracker.getActiveTopics().map((t) => t.name).toList(),
-      );
+      // 使用关注点状态机的结果更新知识图谱
+      final topFocuses = _focusStateMachine.getTop(12);
+      final focusLabels = topFocuses.map((f) => f.canonicalLabel).toList();
+      
+      if (focusLabels.isNotEmpty) {
+        await _knowledgeGraphManager.updateActiveTopics(focusLabels);
+      }
 
-      final intents = results[0] as List<Intent>;
-      final topics = results[1] as List<ConversationTopic>;
-      final causalRelations = results[2] as List<CausalRelation>;
+      // 从关注点构建简化的数据结构（用于兼容性）
+      final activeFocuses = _focusStateMachine.getActiveFocuses();
+      final mockIntents = activeFocuses
+          .where((f) => f.type == FocusType.event)
+          .map((f) => Intent(
+                description: f.canonicalLabel,
+                category: 'focus_derived',
+                confidence: f.salienceScore,
+              ))
+          .toList();
+      
+      final mockTopics = activeFocuses
+          .where((f) => f.type == FocusType.topic)
+          .map((f) => ConversationTopic(
+                name: f.canonicalLabel,
+                category: 'focus_derived',
+                relevanceScore: f.salienceScore,
+              ))
+          .toList();
 
       // 构建语义图谱
       final triples = await _graphBuilder.buildSemanticGraph(
         analysis,
-        intents,
-        topics,
-        causalRelations,
+        mockIntents,
+        mockTopics,
+        [], // 不再使用旧的因果关系
       );
 
-      // 评估认知负载
+      // 评估认知负载（简化版，基于关注点）
       final cognitiveLoad = await _loadEstimator.assessCognitiveLoad(
-        activeIntents: _intentManager.getActiveIntents(),
-        activeTopics: _topicTracker.getActiveTopics(),
-        backgroundTopics: _topicTracker.getBackgroundTopics(),
+        activeIntents: mockIntents,
+        activeTopics: mockTopics,
+        backgroundTopics: [],
         currentEmotion: analysis.emotion,
-        topicSwitchRate: _topicTracker.calculateTopicSwitchRate(),
+        topicSwitchRate: 0.0,
         lastConversationContent: analysis.content,
         additionalContext: analysis.additionalContext,
       );
 
       // 生成系统状态快照
       final reminderStats = _naturalReminderService.getStatistics();
+      final focusStats = _focusStateMachine.getStatistics();
+      
       final systemState = HumanUnderstandingSystemState(
-        activeIntents: _intentManager.getActiveIntents(),
-        activeTopics: _topicTracker.getActiveTopics(),
-        recentCausalChains: _causalExtractor.getRecentCausalRelations(limit: 5),
+        activeIntents: mockIntents,
+        activeTopics: mockTopics,
+        recentCausalChains: [],
         recentTriples: _graphBuilder.getRecentTriples(limit: 10),
         currentCognitiveLoad: cognitiveLoad,
         systemMetrics: {
           'processing_time_ms': stopwatch.elapsedMilliseconds,
-          'new_intents': intents.length,
-          'new_topics': topics.length,
-          'new_causal_relations': causalRelations.length,
           'new_triples': triples.length,
           'reminder_statistics': reminderStats,
+          'focus_statistics': focusStats,
           'analysis_timestamp': analysis.timestamp.toIso8601String(),
         },
       );
 
       _systemStateController.add(systemState);
-
-      // 🔥 修复：不再在每次语义处理后清除缓存，改为智能更新策略
-      // 只有在有新的实体或事件生成时才清除缓存
-      if (intents.isNotEmpty || topics.isNotEmpty || causalRelations.isNotEmpty || triples.isNotEmpty) {
-        print('[HumanUnderstandingSystem] 🔄 检测到新的语义数据，将在下次请求时更新知识图谱缓存');
-        // 不立即清除，而是标记为需要更新
-        _lastKnowledgeGraphUpdate = null; // 这将在下次调用时触发重新生成
-      }
 
       stopwatch.stop();
       print('[HumanUnderstandingSystem] ✅ 语义处理完成 (${stopwatch.elapsedMilliseconds}ms)');
@@ -660,14 +648,13 @@ class HumanUnderstandingSystem {
     try {
       final results = <String, dynamic>{};
 
-      final relatedIntents = _intentManager.searchIntents(query);
-      results['intents'] = relatedIntents.map((i) => i.toJson()).toList();
-
-      final relatedTopics = _topicTracker.searchTopics(query);
-      results['topics'] = relatedTopics.map((t) => t.toJson()).toList();
-
-      final relatedCausal = _causalExtractor.searchCausalRelations(query);
-      results['causal_relations'] = relatedCausal.map((c) => c.toJson()).toList();
+      // 从关注点搜索
+      final allFocuses = _focusStateMachine.getAllFocuses();
+      final relatedFocuses = allFocuses.where((f) =>
+          f.canonicalLabel.toLowerCase().contains(query.toLowerCase()) ||
+          f.aliases.any((alias) => alias.toLowerCase().contains(query.toLowerCase()))
+      ).toList();
+      results['focuses'] = relatedFocuses.map((f) => f.toJson()).toList();
 
       final relatedTriples = _graphBuilder.queryTriples(
         subject: query.contains(' ') ? null : query,
@@ -676,8 +663,7 @@ class HumanUnderstandingSystem {
       );
       results['semantic_triples'] = relatedTriples.map((t) => t.toJson()).toList();
 
-      results['total_results'] = relatedIntents.length + relatedTopics.length +
-          relatedCausal.length + relatedTriples.length;
+      results['total_results'] = relatedFocuses.length + relatedTriples.length;
 
       return results;
 
@@ -691,9 +677,8 @@ class HumanUnderstandingSystem {
   Map<String, dynamic> analyzeUserPatterns() {
     try {
       return {
-        'intent_statistics': _intentManager.getIntentStatistics(),
-        'topic_statistics': _topicTracker.getTopicStatistics(),
-        'causal_statistics': _causalExtractor.getCausalStatistics(),
+        'focus_statistics': _focusStateMachine.getStatistics(),
+        'drift_statistics': _focusStateMachine.getDriftStats(),
         'graph_statistics': _graphBuilder.getGraphStatistics(),
         'load_patterns': _loadEstimator.analyzeLoadPatterns(),
         'analysis_timestamp': DateTime.now().toIso8601String(),
@@ -710,11 +695,10 @@ class HumanUnderstandingSystem {
       'system_initialized': _initialized,
       'uptime_minutes': _initialized ? DateTime.now().difference(_initTime).inMinutes : 0,
       'modules_status': {
-        'intent_manager': _intentManager.getIntentStatistics(),
-        'topic_tracker': _topicTracker.getTopicStatistics(),
-        'causal_extractor': _causalExtractor.getCausalStatistics(),
+        'focus_state_machine': _focusStateMachine.getStatistics(),
         'graph_builder': _graphBuilder.getGraphStatistics(),
         'load_estimator': _loadEstimator.getLoadStatistics(),
+        'knowledge_graph_manager': {'cached': _knowledgeGraphManager.getLastResult() != null},
       },
       'last_update': DateTime.now().toIso8601String(),
     };
@@ -728,11 +712,9 @@ class HumanUnderstandingSystem {
       _stateUpdateTimer?.cancel();
       _conversationMonitorTimer?.cancel();
 
-      _intentManager.dispose();
-      _topicTracker.dispose();
-      _causalExtractor.dispose();
       _graphBuilder.dispose();
       _loadEstimator.dispose();
+      _focusStateMachine.dispose();
 
       _initialized = false;
 
@@ -753,11 +735,10 @@ class HumanUnderstandingSystem {
         'export_timestamp': DateTime.now().toIso8601String(),
         'system_state': getCurrentState().toJson(),
         'detailed_data': {
-          'all_intents': _intentManager.getActiveIntents().map((i) => i.toJson()).toList(),
-          'all_topics': _topicTracker.getAllTopics().map((t) => t.toJson()).toList(),
-          'causal_relations': _causalExtractor.getRecentCausalRelations(limit: 100).map((c) => c.toJson()).toList(),
+          'all_focuses': _focusStateMachine.getAllFocuses().map((f) => f.toJson()).toList(),
           'semantic_graph': _graphBuilder.exportGraph(),
           'load_history': _loadEstimator.getLoadHistory(limit: 50).map((l) => l.toJson()).toList(),
+          'drift_transitions': _focusStateMachine.getDriftStats(),
         },
         'system_metrics': getSystemMetrics(),
       };
@@ -773,21 +754,18 @@ class HumanUnderstandingSystem {
       final currentState = getCurrentState();
       final suggestions = <String, dynamic>{};
 
-      final activeIntents = currentState.activeIntents;
-      if (activeIntents.length > 3) {
-        suggestions['intent_management'] = '当前有 ${activeIntents.length} 个活跃意图，建议优先完成重要意图';
+      final focusStats = _focusStateMachine.getStatistics();
+      final activeFocusCount = focusStats['active_focuses_count'] ?? 0;
+      
+      if (activeFocusCount > 10) {
+        suggestions['focus_management'] = '当前有 $activeFocusCount 个活跃关注点，建议聚焦核心内容';
       }
 
       suggestions['cognitive_load'] = currentState.currentCognitiveLoad.recommendation;
 
-      final activeTopics = currentState.activeTopics;
-      if (activeTopics.length > 5) {
-        suggestions['topic_focus'] = '当前讨论了 ${activeTopics.length} 个主题，建议专注于核心主题';
-      }
-
-      final causalChains = currentState.recentCausalChains;
-      if (causalChains.isNotEmpty) {
-        suggestions['causal_insight'] = '发现了 ${causalChains.length} 个因果关系，可以深入分析行为动机';
+      final latentFocusCount = focusStats['latent_focuses_count'] ?? 0;
+      if (latentFocusCount > 5) {
+        suggestions['potential_topics'] = '有 $latentFocusCount 个潜在关注点，可能即将讨论';
       }
 
       return {
@@ -809,21 +787,14 @@ class HumanUnderstandingSystem {
     if (state.currentCognitiveLoad.level == CognitiveLoadLevel.overload) {
       actions.add('立即减少活跃任务数量');
     } else if (state.currentCognitiveLoad.level == CognitiveLoadLevel.high) {
-      actions.add('优先处理紧急重要的意图');
+      actions.add('优先处理紧急重要事项');
     }
 
-    final clarifyingIntents = state.activeIntents.where(
-            (intent) => intent.state == IntentLifecycleState.clarifying
-    ).toList();
-    if (clarifyingIntents.isNotEmpty) {
-      actions.add('澄清 ${clarifyingIntents.length} 个需要明确的意图');
-    }
-
-    final highRelevanceTopics = state.activeTopics.where(
-            (topic) => topic.relevanceScore > 0.8
-    ).toList();
-    if (highRelevanceTopics.isNotEmpty) {
-      actions.add('深入讨论高相关性主题：${highRelevanceTopics.map((t) => t.name).take(2).join('、')}');
+    final focusStats = _focusStateMachine.getStatistics();
+    final activeFocusCount = focusStats['active_focuses_count'] ?? 0;
+    
+    if (activeFocusCount > 10) {
+      actions.add('当前关注点过多($activeFocusCount个)，建议聚焦核心内容');
     }
 
     return actions;
@@ -891,16 +862,13 @@ class HumanUnderstandingSystem {
         }).toList(),
       },
       'module_status': {
-        'intent_manager_stats': _intentManager.getIntentStatistics(),
-        'topic_tracker_stats': _topicTracker.getTopicStatistics(),
-        'causal_extractor_stats': _causalExtractor.getCausalStatistics(),
+        'focus_state_machine_stats': _focusStateMachine.getStatistics(),
         'graph_builder_stats': _graphBuilder.getGraphStatistics(),
         'load_estimator_stats': _loadEstimator.getLoadStatistics(),
       },
       'current_state_summary': {
-        'active_intents_count': _intentManager.getActiveIntents().length,
-        'active_topics_count': _topicTracker.getActiveTopics().length,
-        'recent_causal_count': _causalExtractor.getRecentCausalRelations(limit: 10).length,
+        'active_focuses_count': _focusStateMachine.getActiveFocuses().length,
+        'latent_focuses_count': _focusStateMachine.getLatentFocuses().length,
         'recent_triples_count': _graphBuilder.getRecentTriples(limit: 10).length,
       },
       'last_check_time': DateTime.now().toIso8601String(),
@@ -922,13 +890,11 @@ class HumanUnderstandingSystem {
         _systemStateController.close();
       }
 
-      _intentManager.dispose();
-      _topicTracker.dispose();
-      _causalExtractor.dispose();
       _graphBuilder.dispose();
       _loadEstimator.dispose();
       _reminderManager.dispose();
       _naturalReminderService.dispose();
+      _focusStateMachine.dispose();
 
       _cachedKnowledgeGraphData = null;
       _lastKnowledgeGraphUpdate = null;
@@ -957,9 +923,9 @@ class HumanUnderstandingSystem {
     _lastActiveTopics = List.from(topics);
   }
 
-  // 提供只读访问器，便于外部安全获取主题追踪器和知识图谱管理器
-  ConversationTopicTracker get topicTracker => _topicTracker;
+  // 提供只读访问器
   KnowledgeGraphManager get knowledgeGraphManager => _knowledgeGraphManager;
+  FocusStateMachine get focusStateMachine => _focusStateMachine;
 
   /// 获取当前最新认知负载评估（public方法，供外部调用）
   CognitiveLoadAssessment getCurrentCognitiveLoadAssessment() {
