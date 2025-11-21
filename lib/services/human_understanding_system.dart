@@ -403,6 +403,7 @@ class HumanUnderstandingSystem {
     // 直接获取知识图谱数据
     final knowledgeGraphData = _knowledgeGraphManager.getLastResult() ?? {};
     final intentTopicRelations = _generateIntentTopicRelations();
+    final focusStats = _focusStateMachine.getStatistics(); // 🔥 新增：获取关注点统计
 
     return HumanUnderstandingSystemState(
       activeIntents: _intentManager.getActiveIntents(),
@@ -415,6 +416,7 @@ class HumanUnderstandingSystem {
       systemMetrics: {
         'request_type': 'current_state',
         'system_initialized': _initialized,
+        'focus_statistics': focusStats, // 🔥 新增：包含关注点统计
       },
     );
   }
