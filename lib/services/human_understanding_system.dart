@@ -358,9 +358,9 @@ class HumanUnderstandingSystem {
       if (currentLoad == null) return;
 
       final systemState = HumanUnderstandingSystemState(
-        activeIntents: _intentManager.getActiveIntents(),
-        activeTopics: _topicTracker.getActiveTopics(),
-        recentCausalChains: _causalExtractor.getRecentCausalRelations(limit: 5),
+        activeIntents: [], // Intent tracking is now integrated into FocusStateMachine
+        activeTopics: getActiveTopicsFromFocus(),
+        recentCausalChains: [], // Causal chains are now part of semantic graph
         recentTriples: _graphBuilder.getRecentTriples(limit: 10),
         currentCognitiveLoad: currentLoad,
         systemMetrics: {
@@ -926,6 +926,44 @@ class HumanUnderstandingSystem {
   // 提供只读访问器
   KnowledgeGraphManager get knowledgeGraphManager => _knowledgeGraphManager;
   FocusStateMachine get focusStateMachine => _focusStateMachine;
+
+  /// 获取活跃主题（从FocusStateMachine转换为ConversationTopic格式以保持兼容性）
+  List<ConversationTopic> getActiveTopicsFromFocus() {
+    try {
+      final activeFocuses = _focusStateMachine.getActiveFocuses();
+      return activeFocuses.map((focus) {
+        return ConversationTopic(
+          name: focus.canonicalLabel,
+          category: _mapFocusTypeToCategory(focus.type),
+          state: TopicState.active,
+          relevanceScore: focus.salienceScore,
+          weight: focus.salienceScore,
+          createdAt: focus.firstSeen,
+          lastMentioned: focus.lastUpdated,
+          keywords: [focus.canonicalLabel, ...focus.aliases.toList()],
+          entities: focus.metadata['entities'] is List ? (focus.metadata['entities'] as List).cast<String>() : [],
+          context: focus.metadata,
+        );
+      }).toList();
+    } catch (e) {
+      print('[HumanUnderstandingSystem] ❌ 获取活跃主题失败: $e');
+      return [];
+    }
+  }
+
+  /// 将FocusType映射到主题类别
+  String _mapFocusTypeToCategory(FocusType type) {
+    switch (type) {
+      case FocusType.event:
+        return '事件';
+      case FocusType.topic:
+        return '主题';
+      case FocusType.entity:
+        return '实体';
+      default:
+        return '其他';
+    }
+  }
 
   /// 获取当前最新认知负载评估（public方法，供外部调用）
   CognitiveLoadAssessment getCurrentCognitiveLoadAssessment() {
