@@ -26,7 +26,12 @@ class FocusStateMachine {
   
   // 配置参数
   static const int _maxActiveFocuses = 12;  // 活跃关注点上限
-  static const int _minActiveFocuses = 3;   // 活跃关注点下限（从6降至3以减少空状态，确保UI始终有内容展示）
+  // 活跃关注点下限：设为3个的原因：
+  // 1. 确保UI始终有足够内容展示，避免空状态
+  // 2. 3个关注点足以让用户了解当前对话重点
+  // 3. 比之前的6个更宽松，减少因评分严格导致的空列表问题
+  // 4. 结合回退机制和强制提升逻辑，可以有效防止完全空状态
+  static const int _minActiveFocuses = 3;
   static const int _maxLatentFocuses = 8;   // 潜在关注点上限
   
   // 评分权重配置
@@ -114,9 +119,12 @@ class FocusStateMachine {
 
   /// 使用LLM深度提取关注点（更精确、更具体）
   Future<List<FocusPoint>> _extractFocusesWithLLM(SemanticAnalysisInput analysis) async {
-    // 构建对话上下文（最近N条消息）
+    // 构建对话上下文（最近5条消息）
     final contextBuffer = StringBuffer();
-    final recentMessages = _conversationHistory.take(5);
+    final historyLength = _conversationHistory.length;
+    final startIndex = math.max(0, historyLength - 5);
+    final recentMessages = _conversationHistory.skip(startIndex);
+    
     for (final msg in recentMessages) {
       contextBuffer.writeln(msg.content);
     }
@@ -543,20 +551,24 @@ ${analysis.content}
       print('[FocusStateMachine] ⬆️ 提升潜在关注点到活跃: ${promoted.canonicalLabel}');
     }
     
-    // 如果还是不够，从所有关注点中提升
+    // 如果还是不够，从所有关注点中按分数提升
     if (_activeFocuses.length < _minActiveFocuses && _allFocuses.length > _activeFocuses.length) {
-      // 使用Set提高性能
+      // 使用Set提高成员检查性能
       final activeFocusIds = _activeFocuses.map((f) => f.id).toSet();
       final latentFocusIds = _latentFocuses.map((f) => f.id).toSet();
       
-      for (final focus in _allFocuses) {
-        if (!activeFocusIds.contains(focus.id) && !latentFocusIds.contains(focus.id)) {
-          focus.updateState(FocusState.active);
-          _activeFocuses.add(focus);
-          activeFocusIds.add(focus.id);
-          print('[FocusStateMachine] ⬆️ 强制提升关注点到活跃以满足最小数量: ${focus.canonicalLabel}');
-          if (_activeFocuses.length >= _minActiveFocuses) break;
-        }
+      // 获取未分配的关注点并按分数排序
+      final unassignedFocuses = _allFocuses
+          .where((f) => !activeFocusIds.contains(f.id) && !latentFocusIds.contains(f.id))
+          .toList()
+        ..sort((a, b) => b.salienceScore.compareTo(a.salienceScore));
+      
+      // 提升最高分的关注点直到满足最小数量
+      final needCount = _minActiveFocuses - _activeFocuses.length;
+      for (final focus in unassignedFocuses.take(needCount)) {
+        focus.updateState(FocusState.active);
+        _activeFocuses.add(focus);
+        print('[FocusStateMachine] ⬆️ 强制提升关注点到活跃以满足最小数量: ${focus.canonicalLabel}(${focus.salienceScore.toStringAsFixed(3)})');
       }
     }
     
