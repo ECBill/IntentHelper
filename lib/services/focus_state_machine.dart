@@ -20,9 +20,13 @@ class FocusStateMachine {
   // 漂移模型
   final FocusDriftModel _driftModel = FocusDriftModel();
   
+  // 对话历史缓冲（用于提供上下文）
+  final List<SemanticAnalysisInput> _conversationHistory = [];
+  static const int _maxHistorySize = 10;
+  
   // 配置参数
   static const int _maxActiveFocuses = 12;  // 活跃关注点上限
-  static const int _minActiveFocuses = 6;   // 活跃关注点下限
+  static const int _minActiveFocuses = 3;   // 活跃关注点下限（降低以避免空状态）
   static const int _maxLatentFocuses = 8;   // 潜在关注点上限
   
   // 评分权重配置
@@ -59,6 +63,12 @@ class FocusStateMachine {
   Future<void> ingestUtterance(SemanticAnalysisInput analysis) async {
     print('[FocusStateMachine] 📥 摄入新对话: ${analysis.content.substring(0, math.min(50, analysis.content.length))}...');
     
+    // 添加到对话历史
+    _conversationHistory.add(analysis);
+    if (_conversationHistory.length > _maxHistorySize) {
+      _conversationHistory.removeAt(0);
+    }
+    
     // 使用LLM深度提取关注点（异步）
     List<FocusPoint> extractedFocuses = [];
     if (_useLLMExtraction) {
@@ -75,8 +85,12 @@ class FocusStateMachine {
     }
     
     // 处理每个提取的关注点
-    for (final newFocus in extractedFocuses) {
-      _processNewFocus(newFocus, analysis);
+    if (extractedFocuses.isNotEmpty) {
+      for (final newFocus in extractedFocuses) {
+        _processNewFocus(newFocus, analysis);
+      }
+    } else {
+      print('[FocusStateMachine] ℹ️ 本次提取为空，保持现有关注点状态');
     }
     
     // 更新所有关注点的分数
@@ -89,10 +103,22 @@ class FocusStateMachine {
     _driftModel.updateTrajectory(_activeFocuses);
     
     print('[FocusStateMachine] ✅ 处理完成，活跃: ${_activeFocuses.length}, 潜在: ${_latentFocuses.length}');
+    
+    // 调试：输出当前活跃关注点列表
+    if (_activeFocuses.isNotEmpty) {
+      print('[FocusStateMachine] 📋 活跃关注点列表: ${_activeFocuses.map((f) => "${f.canonicalLabel}(${f.salienceScore.toStringAsFixed(2)})").join(", ")}');
+    } else {
+      print('[FocusStateMachine] ⚠️ 警告：活跃关注点列表为空！总关注点数: ${_allFocuses.length}');
+    }
   }
 
   /// 使用LLM深度提取关注点（更精确、更具体）
   Future<List<FocusPoint>> _extractFocusesWithLLM(SemanticAnalysisInput analysis) async {
+    // 构建对话上下文（最近N条消息）
+    final contextMessages = _conversationHistory.take(5).map((msg) {
+      return msg.content;
+    }).join('\n');
+    
     final focusExtractionPrompt = '''
 你是一个对话关注点提取专家。请从用户的对话中提取**具体的、细粒度的**关注点。
 
@@ -104,8 +130,12 @@ class FocusStateMachine {
    - 例如："同事小李建议的新架构方案"、"母亲提到的体检结果"
 3. **动态性**：关注点应该反映对话的实时演进
 4. **多样性**：同时捕捉事件、实体、主题三种类型
+5. **延续性**：结合前文上下文理解当前对话
 
-【对话内容】：
+【最近对话上下文】：
+$contextMessages
+
+【当前对话】：
 ${analysis.content}
 
 【用户情感】：${analysis.emotion}
@@ -142,7 +172,8 @@ ${analysis.content}
 - 每个标签必须具体，避免泛泛而谈
 - 最多返回5个关注点
 - 置信度低的不要强行提取
-- 如果对话太简短（<20字）或无实质内容，返回空数组 []
+- 如果当前对话很简短但能从上下文推断关注点，仍应提取
+- 如果实在无法提取有意义的关注点，返回空数组 []
 ''';
 
     try {
@@ -151,7 +182,7 @@ ${analysis.content}
       
       // 解析JSON响应
       final jsonResponse = _extractJsonFromResponse(response);
-      print("[FocusStateMachine] ${jsonResponse}");
+      print("[FocusStateMachine] LLM响应: ${jsonResponse.substring(0, math.min(200, jsonResponse.length))}${jsonResponse.length > 200 ? '...' : ''}");
       final focusesJson = jsonDecode(jsonResponse) as List;
       
       final focuses = <FocusPoint>[];
@@ -433,8 +464,21 @@ ${analysis.content}
 
   /// 重新分类关注点（活跃/潜在）
   void _reclassifyFocuses() {
+    print('[FocusStateMachine] 🔄 开始重新分类关注点，当前总数: ${_allFocuses.length}');
+    
+    // 如果没有任何关注点，尝试从历史对话中补充
+    if (_allFocuses.isEmpty && _conversationHistory.isNotEmpty) {
+      print('[FocusStateMachine] ⚠️ 关注点列表为空但有对话历史，尝试回退提取');
+      _performFallbackExtraction();
+    }
+    
     // 按显著性分数排序
     _allFocuses.sort((a, b) => b.salienceScore.compareTo(a.salienceScore));
+    
+    // 调试：输出前几个关注点的分数
+    if (_allFocuses.isNotEmpty) {
+      print('[FocusStateMachine] 📊 排序后前5个关注点: ${_allFocuses.take(5).map((f) => "${f.canonicalLabel}(${f.salienceScore.toStringAsFixed(3)})").join(", ")}');
+    }
     
     // 清空现有分类
     _activeFocuses.clear();
@@ -468,6 +512,8 @@ ${analysis.content}
         ? _allFocuses[_maxActiveFocuses - 1].salienceScore
         : 0.3;
     
+    print('[FocusStateMachine] 📊 活跃阈值: ${activeThreshold.toStringAsFixed(3)}');
+    
     for (final focus in _allFocuses) {
       if (_activeFocuses.length < _maxActiveFocuses && focus.salienceScore >= activeThreshold) {
         focus.updateState(FocusState.active);
@@ -485,10 +531,44 @@ ${analysis.content}
       final promoted = _latentFocuses.removeAt(0);
       promoted.updateState(FocusState.active);
       _activeFocuses.add(promoted);
+      print('[FocusStateMachine] ⬆️ 提升潜在关注点到活跃: ${promoted.canonicalLabel}');
+    }
+    
+    // 如果还是不够，从所有关注点中提升
+    while (_activeFocuses.length < _minActiveFocuses && _allFocuses.length > _activeFocuses.length) {
+      for (final focus in _allFocuses) {
+        if (!_activeFocuses.contains(focus) && !_latentFocuses.contains(focus)) {
+          focus.updateState(FocusState.active);
+          _activeFocuses.add(focus);
+          print('[FocusStateMachine] ⬆️ 强制提升关注点到活跃以满足最小数量: ${focus.canonicalLabel}');
+          if (_activeFocuses.length >= _minActiveFocuses) break;
+        }
+      }
+      break; // 防止无限循环
     }
     
     // 修剪过旧的关注点
+    final beforePruneCount = _allFocuses.length;
     _pruneOldFocuses();
+    final afterPruneCount = _allFocuses.length;
+    if (beforePruneCount != afterPruneCount) {
+      print('[FocusStateMachine] ✂️ 修剪了 ${beforePruneCount - afterPruneCount} 个过旧关注点');
+    }
+    
+    print('[FocusStateMachine] ✅ 重新分类完成: 活跃=${_activeFocuses.length}, 潜在=${_latentFocuses.length}, 总数=${_allFocuses.length}');
+  }
+  
+  /// 回退提取：当LLM返回空但有对话历史时，使用基础方法提取
+  void _performFallbackExtraction() {
+    print('[FocusStateMachine] 🔄 执行回退提取...');
+    final recentAnalysis = _conversationHistory.last;
+    final fallbackFocuses = _extractFocusesFromAnalysis(recentAnalysis);
+    
+    for (final focus in fallbackFocuses) {
+      _processNewFocus(focus, recentAnalysis);
+    }
+    
+    print('[FocusStateMachine] ✅ 回退提取完成，提取了 ${fallbackFocuses.length} 个关注点');
   }
 
   /// 修剪过旧的关注点
@@ -566,6 +646,7 @@ ${analysis.content}
     _activeFocuses.clear();
     _latentFocuses.clear();
     _allFocuses.clear();
+    _conversationHistory.clear();
     _driftModel.clear();
     print('[FocusStateMachine] 🔄 状态机已重置');
   }
