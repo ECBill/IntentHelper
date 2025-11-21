@@ -940,8 +940,8 @@ class HumanUnderstandingSystem {
           weight: focus.salienceScore,
           createdAt: focus.firstSeen,
           lastMentioned: focus.lastUpdated,
-          keywords: [focus.canonicalLabel, ...focus.aliases],
-          entities: focus.metadata['entities'] as List<String>? ?? [],
+          keywords: [focus.canonicalLabel, ...focus.aliases.toList()],
+          entities: focus.metadata['entities'] is List ? (focus.metadata['entities'] as List).cast<String>() : [],
           context: focus.metadata,
         );
       }).toList();
