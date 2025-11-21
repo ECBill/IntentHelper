@@ -25,8 +25,11 @@ class LogEvaluationService {
   }
 
   /// 获取FoA主题识别数据（修改版）
+  /// TODO: 需要重新实现以配合新的Focus State Machine
   Future<List<FoAEntry>> getFoAEntries({DateTimeRange? dateRange}) async {
     final entries = <FoAEntry>[];
+    /* 
+    // 暂时注释掉，等待重新实现以配合Focus State Machine
     try {
       // 从主题历史服务获取按窗口分组的数据
       final windows = _topicHistoryService.getTopicHistoryWindows(dateRange: dateRange);
@@ -50,13 +53,16 @@ class LogEvaluationService {
     } catch (e) {
       print('获取FoA数据失败: $e');
     }
+    */
     return entries;
   }
 
   /// 回退的FoA数据获取方法（原来的模拟数据）
+  /// TODO: 需要重新实现以配合新的Focus State Machine
   Future<List<FoAEntry>> _getFallbackFoAEntries({DateTimeRange? dateRange}) async {
     final entries = <FoAEntry>[];
-
+    /* 
+    // 暂时注释掉，等待重新实现以配合Focus State Machine
     try {
       final startTime = dateRange?.start.millisecondsSinceEpoch ??
                        DateTime.now().subtract(Duration(days: 30)).millisecondsSinceEpoch;
@@ -106,6 +112,7 @@ class LogEvaluationService {
     } catch (e) {
       print('获取回退FoA数据失败: $e');
     }
+    */
 
     return entries;
   }
@@ -346,11 +353,13 @@ class LogEvaluationService {
         // 收集功能结果
         final functionResults = <String, dynamic>{};
 
-        // 1. FoA识别 - 从 HumanUnderstandingSystem 的 topicTracker 获取
+        // 1. FoA识别 - 暂时注释掉，等待重新实现以配合Focus State Machine
+        /* 
         final foaResults = await _getFoAResults(record, timestamp);
         if (foaResults.isNotEmpty) {
           functionResults['foa'] = foaResults;
         }
+        */
 
         // 2. Todo生成 - 从 TodoEntity 获取
         final todoResults = await _getTodoResults(record, timestamp);
@@ -402,7 +411,10 @@ class LogEvaluationService {
   }
 
   /// 获取FoA识别结果
+  /// TODO: 需要重新实现以配合新的Focus State Machine
   Future<List<Map<String, dynamic>>> _getFoAResults(RecordEntity record, DateTime timestamp) async {
+    /* 
+    // 暂时注释掉，等待重新实现以配合Focus State Machine
     try {
       // 这里应该从 ConversationTopicTracker 获取主题分析结果
       // 目前先返回模拟数据，实际实现需要调用相应的服务
@@ -416,6 +428,8 @@ class LogEvaluationService {
       print('获取FoA结果失败: $e');
       return [];
     }
+    */
+    return [];
   }
 
   /// 获取Todo生成结果

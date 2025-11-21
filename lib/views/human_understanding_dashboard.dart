@@ -35,7 +35,7 @@ class _HumanUnderstandingDashboardState extends State<HumanUnderstandingDashboar
   @override
   void initState() {
     super.initState();
-    _tabController = TabController(length: 7, vsync: this); // 🔥 修改：改为7个标签页
+    _tabController = TabController(length: 4, vsync: this); // 修改为4个标签页
     _initializeSystem();
   }
 
@@ -145,11 +145,8 @@ class _HumanUnderstandingDashboardState extends State<HumanUnderstandingDashboar
           unselectedLabelColor: Colors.white70,
           tabs: [
             Tab(text: '概览'),
-            Tab(text: '意图管理'),
-            Tab(text: '主题追踪'),
-            Tab(text: '关注点'), // 🔥 新增：关注点标签页
+            Tab(text: '关注点'),
             Tab(text: '知识图谱'),
-            Tab(text: '因果分析'),
             Tab(text: '认知负载'),
           ],
         ),
@@ -160,11 +157,8 @@ class _HumanUnderstandingDashboardState extends State<HumanUnderstandingDashboar
         controller: _tabController,
         children: [
           _buildOverviewTab(),
-          _buildIntentsTab(),
-          _buildTopicsTab(),
-          _buildFocusPointsTab(), // 🔥 新增：关注点页面
+          _buildFocusPointsTab(),
           _buildKnowledgeGraphTab(),
-          _buildCausalTab(),
           _buildCognitiveLoadTab(),
         ],
       ),
@@ -291,33 +285,44 @@ class _HumanUnderstandingDashboardState extends State<HumanUnderstandingDashboar
   Widget _buildQuickStatsCard() {
     if (_currentState == null) return Container();
 
+    final focusStats = _system.focusStateMachine.getStatistics();
+    final activeFocusCount = focusStats['active_focuses_count'] ?? 0;
+    final latentFocusCount = focusStats['latent_focuses_count'] ?? 0;
+    final kgResults = _kgManager.getLastResult()?['results'] as List? ?? [];
+
     return Card(
       child: Padding(
         padding: EdgeInsets.all(16.w),
         child: Column(
           crossAxisAlignment: CrossAxisAlignment.start,
           children: [
-            Text(
-              '快速统计',
-              style: TextStyle(fontSize: 18.sp, fontWeight: FontWeight.bold),
+            Row(
+              children: [
+                Icon(Icons.analytics, color: Colors.blue, size: 20.sp),
+                SizedBox(width: 8.w),
+                Text(
+                  '快速统计',
+                  style: TextStyle(fontSize: 18.sp, fontWeight: FontWeight.bold),
+                ),
+              ],
             ),
-            SizedBox(height: 12.h),
+            SizedBox(height: 16.h),
             Row(
               children: [
                 Expanded(
                   child: _buildStatItem(
-                    '活跃意图',
-                    '${_currentState!.activeIntents.length}',
-                    Icons.lightbulb,
-                    Colors.orange,
+                    '活跃关注点',
+                    '$activeFocusCount',
+                    Icons.visibility,
+                    Colors.green,
                   ),
                 ),
                 Expanded(
                   child: _buildStatItem(
-                    '讨论主题',
-                    '${_currentState!.activeTopics.length}',
-                    Icons.topic,
-                    Colors.blue,
+                    '潜在关注点',
+                    '$latentFocusCount',
+                    Icons.visibility_outlined,
+                    Colors.orange,
                   ),
                 ),
               ],
@@ -327,10 +332,10 @@ class _HumanUnderstandingDashboardState extends State<HumanUnderstandingDashboar
               children: [
                 Expanded(
                   child: _buildStatItem(
-                    '因果关系',
-                    '${_currentState!.recentCausalChains.length}',
-                    Icons.link,
-                    Colors.green,
+                    '知识图谱',
+                    '${kgResults.length}',
+                    Icons.hub,
+                    Colors.blue,
                   ),
                 ),
                 Expanded(
@@ -467,48 +472,100 @@ class _HumanUnderstandingDashboardState extends State<HumanUnderstandingDashboar
   Widget _buildRecentActivityCard() {
     if (_currentState == null) return Container();
 
+    final activeFocuses = _system.focusStateMachine.getActiveFocuses();
+    final kgResults = _kgManager.getLastResult()?['results'] as List? ?? [];
+
     return Card(
       child: Padding(
         padding: EdgeInsets.all(16.w),
         child: Column(
           crossAxisAlignment: CrossAxisAlignment.start,
           children: [
-            Text(
-              '最近活动',
-              style: TextStyle(fontSize: 18.sp, fontWeight: FontWeight.bold),
+            Row(
+              children: [
+                Icon(Icons.history, color: Colors.blue, size: 20.sp),
+                SizedBox(width: 8.w),
+                Text(
+                  '最近活动',
+                  style: TextStyle(fontSize: 18.sp, fontWeight: FontWeight.bold),
+                ),
+              ],
             ),
             SizedBox(height: 12.h),
-            if (_currentState!.recentTriples.isNotEmpty) ...[
+            if (activeFocuses.isNotEmpty) ...[
               Text(
-                '最新语义关系:',
+                '当前活跃关注点:',
                 style: TextStyle(fontSize: 14.sp, fontWeight: FontWeight.w600),
               ),
-              ..._currentState!.recentTriples.take(3).map((triple) =>
-                  Padding(
-                    padding: EdgeInsets.symmetric(vertical: 2.h),
-                    child: Text(
-                      '${triple.subject} → ${triple.predicate} → ${triple
-                          .object}',
-                      style: TextStyle(
-                          fontSize: 12.sp, color: Colors.grey[700]),
+              SizedBox(height: 6.h),
+              ...activeFocuses.take(5).map((focus) => Padding(
+                    padding: EdgeInsets.symmetric(vertical: 3.h),
+                    child: Row(
+                      children: [
+                        Icon(
+                          _getFocusTypeIcon(focus.type.toString().split('.').last),
+                          size: 14.sp,
+                          color: _getFocusTypeColor(focus.type.toString().split('.').last),
+                        ),
+                        SizedBox(width: 6.w),
+                        Expanded(
+                          child: Text(
+                            focus.canonicalLabel,
+                            style: TextStyle(fontSize: 12.sp, color: Colors.grey[700]),
+                            maxLines: 1,
+                            overflow: TextOverflow.ellipsis,
+                          ),
+                        ),
+                        Container(
+                          padding: EdgeInsets.symmetric(horizontal: 6.w, vertical: 2.h),
+                          decoration: BoxDecoration(
+                            color: Colors.blue.withOpacity(0.1),
+                            borderRadius: BorderRadius.circular(8.r),
+                          ),
+                          child: Text(
+                            focus.salienceScore.toStringAsFixed(2),
+                            style: TextStyle(fontSize: 10.sp, color: Colors.blue),
+                          ),
+                        ),
+                      ],
                     ),
                   )),
             ],
-            if (_currentState!.recentCausalChains.isNotEmpty) ...[
-              SizedBox(height: 8.h),
+            if (kgResults.isNotEmpty) ...[
+              SizedBox(height: 12.h),
               Text(
-                '最新因果关系:',
+                '最新知识图谱匹配:',
                 style: TextStyle(fontSize: 14.sp, fontWeight: FontWeight.w600),
               ),
-              ..._currentState!.recentCausalChains.take(2).map((causal) =>
-                  Padding(
-                    padding: EdgeInsets.symmetric(vertical: 2.h),
-                    child: Text(
-                      '${causal.cause} → ${causal.effect}',
-                      style: TextStyle(
-                          fontSize: 12.sp, color: Colors.grey[700]),
+              SizedBox(height: 6.h),
+              ...kgResults.take(3).map((node) => Padding(
+                    padding: EdgeInsets.symmetric(vertical: 3.h),
+                    child: Row(
+                      children: [
+                        Icon(Icons.hub, size: 14.sp, color: Colors.purple),
+                        SizedBox(width: 6.w),
+                        Expanded(
+                          child: Text(
+                            node['title']?.toString() ?? node['name']?.toString() ?? '未命名',
+                            style: TextStyle(fontSize: 12.sp, color: Colors.grey[700]),
+                            maxLines: 1,
+                            overflow: TextOverflow.ellipsis,
+                          ),
+                        ),
+                      ],
                     ),
                   )),
+            ],
+            if (activeFocuses.isEmpty && kgResults.isEmpty) ...[
+              Center(
+                child: Padding(
+                  padding: EdgeInsets.symmetric(vertical: 12.h),
+                  child: Text(
+                    '暂无最近活动',
+                    style: TextStyle(fontSize: 13.sp, color: Colors.grey),
+                  ),
+                ),
+              ),
             ],
           ],
         ),
