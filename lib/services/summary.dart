@@ -140,7 +140,7 @@ class DialogueSummary {
     // 获取当前对话主题分析（topics）
     List<String> topics = [];
     try {
-      topics = HumanUnderstandingSystem().topicTracker.getActiveTopics().map((t) => t.name).toList();
+      topics = HumanUnderstandingSystem().getActiveTopicsFromFocus().map((t) => t.name).toList();
     } catch (e) {
       print('[DialogueSummary] ⚠️ 获取对话主题失败: $e');
     }

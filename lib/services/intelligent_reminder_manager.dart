@@ -171,7 +171,7 @@ class IntelligentReminderManager {
       List<String> activeTopics = [];
       String knowledgeGraphInfo = '';
       try {
-        activeTopics = HumanUnderstandingSystem().topicTracker.getActiveTopics().map((t) => t.name).toList();
+        activeTopics = HumanUnderstandingSystem().getActiveTopicsFromFocus().map((t) => t.name).toList();
       } catch (e) {}
       try {
         final kgData = HumanUnderstandingSystem().knowledgeGraphManager.getLastResult();
@@ -650,7 +650,7 @@ ${knowledgeGraphInfo.isNotEmpty ? knowledgeGraphInfo : '无'}
       final loadAssessment = HumanUnderstandingSystem().getCurrentCognitiveLoadAssessment();
       final loadLevel = loadAssessment.level;
       // 获取当前活跃主题
-      final activeTopics = HumanUnderstandingSystem().topicTracker.getActiveTopics().map((t) => t.name).toList();
+      final activeTopics = HumanUnderstandingSystem().getActiveTopicsFromFocus().map((t) => t.name).toList();
       // 获取知识图谱信息
       final knowledgeGraphInfo = HumanUnderstandingSystem().knowledgeGraphManager.getLastResult()?.toString() ?? '';
 

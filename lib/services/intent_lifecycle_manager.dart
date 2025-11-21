@@ -93,7 +93,7 @@ class IntentLifecycleManager {
     List<String> activeTopics = [];
     String knowledgeGraphInfo = '';
     try {
-      activeTopics = HumanUnderstandingSystem().topicTracker.getActiveTopics().map((t) => t.name).toList();
+      activeTopics = HumanUnderstandingSystem().getActiveTopicsFromFocus().map((t) => t.name).toList();
     } catch (e) {}
     try {
       final kgData = HumanUnderstandingSystem().knowledgeGraphManager.getLastResult();

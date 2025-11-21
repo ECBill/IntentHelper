@@ -106,7 +106,7 @@ class KnowledgeGraphService {
     Map<String, dynamic> patchedUserStateContext = userStateContext != null ? Map<String, dynamic>.from(userStateContext) : {};
     try {
       // 获取当前主题
-      final topics = HumanUnderstandingSystem().topicTracker.getActiveTopics().map((t) => t.name).toList();
+      final topics = HumanUnderstandingSystem().getActiveTopicsFromFocus().map((t) => t.name).toList();
       if (topics.isNotEmpty) {
         patchedUserStateContext['active_topics'] = topics.map((t) => {'name': t}).toList();
       }
