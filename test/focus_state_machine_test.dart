@@ -138,6 +138,78 @@ void main() {
       expect(stats.containsKey('total_focuses_count'), isTrue);
       expect(stats.containsKey('focus_type_distribution'), isTrue);
     });
+
+    test('FocusStateMachine should maintain state when receiving empty extractions', () async {
+      await stateMachine.initialize(useLLMExtraction: false);
+      
+      // First, add some meaningful content
+      final analysis1 = SemanticAnalysisInput(
+        entities: ['Flutter', 'AI'],
+        intent: 'learning',
+        emotion: 'curious',
+        content: '我想学习Flutter和AI相关的知识',
+        timestamp: DateTime.now(),
+      );
+      
+      await stateMachine.ingestUtterance(analysis1);
+      
+      final focusesAfterFirst = stateMachine.getActiveFocuses();
+      expect(focusesAfterFirst, isNotEmpty);
+      
+      final initialCount = focusesAfterFirst.length;
+      
+      // Now send very short content that might return empty extraction
+      final analysis2 = SemanticAnalysisInput(
+        entities: [],
+        intent: '',
+        emotion: 'neutral',
+        content: '哦',
+        timestamp: DateTime.now(),
+      );
+      
+      await stateMachine.ingestUtterance(analysis2);
+      
+      // Active focuses should still exist (maybe with updated scores)
+      final focusesAfterSecond = stateMachine.getActiveFocuses();
+      expect(focusesAfterSecond, isNotEmpty, 
+        reason: 'Active focuses should be maintained even when new extraction is empty');
+      
+      // We should have at least the minimum number of active focuses
+      expect(focusesAfterSecond.length, greaterThanOrEqualTo(1),
+        reason: 'Should maintain at least some active focuses');
+    });
+
+    test('FocusStateMachine should use conversation history for context', () async {
+      await stateMachine.initialize(useLLMExtraction: false);
+      
+      // Add a sequence of related messages
+      final messages = [
+        '今天讨论Flutter性能优化',
+        '主要看内存泄漏问题',
+        '还有Widget重建优化',
+      ];
+      
+      for (final content in messages) {
+        final analysis = SemanticAnalysisInput(
+          entities: [],
+          intent: 'discussion',
+          emotion: 'neutral',
+          content: content,
+          timestamp: DateTime.now(),
+        );
+        
+        await stateMachine.ingestUtterance(analysis);
+        await Future.delayed(Duration(milliseconds: 10));
+      }
+      
+      // Should have created focuses related to the conversation
+      final allFocuses = stateMachine.getAllFocuses();
+      expect(allFocuses, isNotEmpty);
+      
+      // Should have at least some active focuses
+      final activeFocuses = stateMachine.getActiveFocuses();
+      expect(activeFocuses, isNotEmpty);
+    });
   });
 
   group('Focus Drift Model Tests', () {
