@@ -21,6 +21,9 @@ class EmbeddingService {
 
   // 向量维度，与EventNode中的@HnswIndex(dimensions: 1536)保持一致
   static const int vectorDimensions = 1536;
+  
+  // 已废弃的向量维度（旧的embedding模型）
+  static const int deprecatedVectorDimensions = 384;
 
   // OpenAI embedding 配置 (通过代理服务器访问，参考 llm.dart)
   // 原始: https://api.openai.com/v1/embeddings -> 代理: https://xiaomi.dns.navy/v1/embeddings
@@ -967,10 +970,8 @@ class EmbeddingService {
     final candidates = <Map<String, dynamic>>[];
     for (final e in eventNodes) {
       final embedding = getEventEmbedding(e);
-      if (embedding == null || embedding.isEmpty) continue;
-      // 跳过旧的384维向量（已废弃的embedding模型），避免维度不匹配错误
-      if (embedding.length == 384) continue;
-      final cos = calculateCosineSimilarity(queryVector, embedding);
+      if (!isValidEmbedding(embedding)) continue;
+      final cos = calculateCosineSimilarity(queryVector, embedding!);
       if (cos < cosineThreshold) continue; // 先做一次语义召回
       final lex = _lexicalScore(query: queryText, event: e);
       final boost = _domainBoost(queryText, e);
@@ -1009,6 +1010,13 @@ class EmbeddingService {
     }
 
     return dotProduct / (sqrt(normA) * sqrt(normB));
+  }
+
+  /// 检查向量是否有效（非空且不是已废弃的384维向量）
+  bool isValidEmbedding(List<double>? embedding) {
+    return embedding != null && 
+           embedding.isNotEmpty && 
+           embedding.length != deprecatedVectorDimensions;
   }
 
   /// 计算两个向量的欧氏距离
@@ -1088,10 +1096,8 @@ class EmbeddingService {
     final candidates = <Map<String, dynamic>>[];
     for (final eventNode in eventNodes) {
       final embedding = getEventEmbedding(eventNode);
-      if (embedding != null && embedding.isNotEmpty) {
-        // 跳过旧的384维向量（已废弃的embedding模型），避免维度不匹配错误
-        if (embedding.length == 384) continue;
-        final emb = useWhitening ? whitenVector(embedding) : embedding;
+      if (isValidEmbedding(embedding)) {
+        final emb = useWhitening ? whitenVector(embedding!) : embedding;
         final cosine = calculateCosineSimilarity(qv, emb);
         if (cosine >= threshold) {
           candidates.add({'event': eventNode, 'similarity': cosine, 'embedding': emb});
@@ -1162,10 +1168,8 @@ class EmbeddingService {
     for (final eventNode in eventNodes) {
       final embedding = getEventEmbedding(eventNode);
       print('[EmbeddingService][调试] eventNode: \\${eventNode.name}, embedding: \\${embedding}');
-      if (embedding != null && embedding.isNotEmpty) {
-        // 跳过旧的384维向量（已废弃的embedding模型），避免维度不匹配错误
-        if (embedding.length == 384) continue;
-        final similarity = calculateCosineSimilarity(queryVector, embedding);
+      if (isValidEmbedding(embedding)) {
+        final similarity = calculateCosineSimilarity(queryVector, embedding!);
         if (debugCount < 10) {
           print('[EmbeddingService][调试] 事件: "\\${eventNode.name}", embeddingText: "\\${eventNode.getEmbeddingText()}"');
           print('[EmbeddingService][调试] 相似度: \\${similarity}');
@@ -1287,7 +1291,7 @@ class EmbeddingService {
     // 计算相似度分布（采样前100个非空向量对，排除384维旧向量）
     final nonNullEvents = events.where((e) {
       final emb = getEventEmbedding(e);
-      return emb != null && emb.isNotEmpty && emb.length != 384;
+      return isValidEmbedding(emb);
     }).toList();
     if (nonNullEvents.length > 1) {
       final sampleSize = nonNullEvents.length < 100 ? nonNullEvents.length : 100;
