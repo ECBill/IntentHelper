@@ -90,6 +90,9 @@ class EventPriorityScoringService {
     final embedding = _embeddingService.getEventEmbedding(node);
     if (embedding == null || embedding.isEmpty) return 0.0;
     
+    // 跳过旧的384维向量（已废弃的embedding模型），避免维度不匹配错误
+    if (embedding.length == 384) return 0.0;
+    
     try {
       final cosine = _embeddingService.calculateCosineSimilarity(queryVector, embedding);
       // 线性缩放到 [0,1]
@@ -239,6 +242,9 @@ class EventPriorityScoringService {
       
       final embedding = _embeddingService.getEventEmbedding(node);
       if (embedding == null || embedding.isEmpty) continue;
+      
+      // 跳过旧的384维向量（已废弃的embedding模型），避免维度不匹配错误
+      if (embedding.length == 384) continue;
       
       final cosineSim = _embeddingService.calculateCosineSimilarity(queryVector, embedding);
       

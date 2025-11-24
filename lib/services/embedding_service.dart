@@ -968,6 +968,8 @@ class EmbeddingService {
     for (final e in eventNodes) {
       final embedding = getEventEmbedding(e);
       if (embedding == null || embedding.isEmpty) continue;
+      // 跳过旧的384维向量（已废弃的embedding模型），避免维度不匹配错误
+      if (embedding.length == 384) continue;
       final cos = calculateCosineSimilarity(queryVector, embedding);
       if (cos < cosineThreshold) continue; // 先做一次语义召回
       final lex = _lexicalScore(query: queryText, event: e);
@@ -1087,6 +1089,8 @@ class EmbeddingService {
     for (final eventNode in eventNodes) {
       final embedding = getEventEmbedding(eventNode);
       if (embedding != null && embedding.isNotEmpty) {
+        // 跳过旧的384维向量（已废弃的embedding模型），避免维度不匹配错误
+        if (embedding.length == 384) continue;
         final emb = useWhitening ? whitenVector(embedding) : embedding;
         final cosine = calculateCosineSimilarity(qv, emb);
         if (cosine >= threshold) {
@@ -1159,6 +1163,8 @@ class EmbeddingService {
       final embedding = getEventEmbedding(eventNode);
       print('[EmbeddingService][调试] eventNode: \\${eventNode.name}, embedding: \\${embedding}');
       if (embedding != null && embedding.isNotEmpty) {
+        // 跳过旧的384维向量（已废弃的embedding模型），避免维度不匹配错误
+        if (embedding.length == 384) continue;
         final similarity = calculateCosineSimilarity(queryVector, embedding);
         if (debugCount < 10) {
           print('[EmbeddingService][调试] 事件: "\\${eventNode.name}", embeddingText: "\\${eventNode.getEmbeddingText()}"');
@@ -1278,8 +1284,11 @@ class EmbeddingService {
       stats[key] = (stats[key] ?? 0) + 1;
     }
 
-    // 计算相似度分布（采样前100个非空向量对）
-    final nonNullEvents = events.where((e) => getEventEmbedding(e) != null && getEventEmbedding(e)!.isNotEmpty).toList();
+    // 计算相似度分布（采样前100个非空向量对，排除384维旧向量）
+    final nonNullEvents = events.where((e) {
+      final emb = getEventEmbedding(e);
+      return emb != null && emb.isNotEmpty && emb.length != 384;
+    }).toList();
     if (nonNullEvents.length > 1) {
       final sampleSize = nonNullEvents.length < 100 ? nonNullEvents.length : 100;
       for (int i = 0; i < sampleSize - 1; i++) {

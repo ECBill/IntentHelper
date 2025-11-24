@@ -261,6 +261,9 @@ class SemanticClusteringService {
         
         if (embeddingI == null || embeddingJ == null) continue;
         
+        // 跳过旧的384维向量（已废弃的embedding模型），避免维度不匹配错误
+        if (embeddingI.length == 384 || embeddingJ.length == 384) continue;
+        
         // 检查相似度
         final similarity = _embeddingService.calculateCosineSimilarity(
           embeddingI,
@@ -411,6 +414,9 @@ class SemanticClusteringService {
         final embeddingJ = _embeddingService.getEventEmbedding(members[j]);
         
         if (embeddingI == null || embeddingJ == null) continue;
+        
+        // 跳过旧的384维向量（已废弃的embedding模型），避免维度不匹配错误
+        if (embeddingI.length == 384 || embeddingJ.length == 384) continue;
         
         final similarity = _embeddingService.calculateCosineSimilarity(
           embeddingI,
@@ -686,6 +692,9 @@ $exampleTitles
           final eventEmbedding = _embeddingService.getEventEmbedding(event);
           if (eventEmbedding == null) continue;
           
+          // 跳过旧的384维向量（已废弃的embedding模型），避免维度不匹配错误
+          if (eventEmbedding.length == 384 || clusterEmbedding.length == 384) continue;
+          
           final similarity = _embeddingService.calculateCosineSimilarity(
             eventEmbedding,
             clusterEmbedding,
@@ -897,6 +906,9 @@ $exampleTitles
         final embeddingJ = _embeddingService.getEventEmbedding(events[j]);
         if (embeddingI == null || embeddingJ == null) continue;
         
+        // 跳过旧的384维向量（已废弃的embedding模型），避免维度不匹配错误
+        if (embeddingI.length == 384 || embeddingJ.length == 384) continue;
+        
         final similarity = _embeddingService.calculateCosineSimilarity(
           embeddingI,
           embeddingJ,
@@ -945,6 +957,9 @@ $exampleTitles
         final embeddingJ = _embeddingService.getEventEmbedding(events[j]);
         if (embeddingI == null || embeddingJ == null) continue;
         
+        // 跳过旧的384维向量（已废弃的embedding模型），避免维度不匹配错误
+        if (embeddingI.length == 384 || embeddingJ.length == 384) continue;
+        
         final similarity = _embeddingService.calculateCosineSimilarity(
           embeddingI,
           embeddingJ,
@@ -980,7 +995,7 @@ $exampleTitles
     // 计算当前簇中心
     final embeddings = cluster
         .map((e) => _embeddingService.getEventEmbedding(e))
-        .where((e) => e != null && e.isNotEmpty)
+        .where((e) => e != null && e.isNotEmpty && e.length != 384) // 跳过384维旧向量
         .cast<List<double>>()
         .toList();
     if (embeddings.isEmpty) return true;
@@ -990,6 +1005,9 @@ $exampleTitles
     // 检查新成员与中心的相似度
     final newMemberEmbedding = _embeddingService.getEventEmbedding(newMember);
     if (newMemberEmbedding == null) return false;
+    
+    // 跳过旧的384维向量（已废弃的embedding模型），避免维度不匹配错误
+    if (newMemberEmbedding.length == 384 || centroid.length == 384) return false;
     
     final similarity = _embeddingService.calculateCosineSimilarity(
       newMemberEmbedding,
@@ -1043,6 +1061,9 @@ $exampleTitles
           final memberEmbedding = _embeddingService.getEventEmbedding(member);
           if (memberEmbedding == null || memberEmbedding.isEmpty) continue;
           
+          // 跳过旧的384维向量（已废弃的embedding模型），避免维度不匹配错误
+          if (memberEmbedding.length == 384 || clusterEmbedding.length == 384) continue;
+          
           final similarity = _embeddingService.calculateCosineSimilarity(
             memberEmbedding,
             clusterEmbedding,
@@ -1067,6 +1088,9 @@ $exampleTitles
           if (embeddingI == null || embeddingI.isEmpty || embeddingJ == null || embeddingJ.isEmpty) {
             continue;
           }
+          
+          // 跳过旧的384维向量（已废弃的embedding模型），避免维度不匹配错误
+          if (embeddingI.length == 384 || embeddingJ.length == 384) continue;
           
           final distance = 1.0 - _embeddingService.calculateCosineSimilarity(
             embeddingI,
@@ -1141,6 +1165,9 @@ $exampleTitles
         for (final member in members) {
           final memberEmbedding = _embeddingService.getEventEmbedding(member);
           if (memberEmbedding == null || memberEmbedding.isEmpty) continue;
+          
+          // 跳过旧的384维向量（已废弃的embedding模型），避免维度不匹配错误
+          if (memberEmbedding.length == 384 || clusterEmbedding.length == 384) continue;
           
           final similarity = _embeddingService.calculateCosineSimilarity(
             memberEmbedding,

@@ -1146,6 +1146,11 @@ ${patchedUserStateContext['knowledge_graph_info'] != null && patchedUserStateCon
         final eventEmbedding = embeddingService.getEventEmbedding(event);
         if (eventEmbedding == null || eventEmbedding.isEmpty) continue;
         
+        // 跳过旧的384维向量（已废弃的embedding模型），避免维度不匹配错误
+        if (eventEmbedding.length == 384) {
+          continue;
+        }
+        
         final cosineSim = embeddingService.calculateCosineSimilarity(
           queryVector,
           eventEmbedding,
@@ -1329,6 +1334,10 @@ ${patchedUserStateContext['knowledge_graph_info'] != null && patchedUserStateCon
       final embeddingA = embeddingService.getEventEmbedding(a);
       final embeddingB = embeddingService.getEventEmbedding(b);
       if (embeddingA == null || embeddingB == null) return null;
+      
+      // 跳过旧的384维向量（已废弃的embedding模型），避免维度不匹配错误
+      if (embeddingA.length == 384 || embeddingB.length == 384) return null;
+      
       return embeddingService.calculateCosineSimilarity(embeddingA, embeddingB);
     } catch (e) {
       print('[KnowledgeGraphService] ❌ calculateEventSimilarity 错误: $e');
