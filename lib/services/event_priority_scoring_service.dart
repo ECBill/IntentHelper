@@ -88,10 +88,10 @@ class EventPriorityScoringService {
   /// 将余弦相似度从 [-1,1] 线性缩放到 [0,1]
   double calculateSemanticSimilarity(List<double> queryVector, EventNode node) {
     final embedding = _embeddingService.getEventEmbedding(node);
-    if (embedding == null || embedding.isEmpty) return 0.0;
+    if (!_embeddingService.isValidEmbedding(embedding)) return 0.0;
     
     try {
-      final cosine = _embeddingService.calculateCosineSimilarity(queryVector, embedding);
+      final cosine = _embeddingService.calculateCosineSimilarity(queryVector, embedding!);
       // 线性缩放到 [0,1]
       return (cosine + 1.0) / 2.0;
     } catch (e) {
@@ -238,9 +238,9 @@ class EventPriorityScoringService {
       final pTilde = priorityScores[node.id] ?? 0.0;
       
       final embedding = _embeddingService.getEventEmbedding(node);
-      if (embedding == null || embedding.isEmpty) continue;
+      if (!_embeddingService.isValidEmbedding(embedding)) continue;
       
-      final cosineSim = _embeddingService.calculateCosineSimilarity(queryVector, embedding);
+      final cosineSim = _embeddingService.calculateCosineSimilarity(queryVector, embedding!);
       
       double finalScore;
       if (strategy == ScoringStrategy.multiplicative) {

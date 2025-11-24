@@ -1144,11 +1144,11 @@ ${patchedUserStateContext['knowledge_graph_info'] != null && patchedUserStateCon
       final candidates = <EventNode>[];
       for (final event in activeEvents) {
         final eventEmbedding = embeddingService.getEventEmbedding(event);
-        if (eventEmbedding == null || eventEmbedding.isEmpty) continue;
+        if (!embeddingService.isValidEmbedding(eventEmbedding)) continue;
         
         final cosineSim = embeddingService.calculateCosineSimilarity(
           queryVector,
-          eventEmbedding,
+          eventEmbedding!,
         );
         
         if (cosineSim >= similarityThreshold) {
@@ -1328,8 +1328,10 @@ ${patchedUserStateContext['knowledge_graph_info'] != null && patchedUserStateCon
 
       final embeddingA = embeddingService.getEventEmbedding(a);
       final embeddingB = embeddingService.getEventEmbedding(b);
-      if (embeddingA == null || embeddingB == null) return null;
-      return embeddingService.calculateCosineSimilarity(embeddingA, embeddingB);
+      if (!embeddingService.isValidEmbedding(embeddingA) || 
+          !embeddingService.isValidEmbedding(embeddingB)) return null;
+      
+      return embeddingService.calculateCosineSimilarity(embeddingA!, embeddingB!);
     } catch (e) {
       print('[KnowledgeGraphService] ❌ calculateEventSimilarity 错误: $e');
       return null;

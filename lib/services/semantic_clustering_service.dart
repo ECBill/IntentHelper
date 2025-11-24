@@ -259,12 +259,13 @@ class SemanticClusteringService {
         final embeddingI = _embeddingService.getEventEmbedding(events[i]);
         final embeddingJ = _embeddingService.getEventEmbedding(events[j]);
         
-        if (embeddingI == null || embeddingJ == null) continue;
+        if (!_embeddingService.isValidEmbedding(embeddingI) || 
+            !_embeddingService.isValidEmbedding(embeddingJ)) continue;
         
         // 检查相似度
         final similarity = _embeddingService.calculateCosineSimilarity(
-          embeddingI,
-          embeddingJ,
+          embeddingI!,
+          embeddingJ!,
         );
         
         if (similarity >= SIMILARITY_THRESHOLD) {
@@ -410,11 +411,12 @@ class SemanticClusteringService {
         final embeddingI = _embeddingService.getEventEmbedding(members[i]);
         final embeddingJ = _embeddingService.getEventEmbedding(members[j]);
         
-        if (embeddingI == null || embeddingJ == null) continue;
+        if (!_embeddingService.isValidEmbedding(embeddingI) || 
+            !_embeddingService.isValidEmbedding(embeddingJ)) continue;
         
         final similarity = _embeddingService.calculateCosineSimilarity(
-          embeddingI,
-          embeddingJ,
+          embeddingI!,
+          embeddingJ!,
         );
         totalSimilarity += similarity;
         pairCount++;
@@ -684,7 +686,8 @@ $exampleTitles
           if (clusterEmbedding.isEmpty) continue;
           
           final eventEmbedding = _embeddingService.getEventEmbedding(event);
-          if (eventEmbedding == null) continue;
+          if (!_embeddingService.isValidEmbedding(eventEmbedding) || 
+              eventEmbedding!.length != clusterEmbedding.length) continue;
           
           final similarity = _embeddingService.calculateCosineSimilarity(
             eventEmbedding,
@@ -895,11 +898,12 @@ $exampleTitles
         
         final embeddingI = _embeddingService.getEventEmbedding(events[i]);
         final embeddingJ = _embeddingService.getEventEmbedding(events[j]);
-        if (embeddingI == null || embeddingJ == null) continue;
+        if (!_embeddingService.isValidEmbedding(embeddingI) || 
+            !_embeddingService.isValidEmbedding(embeddingJ)) continue;
         
         final similarity = _embeddingService.calculateCosineSimilarity(
-          embeddingI,
-          embeddingJ,
+          embeddingI!,
+          embeddingJ!,
         );
         
         if (similarity >= STAGE1_SIMILARITY_THRESHOLD) {
@@ -943,11 +947,12 @@ $exampleTitles
         
         final embeddingI = _embeddingService.getEventEmbedding(events[i]);
         final embeddingJ = _embeddingService.getEventEmbedding(events[j]);
-        if (embeddingI == null || embeddingJ == null) continue;
+        if (!_embeddingService.isValidEmbedding(embeddingI) || 
+            !_embeddingService.isValidEmbedding(embeddingJ)) continue;
         
         final similarity = _embeddingService.calculateCosineSimilarity(
-          embeddingI,
-          embeddingJ,
+          embeddingI!,
+          embeddingJ!,
         );
         
         if (similarity >= STAGE2_SIMILARITY_THRESHOLD) {
@@ -980,7 +985,7 @@ $exampleTitles
     // 计算当前簇中心
     final embeddings = cluster
         .map((e) => _embeddingService.getEventEmbedding(e))
-        .where((e) => e != null && e.isNotEmpty)
+        .where((e) => _embeddingService.isValidEmbedding(e))
         .cast<List<double>>()
         .toList();
     if (embeddings.isEmpty) return true;
@@ -989,7 +994,8 @@ $exampleTitles
     
     // 检查新成员与中心的相似度
     final newMemberEmbedding = _embeddingService.getEventEmbedding(newMember);
-    if (newMemberEmbedding == null) return false;
+    if (!_embeddingService.isValidEmbedding(newMemberEmbedding) || 
+        newMemberEmbedding!.length != centroid.length) return false;
     
     final similarity = _embeddingService.calculateCosineSimilarity(
       newMemberEmbedding,
@@ -1041,7 +1047,8 @@ $exampleTitles
         
         for (final member in members) {
           final memberEmbedding = _embeddingService.getEventEmbedding(member);
-          if (memberEmbedding == null || memberEmbedding.isEmpty) continue;
+          if (!_embeddingService.isValidEmbedding(memberEmbedding) || 
+              memberEmbedding!.length != clusterEmbedding.length) continue;
           
           final similarity = _embeddingService.calculateCosineSimilarity(
             memberEmbedding,
@@ -1064,7 +1071,9 @@ $exampleTitles
         for (int j = i + 1; j < sampleSize && j < i + 5; j++) {
           final embeddingI = _embeddingService.getClusterEmbedding(finalClusters[i]);
           final embeddingJ = _embeddingService.getClusterEmbedding(finalClusters[j]);
-          if (embeddingI == null || embeddingI.isEmpty || embeddingJ == null || embeddingJ.isEmpty) {
+          if (!_embeddingService.isValidEmbedding(embeddingI) || 
+              !_embeddingService.isValidEmbedding(embeddingJ) ||
+              embeddingI!.length != embeddingJ!.length) {
             continue;
           }
           
@@ -1140,7 +1149,8 @@ $exampleTitles
         // 检测离群点
         for (final member in members) {
           final memberEmbedding = _embeddingService.getEventEmbedding(member);
-          if (memberEmbedding == null || memberEmbedding.isEmpty) continue;
+          if (!_embeddingService.isValidEmbedding(memberEmbedding) || 
+              memberEmbedding!.length != clusterEmbedding.length) continue;
           
           final similarity = _embeddingService.calculateCosineSimilarity(
             memberEmbedding,
