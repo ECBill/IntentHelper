@@ -623,6 +623,9 @@ class RecordServiceHandler extends TaskHandler {
 
     var text = '';
     int segmentCount = 0;
+    
+    // 🔥 FIX: 初始化currentSpeaker为'user'，避免空字符串导致的错误判断
+    currentSpeaker = 'user';
 
     // print('[_processAudioData] 📦 Checking VAD queue... isEmpty: ${_vad!.isEmpty()}');
 
