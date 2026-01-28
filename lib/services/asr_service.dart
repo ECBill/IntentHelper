@@ -624,8 +624,13 @@ class RecordServiceHandler extends TaskHandler {
     var text = '';
     int segmentCount = 0;
     
-    // 🔥 FIX: 初始化currentSpeaker为'user'，避免空字符串导致的错误判断
-    currentSpeaker = 'user';
+    // 🔥 FIX: 追踪所有音频段的说话人识别结果
+    // 使用第一个成功识别的说话人（最稳定的策略）
+    String? identifiedSpeaker;
+    
+    if (kDebugMode) {
+      print('[_processAudioData] 🎬 开始处理音频，将追踪第一个成功识别的说话人');
+    }
 
     // print('[_processAudioData] 📦 Checking VAD queue... isEmpty: ${_vad!.isEmpty()}');
 
@@ -681,36 +686,85 @@ class RecordServiceHandler extends TaskHandler {
           print('[_processAudioData] ⚠️ Voiceprint mode but no text yet, continuing...');
         }
       } else {
-        print('[_processAudioData] 👤 Normal mode: identifying speaker...');
+        if (kDebugMode) {
+          print('[_processAudioData] 👤 Normal mode: identifying speaker...');
+        }
         // 🔧 FIX: 简化声纹识别逻辑，避免阻塞ASR
         try {
           // 检查声纹质量
           if (!_isEmbeddingQualityGood(embedding)) {
-            print('[_processAudioData] ⚠️ 声纹质量不佳，默认为user');
-            currentSpeaker = 'user'; // 默认为用户，避免阻塞
+            if (kDebugMode) {
+              print('[_processAudioData] ⚠️ 声纹质量不佳，跳过本段识别');
+            }
+          } else if (identifiedSpeaker == null) {
+            // 🔥 FIX: 只使用第一个成功识别的说话人，避免多段音频时被后续段覆盖
+            final speaker = _identifySpeaker(embedding);
+            identifiedSpeaker = speaker;
+            if (kDebugMode) {
+              print('[_processAudioData] 🎯 First speaker identified as: $speaker');
+            }
           } else {
-            // 使用改进的说话人识别，但不阻塞ASR
-            currentSpeaker = _identifySpeaker(embedding);
-            print('[_processAudioData] 🎯 Speaker identified as: $currentSpeaker');
+            if (kDebugMode) {
+              print('[_processAudioData] ✅ Speaker already identified, skipping this segment');
+            }
           }
         } catch (speakerError) {
-          print('[_processAudioData] ⚠️ Speaker identification failed: $speakerError, defaulting to user');
-          currentSpeaker = 'user'; // 识别失败时默认为用户
+          if (kDebugMode) {
+            print('[_processAudioData] ⚠️ Speaker identification failed: $speakerError');
+          }
         }
       }
     }
 
-    print('[_processAudioData] 🏁 Processed $segmentCount segments, final text: "$text"');
-    print('[_processAudioData] 📊 Mode check - _isNeedVoiceprintInit: $_isNeedVoiceprintInit, text.isNotEmpty: ${text.isNotEmpty}');
+    if (kDebugMode) {
+      print('[_processAudioData] 🏁 Processed $segmentCount segments, final text: "$text"');
+      print('[_processAudioData] 📊 Mode check - _isNeedVoiceprintInit: $_isNeedVoiceprintInit, text.isNotEmpty: ${text.isNotEmpty}');
+      print('[_processAudioData] 🎭 Identified speaker: ${identifiedSpeaker ?? "null"}');
+    }
+
+    // 🔥 FIX: 确定最终说话人
+    // 如果识别成功则使用识别结果，否则使用智能默认值
+    if (identifiedSpeaker != null) {
+      currentSpeaker = identifiedSpeaker!;
+      if (kDebugMode) {
+        print('[_processAudioData] ✅ Using identified speaker: $currentSpeaker');
+      }
+    } else {
+      if (kDebugMode) {
+        print('[_processAudioData] ⚠️ Speaker未被识别，使用智能默认值');
+      }
+      // 检查是否有注册的用户声纹
+      final userSpeakers = _objectBoxService.getUserSpeaker();
+      if (userSpeakers == null || userSpeakers.isEmpty) {
+        // 没有注册声纹，说明是单用户场景，默认为user
+        currentSpeaker = 'user';
+        if (kDebugMode) {
+          print('[_processAudioData] 📝 没有注册声纹，默认为user');
+        }
+      } else {
+        // 有注册声纹但识别失败，可能是others，但也可能是user的音质不好
+        // 这里使用'others'更保守，避免误将others识别为user
+        currentSpeaker = 'others';
+        if (kDebugMode) {
+          print('[_processAudioData] 📝 有注册声纹但未识别成功，保守默认为others');
+        }
+      }
+    }
 
     // 只有在非声纹初始化模式或没有获得文本时才继续处理
     if (text.isNotEmpty && !_isNeedVoiceprintInit) {
-      print('[_processAudioData] ✅ Calling _processFinalResult with text: "$text", speaker: "$currentSpeaker"');
+      if (kDebugMode) {
+        print('[_processAudioData] ✅ Calling _processFinalResult with text: "$text", speaker: "$currentSpeaker"');
+      }
       _processFinalResult(text, currentSpeaker, category: category);
     } else if (text.isEmpty) {
-      print('[_processAudioData] ℹ️ No text generated from this audio segment');
+      if (kDebugMode) {
+        print('[_processAudioData] ℹ️ No text generated from this audio segment');
+      }
     } else if (_isNeedVoiceprintInit) {
-      print('[_processAudioData] ℹ️ In voiceprint mode, waiting for more audio...');
+      if (kDebugMode) {
+        print('[_processAudioData] ℹ️ In voiceprint mode, waiting for more audio...');
+      }
     }
   }
 

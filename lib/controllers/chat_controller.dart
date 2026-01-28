@@ -2,6 +2,7 @@ import 'dart:async';
 import 'dart:convert';
 
 import 'package:app/constants/prompt_constants.dart';
+import 'package:flutter/foundation.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:flutter_foreground_task/flutter_foreground_task.dart';
@@ -352,6 +353,11 @@ class ChatController extends ChangeNotifier {
       final delta = data['content'] as String?;
       final isSpeaking = data['isVadDetected'] as bool?;
 
+      // 🔥 DEBUG: 打印接收到的speaker值
+      if (kDebugMode && text != null && isEndpoint == true) {
+        print('[ChatController] 📥 Received message - text: "${text.substring(0, text.length > 30 ? 30 : text.length)}...", speaker: "$speaker", isEndpoint: $isEndpoint');
+      }
+
       // ✅ 添加消息去重逻辑：对于文本消息，检查是否已经处理过
       if (text != null && text.isNotEmpty && isEndpoint == true) {
         final messageKey = '$text|$speaker';
@@ -381,12 +387,14 @@ class ChatController extends ChangeNotifier {
           isMeeting != null &&
           isMeeting) {
         // 会议模式优先
-        print('DEBUG: Processing as MEETING mode with speaker: $speaker');
+        if (kDebugMode) {
+          print('[ChatController] 💬 Processing as MEETING mode with speaker: $speaker');
+        }
         isSpeakValueNotifier.value = false;
         insertNewMessage({
           'id': const Uuid().v4(),
           'text': text,
-          'isUser': speaker ?? 'user',  // 🔥 FIX: 使用实际的speaker值，而不是硬编码'user'
+          'isUser': speaker ?? 'user',
         });
         countHelp = countHelp + 1;
         if (countHelp == 6) {
@@ -399,25 +407,29 @@ class ChatController extends ChangeNotifier {
           inDialogMode != null &&
           inDialogMode) {
         // 对话模式次之
-        print('DEBUG: Processing as DIALOG mode with speaker: $speaker');
+        if (kDebugMode) {
+          print('[ChatController] 💬 Processing as DIALOG mode with speaker: $speaker');
+        }
         if(isEndpoint == true){
           isSpeakValueNotifier.value = false;
           String userInputId = const Uuid().v4();
           insertNewMessage({
             'id': userInputId,
             'text': text,
-            'isUser': speaker ?? 'user',  // 🔥 FIX: 使用实际的speaker值，而不是硬编码'user'
+            'isUser': speaker ?? 'user',
           });
           userToResponseMap[userInputId] = null;
         }
       } else if (isEndpoint != null && text != null) {
         // 通用处理最后
-        print('DEBUG: Processing as GENERAL mode with speaker: $speaker');
+        if (kDebugMode) {
+          print('[ChatController] 💬 Processing as GENERAL mode with speaker: $speaker');
+        }
         isSpeakValueNotifier.value = false;
         insertNewMessage({
           'id': const Uuid().v4(),
           'text': text,
-          'isUser': speaker ?? 'user',  // 🔥 FIX: 添加fallback保持一致性
+          'isUser': speaker ?? 'user',
         });
       }
 
