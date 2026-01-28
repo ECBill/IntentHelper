@@ -381,12 +381,12 @@ class ChatController extends ChangeNotifier {
           isMeeting != null &&
           isMeeting) {
         // 会议模式优先
-        print('DEBUG: Processing as MEETING mode');
+        print('DEBUG: Processing as MEETING mode with speaker: $speaker');
         isSpeakValueNotifier.value = false;
         insertNewMessage({
           'id': const Uuid().v4(),
           'text': text,
-          'isUser': 'user',
+          'isUser': speaker ?? 'user',  // 🔥 FIX: 使用实际的speaker值，而不是硬编码'user'
         });
         countHelp = countHelp + 1;
         if (countHelp == 6) {
@@ -399,14 +399,14 @@ class ChatController extends ChangeNotifier {
           inDialogMode != null &&
           inDialogMode) {
         // 对话模式次之
-        print('DEBUG: Processing as DIALOG mode');
+        print('DEBUG: Processing as DIALOG mode with speaker: $speaker');
         if(isEndpoint == true){
           isSpeakValueNotifier.value = false;
           String userInputId = const Uuid().v4();
           insertNewMessage({
             'id': userInputId,
             'text': text,
-            'isUser': 'user',
+            'isUser': speaker ?? 'user',  // 🔥 FIX: 使用实际的speaker值，而不是硬编码'user'
           });
           userToResponseMap[userInputId] = null;
         }
