@@ -74,6 +74,9 @@ class RecordServiceHandler extends TaskHandler {
   // 声纹相关
   int currentStep = 0;
   String currentSpeaker = '';
+  
+  // 🔥 新增：用于在识别失败时轮替显示speaker的计数器
+  int _unidentifiedMessageCounter = 0;
 
   // 流订阅
   StreamSubscription<RecordState>? _recordSub;
@@ -724,6 +727,7 @@ class RecordServiceHandler extends TaskHandler {
 
     // 🔥 FIX: 确定最终说话人
     // 如果识别成功则使用识别结果，否则使用智能默认值
+    bool speakerWasIdentified = identifiedSpeaker != null;
     if (identifiedSpeaker != null) {
       currentSpeaker = identifiedSpeaker!;
       if (kDebugMode) {
@@ -754,9 +758,9 @@ class RecordServiceHandler extends TaskHandler {
     // 只有在非声纹初始化模式或没有获得文本时才继续处理
     if (text.isNotEmpty && !_isNeedVoiceprintInit) {
       if (kDebugMode) {
-        print('[_processAudioData] ✅ Calling _processFinalResult with text: "$text", speaker: "$currentSpeaker"');
+        print('[_processAudioData] ✅ Calling _processFinalResult with text: "$text", speaker: "$currentSpeaker", wasIdentified: $speakerWasIdentified');
       }
-      _processFinalResult(text, currentSpeaker, category: category);
+      _processFinalResult(text, currentSpeaker, category: category, wasIdentified: speakerWasIdentified);
     } else if (text.isEmpty) {
       if (kDebugMode) {
         print('[_processAudioData] ℹ️ No text generated from this audio segment');
@@ -781,7 +785,7 @@ class RecordServiceHandler extends TaskHandler {
   }
 
   // 处理ASR最终结果，存储文本、管理对话状态
-  void _processFinalResult(String text, String speaker, {String category = RecordEntity.categoryDefault, String? operationId}) {
+  void _processFinalResult(String text, String speaker, {String category = RecordEntity.categoryDefault, String? operationId, bool wasIdentified = true}) {
     if (text.isEmpty) return;
 
     if (!_inDialogMode && speaker == 'user' && wakeword_constants.wakeWordStartDialog.any((keyword) => text.toLowerCase().contains(keyword))) {
@@ -807,16 +811,33 @@ class RecordServiceHandler extends TaskHandler {
     }
     // ======================
 
+    // 🔥 新增：确定实时显示的speaker（仅用于UI显示）
+    // 如果说话人未被识别，则在user和others之间轮替显示
+    String displaySpeaker = speaker;
+    if (!wasIdentified) {
+      // 说话人未识别，使用轮替逻辑
+      displaySpeaker = (_unidentifiedMessageCounter % 2 == 0) ? 'user' : 'others';
+      _unidentifiedMessageCounter++;
+      if (kDebugMode) {
+        print('[_processFinalResult] 🔄 Speaker未识别，轮替显示为: $displaySpeaker (counter: $_unidentifiedMessageCounter)');
+      }
+    } else {
+      if (kDebugMode) {
+        print('[_processFinalResult] ✅ Speaker已识别为: $displaySpeaker');
+      }
+    }
+
+    // 发送到UI的消息使用displaySpeaker（轮替的值）
     if (text.trim().isNotEmpty) {
       FlutterForegroundTask.sendDataToMain({
         'text': text,
         'isEndpoint': true,
         'inDialogMode': _inDialogMode,
-        'speaker': speaker,
+        'speaker': displaySpeaker,  // 🔥 使用轮替后的displaySpeaker
       });
     }
 
-    // 会议相关插入逻辑移除，统一插入默认/对话记录
+    // 数据库存储仍使用原始的speaker值（保持历史记录准确）
     if (speaker != 'user') {
       _objectBoxService.insertDefaultRecord(RecordEntity(role: 'others', content: text));
       _chatManager.addChatSession('others', text);
