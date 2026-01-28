@@ -352,6 +352,11 @@ class ChatController extends ChangeNotifier {
       final delta = data['content'] as String?;
       final isSpeaking = data['isVadDetected'] as bool?;
 
+      // 🔥 DEBUG: 打印接收到的speaker值
+      if (text != null && isEndpoint == true) {
+        print('[ChatController] 📥 Received message - text: "${text.substring(0, text.length > 30 ? 30 : text.length)}...", speaker: "$speaker", isEndpoint: $isEndpoint');
+      }
+
       // ✅ 添加消息去重逻辑：对于文本消息，检查是否已经处理过
       if (text != null && text.isNotEmpty && isEndpoint == true) {
         final messageKey = '$text|$speaker';
@@ -383,10 +388,12 @@ class ChatController extends ChangeNotifier {
         // 会议模式优先
         print('DEBUG: Processing as MEETING mode with speaker: $speaker');
         isSpeakValueNotifier.value = false;
+        final finalSpeaker = speaker ?? 'user';
+        print('[ChatController] 💬 插入会议消息 - speaker: $finalSpeaker (原始值: $speaker)');
         insertNewMessage({
           'id': const Uuid().v4(),
           'text': text,
-          'isUser': speaker ?? 'user',  // 🔥 FIX: 使用实际的speaker值，而不是硬编码'user'
+          'isUser': finalSpeaker,  // 🔥 FIX: 使用实际的speaker值，而不是硬编码'user'
         });
         countHelp = countHelp + 1;
         if (countHelp == 6) {
@@ -403,10 +410,12 @@ class ChatController extends ChangeNotifier {
         if(isEndpoint == true){
           isSpeakValueNotifier.value = false;
           String userInputId = const Uuid().v4();
+          final finalSpeaker = speaker ?? 'user';
+          print('[ChatController] 💬 插入对话消息 - speaker: $finalSpeaker (原始值: $speaker)');
           insertNewMessage({
             'id': userInputId,
             'text': text,
-            'isUser': speaker ?? 'user',  // 🔥 FIX: 使用实际的speaker值，而不是硬编码'user'
+            'isUser': finalSpeaker,  // 🔥 FIX: 使用实际的speaker值，而不是硬编码'user'
           });
           userToResponseMap[userInputId] = null;
         }
@@ -414,10 +423,12 @@ class ChatController extends ChangeNotifier {
         // 通用处理最后
         print('DEBUG: Processing as GENERAL mode with speaker: $speaker');
         isSpeakValueNotifier.value = false;
+        final finalSpeaker = speaker ?? 'user';
+        print('[ChatController] 💬 插入通用消息 - speaker: $finalSpeaker (原始值: $speaker)');
         insertNewMessage({
           'id': const Uuid().v4(),
           'text': text,
-          'isUser': speaker ?? 'user',  // 🔥 FIX: 添加fallback保持一致性
+          'isUser': finalSpeaker,  // 🔥 FIX: 添加fallback保持一致性
         });
       }
 

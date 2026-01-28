@@ -624,8 +624,10 @@ class RecordServiceHandler extends TaskHandler {
     var text = '';
     int segmentCount = 0;
     
-    // 🔥 FIX: 初始化currentSpeaker为'user'，避免空字符串导致的错误判断
-    currentSpeaker = 'user';
+    // 🔥 FIX: 初始化currentSpeaker为空，只在真正识别后才设置
+    // 这样可以追踪是否真的进行了说话人识别
+    currentSpeaker = ''; 
+    print('[_processAudioData] 🎬 开始处理音频，currentSpeaker初始化为空字符串');
 
     // print('[_processAudioData] 📦 Checking VAD queue... isEmpty: ${_vad!.isEmpty()}');
 
@@ -686,22 +688,39 @@ class RecordServiceHandler extends TaskHandler {
         try {
           // 检查声纹质量
           if (!_isEmbeddingQualityGood(embedding)) {
-            print('[_processAudioData] ⚠️ 声纹质量不佳，默认为user');
-            currentSpeaker = 'user'; // 默认为用户，避免阻塞
+            print('[_processAudioData] ⚠️ 声纹质量不佳，无法识别');
+            // 🔥 FIX: 保持currentSpeaker为空，让后续逻辑决定
           } else {
             // 使用改进的说话人识别，但不阻塞ASR
             currentSpeaker = _identifySpeaker(embedding);
             print('[_processAudioData] 🎯 Speaker identified as: $currentSpeaker');
           }
         } catch (speakerError) {
-          print('[_processAudioData] ⚠️ Speaker identification failed: $speakerError, defaulting to user');
-          currentSpeaker = 'user'; // 识别失败时默认为用户
+          print('[_processAudioData] ⚠️ Speaker identification failed: $speakerError');
+          // 🔥 FIX: 保持currentSpeaker为空
         }
       }
     }
 
     print('[_processAudioData] 🏁 Processed $segmentCount segments, final text: "$text"');
     print('[_processAudioData] 📊 Mode check - _isNeedVoiceprintInit: $_isNeedVoiceprintInit, text.isNotEmpty: ${text.isNotEmpty}');
+    print('[_processAudioData] 🎭 Current speaker before final processing: "$currentSpeaker"');
+
+    // 🔥 FIX: 如果speaker为空（未识别成功），则需要有合理的默认值
+    // 检查是否成功识别了说话人
+    if (currentSpeaker.isEmpty) {
+      print('[_processAudioData] ⚠️ Speaker未被识别，需要确定默认值');
+      // 如果没有注册的用户声纹，默认为user（因为只有用户在说话）
+      // 如果有注册的用户声纹但未识别成功，说明可能是others
+      final userSpeakers = _objectBoxService.getUserSpeaker();
+      if (userSpeakers == null || userSpeakers.isEmpty) {
+        currentSpeaker = 'user';
+        print('[_processAudioData] 📝 没有注册声纹，默认为user');
+      } else {
+        currentSpeaker = 'others';
+        print('[_processAudioData] 📝 有注册声纹但未识别成功，默认为others');
+      }
+    }
 
     // 只有在非声纹初始化模式或没有获得文本时才继续处理
     if (text.isNotEmpty && !_isNeedVoiceprintInit) {
