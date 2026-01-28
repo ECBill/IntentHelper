@@ -417,7 +417,7 @@ class ChatController extends ChangeNotifier {
         insertNewMessage({
           'id': const Uuid().v4(),
           'text': text,
-          'isUser': speaker,
+          'isUser': speaker ?? 'user',  // 🔥 FIX: 添加fallback保持一致性
         });
       }
 
