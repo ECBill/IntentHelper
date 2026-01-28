@@ -78,6 +78,7 @@ if (text.trim().isNotEmpty) {
 }
 
 // 数据库存储仍使用原始的speaker值（保持历史记录准确）
+// 注意：数据库存储逻辑在此次修改之前就已存在，仅支持二元分类：'user' 或 'others'
 if (speaker != 'user') {
   _objectBoxService.insertDefaultRecord(RecordEntity(role: 'others', content: text));
   _chatManager.addChatSession('others', text);
@@ -87,24 +88,26 @@ if (speaker != 'user') {
 ```
 
 Key distinction:
-- **UI Display** (line 836): Uses `displaySpeaker` (alternated for unidentified)
-- **Database Storage** (lines 841-857): Uses original `speaker` (preserves actual identification result)
+- **UI Display** (line 836): Uses `displaySpeaker` (alternated for unidentified speakers)
+- **Database Storage** (lines 841-857): Uses binary mapping based on original `speaker` value (preserves the default identification result - either "user" or "others")
+
+**Important Note**: The database storage logic uses a binary classification system that was already in place before this fix. The speaker identification system (`_identifySpeaker` function) already returns either "user" or "others", and the database stores these roles accordingly. This fix **only** affects the UI display for unidentified speakers while preserving this existing database behavior.
 
 ## How It Works
 
 ### Scenario 1: Speaker Successfully Identified
 1. Speaker identification succeeds → `speakerWasIdentified = true`
-2. `displaySpeaker = speaker` (uses actual identified value)
-3. UI shows the correctly identified speaker ("user" or "others")
-4. Database stores the correctly identified speaker
+2. `displaySpeaker = speaker` (uses actual identified value: "user" or "others")
+3. UI shows the correctly identified speaker
+4. Database stores the correctly identified speaker role
 5. Counter is **NOT** incremented
 
 ### Scenario 2: Speaker Not Identified
 1. Speaker identification fails → `speakerWasIdentified = false`
-2. System determines default `speaker` based on voiceprint registration status
+2. System determines default `speaker` based on voiceprint registration status ("user" or "others")
 3. `displaySpeaker` alternates: counter % 2 == 0 ? "user" : "others"
 4. UI shows the alternated speaker for visual distinction
-5. Database stores the original default `speaker` (not the alternated one)
+5. Database stores the original default `speaker` role (not the alternated display value)
 6. Counter **IS** incremented for next alternation
 
 ## Benefits

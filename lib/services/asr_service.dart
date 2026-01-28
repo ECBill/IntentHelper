@@ -817,10 +817,10 @@ class RecordServiceHandler extends TaskHandler {
     if (!wasIdentified) {
       // 说话人未识别，使用轮替逻辑
       displaySpeaker = (_unidentifiedMessageCounter % 2 == 0) ? 'user' : 'others';
-      _unidentifiedMessageCounter++;
       if (kDebugMode) {
-        print('[_processFinalResult] 🔄 Speaker未识别，轮替显示为: $displaySpeaker (counter: $_unidentifiedMessageCounter)');
+        print('[_processFinalResult] 🔄 Speaker未识别，轮替显示为: $displaySpeaker (使用counter: $_unidentifiedMessageCounter)');
       }
+      _unidentifiedMessageCounter++;
     } else {
       if (kDebugMode) {
         print('[_processFinalResult] ✅ Speaker已识别为: $displaySpeaker');
