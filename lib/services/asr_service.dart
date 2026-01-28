@@ -655,28 +655,50 @@ class RecordServiceHandler extends TaskHandler {
       // 🔥 优化：并行处理ASR和声纹提取，减少延迟
       print('[_processAudioData] ⚡ Starting parallel ASR and speaker embedding extraction...');
       
-      // 启动ASR识别和声纹提取的并行任务
-      final asrFuture = () async {
-        if (_inDialogMode && _isUsingCloudServices) {
-          print('[_processAudioData] ☁️ Using cloud ASR for recognition...');
-          return await _cloudAsr.recognize(paddedSamples);
-        } else {
-          // print('[_processAudioData] 🎯 Using streaming paraformer ASR for recognition...');
-          return await _streamingAsr.processAudio(paddedSamples);
+      var segment = '';
+      Float32List embedding = Float32List(512); // Default embedding
+      
+      try {
+        // 启动ASR识别和声纹提取的并行任务
+        final asrFuture = () async {
+          if (_inDialogMode && _isUsingCloudServices) {
+            print('[_processAudioData] ☁️ Using cloud ASR for recognition...');
+            return await _cloudAsr.recognize(paddedSamples);
+          } else {
+            // print('[_processAudioData] 🎯 Using streaming paraformer ASR for recognition...');
+            return await _streamingAsr.processAudio(paddedSamples);
+          }
+        }();
+        
+        final embeddingFuture = () async {
+          print('[_processAudioData] 🎭 Extracting speaker embedding...');
+          return getSpeakerEmbedding(samples);
+        }();
+        
+        // 等待两个任务都完成，使用 eagerError: false 以便处理部分失败
+        final results = await Future.wait(
+          [asrFuture, embeddingFuture],
+          eagerError: false,
+        );
+        segment = results[0] as String;
+        embedding = results[1] as Float32List;
+        
+        print('[_processAudioData] ✅ ASR and embedding extraction completed in parallel');
+      } catch (e) {
+        print('[_processAudioData] ⚠️ Error during parallel processing: $e');
+        // 降级到串行处理
+        try {
+          if (_inDialogMode && _isUsingCloudServices) {
+            segment = await _cloudAsr.recognize(paddedSamples);
+          } else {
+            segment = await _streamingAsr.processAudio(paddedSamples);
+          }
+          embedding = getSpeakerEmbedding(samples);
+        } catch (fallbackError) {
+          print('[_processAudioData] ❌ Fallback processing also failed: $fallbackError');
+          continue; // Skip this segment and move to the next
         }
-      }();
-      
-      final embeddingFuture = () async {
-        print('[_processAudioData] 🎭 Extracting speaker embedding...');
-        return getSpeakerEmbedding(samples);
-      }();
-      
-      // 等待两个任务都完成
-      final results = await Future.wait([asrFuture, embeddingFuture]);
-      var segment = results[0] as String;
-      final embedding = results[1] as Float32List;
-      
-      print('[_processAudioData] ✅ ASR and embedding extraction completed in parallel');
+      }
 
       // print('[_processAudioData] 📝 ASR result: "$segment"');
 
@@ -796,7 +818,6 @@ class RecordServiceHandler extends TaskHandler {
   }
 
   // 处理ASR最终结果，存储文本、管理对话状态
-  // 处理ASR最终结果，存储文本、管理对话状态
   void _processFinalResult(String text, String speaker, {String category = RecordEntity.categoryDefault, String? operationId, bool wasIdentified = true}) {
     if (text.isEmpty) return;
 
@@ -823,30 +844,27 @@ class RecordServiceHandler extends TaskHandler {
     }
     // ======================
 
-    // 🔥 优化：移除轮替逻辑，直接使用识别结果
-    // 如果说话人未被识别，则显示为 'others' 以避免误识别
+    // 🔥 优化：直接使用传入的speaker值
+    // speaker参数已经包含了智能默认逻辑（来自_processAudioData）：
+    // - 如果识别成功：使用识别结果
+    // - 如果识别失败且无注册声纹：默认为'user'（单用户场景）
+    // - 如果识别失败且有注册声纹：默认为'others'（保守策略）
     String displaySpeaker = speaker;
-    if (!wasIdentified) {
-      // 🔥 优化：不再使用轮替逻辑，默认未识别的都显示为 'others'
-      // 这样更保守，避免将 'others' 误显示为 'user'
-      displaySpeaker = 'others';
-      if (kDebugMode) {
-        print('[_processFinalResult] ⚠️ Speaker未识别，默认显示为: others');
-      }
-    } else {
-      if (kDebugMode) {
+    if (kDebugMode) {
+      if (wasIdentified) {
         print('[_processFinalResult] ✅ Speaker已识别为: $displaySpeaker');
+      } else {
+        print('[_processFinalResult] ⚠️ Speaker未识别，使用智能默认: $displaySpeaker');
       }
     }
 
-    // 发送到UI的消息使用识别后的speaker
+    // 发送到UI的消息使用speaker（已包含智能默认逻辑）
     if (text.trim().isNotEmpty) {
       FlutterForegroundTask.sendDataToMain({
         'text': text,
         'isEndpoint': true,
         'inDialogMode': _inDialogMode,
-        'speaker': displaySpeaker,  // 🔥 使用识别后的speaker，不再轮替
-
+        'speaker': displaySpeaker,  // 🔥 使用智能默认后的speaker
       });
     }
 

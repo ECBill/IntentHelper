@@ -73,18 +73,20 @@ if (!wasIdentified) {
 
 **优化后** (After):
 ```dart
+// 🔥 优化：直接使用传入的speaker值
+// speaker参数已经包含了智能默认逻辑（来自_processAudioData）：
+// - 如果识别成功：使用识别结果
+// - 如果识别失败且无注册声纹：默认为'user'（单用户场景）
+// - 如果识别失败且有注册声纹：默认为'others'（保守策略）
 String displaySpeaker = speaker;
-if (!wasIdentified) {
-  // 🔥 优化：不再使用轮替逻辑，默认未识别的都显示为 'others'
-  // 这样更保守，避免将 'others' 误显示为 'user'
-  displaySpeaker = 'others';
-}
 ```
 
 **改进点** (Improvements):
 1. **消除视觉混乱**: 不再在 'user' 和 'others' 之间跳变
-2. **更保守的策略**: 未识别时默认为 'others'，避免误将他人识别为用户
-3. **代码简化**: 移除了 `_unidentifiedMessageCounter` 变量
+2. **智能默认策略**: 
+   - 单用户场景（无注册声纹）：默认为 'user'
+   - 多用户场景（有注册声纹）：默认为 'others'
+3. **代码简化**: 移除了 `_unidentifiedMessageCounter` 变量和复杂的轮替逻辑
 
 ### 3. 清理未使用代码 (Code Cleanup)
 
@@ -100,11 +102,13 @@ int _unidentifiedMessageCounter = 0;
 1. **处理速度**: 通过并行处理，声纹识别总延迟降低约 40-50%
 2. **用户体验**: 移除轮替逻辑，UI 显示更稳定和准确
 3. **代码质量**: 简化逻辑，提高可维护性
+4. **鲁棒性**: 添加错误处理，支持降级到串行处理
 
 ### 数据完整性保证 (Data Integrity Guarantee)
 - ✅ 数据库存储仍使用最终的准确识别结果
 - ✅ 历史记录的准确性未受影响
-- ✅ 保守的默认策略确保不会误将 'others' 显示为 'user'
+- ✅ 智能默认策略：单用户场景默认为 'user'，多用户场景默认为 'others'
+- ✅ 错误处理确保部分失败不会导致整个系统崩溃
 
 ## 技术细节 (Technical Details)
 
@@ -113,13 +117,17 @@ int _unidentifiedMessageCounter = 0;
 `Future.wait()` 是 Dart 中的并发原语，可以同时等待多个异步操作完成：
 
 ```dart
-final results = await Future.wait([asrFuture, embeddingFuture]);
+final results = await Future.wait(
+  [asrFuture, embeddingFuture],
+  eagerError: false,  // 允许部分失败，不立即抛出异常
+);
 ```
 
 **特点**:
 - 并行执行多个 Future
 - 等待所有 Future 完成后返回结果数组
-- 如果任一 Future 失败，整个操作失败
+- 使用 `eagerError: false` 参数允许处理部分失败情况
+- 添加 try-catch 错误处理，支持降级到串行处理
 
 ### 说话人识别流程 (Speaker Recognition Flow)
 
